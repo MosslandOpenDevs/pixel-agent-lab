@@ -395,7 +395,13 @@ class CelestialScene extends Phaser.Scene {
     const own = this.hubs.filter((h) => h.service === a.service)
     const exchange = this.hubs.filter((h) => !h.service)
 
-    const target = (Math.random() > 0.72 ? exchange : own)[Phaser.Math.Between(0, (Math.random() > 0.72 ? exchange : own).length - 1)]
+    const pool = Math.random() > 0.72 ? exchange : own
+    if (!pool.length) {
+      a.waitMs = 500
+      return
+    }
+
+    const target = pool[Phaser.Math.Between(0, pool.length - 1)]
     a.target = target
 
     const path = findPath(this.blocked, { x: Math.round(a.x), y: Math.round(a.y) }, { x: target.x, y: target.y })
