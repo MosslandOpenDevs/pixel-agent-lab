@@ -1,181 +1,198 @@
-# Mossland Core Services Overview
+# Mossland Core Service Architecture
 
-> Scope: This document summarizes three Mossland services based on observed screenshots and service descriptions shared in conversation.
-> 
-> Services: **Algora**, **Agentic Orchestrator (AO)**, **Bridge**
-
----
-
-## 1) Executive Summary (한눈에 보기)
-
-Mossland의 3개 서비스는 기능이 겹치는 듯 보여도, 실제로는 역할이 분리된 **연속 파이프라인**으로 이해하는 것이 가장 정확합니다.
-
-- **Algora**: 신호 감지/이슈화/거버넌스 관제
-- **AO**: 멀티 에이전트 토론/계획 수립/프로젝트화
-- **Bridge**: 실행 위임/현실 연동/결과 검증(Outcome)
-
-핵심 흐름:
-
-`Algora (Detect) → AO (Decide/Plan) → Bridge (Execute/Verify) → Feedback Loop`
+**Scope**
+- 대상 서비스: `algora.moss.land`, `ao.moss.land`, `bridge.moss.land`
+- 목적: 세 서비스의 역할, 기능, 상호관계, 입출력(I/O)을 **실무적으로 이해 가능한 형태**로 정리
 
 ---
 
-## 2) 서비스별 상세 설명
+## 1. System Overview
+
+Mossland의 3개 서비스는 단일 제품이 아니라, 다음과 같은 **연속 운영 체계**를 구성한다.
+
+1. **Algora**: 신호 관측과 이슈 탐지
+2. **AO (Agentic Orchestrator)**: 멀티 에이전트 의사결정과 실행 계획 수립
+3. **Bridge**: 실행/위임/검증 및 결과 환류
+
+핵심 파이프라인:
+
+`Signals → Issues → Plans → Execution → Outcomes → Feedback`
+
+---
+
+## 2. Service-by-Service Detail
 
 ## 2.1 Algora
 
-### 역할
-- 24/7 라이브 에이전틱 거버넌스 관제 레이어
-- 다양한 소스에서 신호를 수집하고 문제를 감지해 **이슈/안건**으로 구조화
-- 고위험 액션은 즉시 자동 실행이 아닌, 승인 절차(LOCK/승인 게이트) 기반으로 운영
+### 2.1.1 Mission
+실시간으로 시스템/시장/커뮤니티/개발 관련 신호를 관측하고, 유의미한 이슈를 빠르게 감지해 거버넌스 가능한 단위로 구조화한다.
 
-### 스크린샷에서 확인된 UI 단서
-- 좌측 메뉴: `대시보드`, `라이브`, `거버넌스 OS`, `신호`, `이슈`, `제안`, `트레저리`, `에이전트`
-- 상단/카드 지표: 활성 에이전트, 활성 세션, 오늘의 신호, 해결된 이슈
-- 최근 활동 피드: 수집기 상태(COLLECTOR_HEALTH), 리스크 평가 진행, 점검 이벤트
-- 에이전트 로비: 역할형 에이전트 목록(예: Product Architect, Risk Sentinel 등)
+### 2.1.2 화면 구조(스크린샷 기반)
+- 좌측 내비게이션: 대시보드, 라이브, 거버넌스 OS, 아고라, 에이전트, 신호, 이슈, 제안, 트레저리, 공시, 관리자, 엔진 룸
+- 상단 상태 바: 시스템 상태, 예산, 다음 사이클 시점, 대기열, LIVE 상태
+- KPI 카드: 활성 에이전트, 활성 세션, 오늘의 신호, 미해결 이슈
+- 최근 활동 피드: 수집기 헬스 및 운영 이벤트 로그
+- 에이전트 로비: 역할별 에이전트 목록
 
-### 해석
-Algora는 "아이디어를 깊게 토론하는 장소"라기보다,
-**실시간 감시 + 이슈 감지 + 거버넌스 상태 관리**의 중심에 가깝습니다.
+### 2.1.3 Functional Role
+- 지속 수집(collector)
+- 이상/이슈 감지
+- 이슈 우선순위화
+- 거버넌스 안건 생성
+- 고위험 액션 게이트(승인 절차 전 잠금)
+
+### 2.1.4 I/O
+**Input**
+- 외부/내부 신호(개발 이벤트, 커뮤니티 이벤트, 운영 텔레메트리 등)
+- 수집기 상태 및 헬스 데이터
+
+**Output**
+- 구조화된 신호 레코드
+- 이슈 및 심각도/우선순위
+- AO로 전달 가능한 안건 단위 데이터
 
 ---
 
-## 2.2 Agentic Orchestrator (AO)
+## 2.2 AO (Agentic Orchestrator)
 
-### 역할
-- 다중 페르소나 에이전트(Founder/VC/Operator 등) 토론을 통해
-  이슈를 **의사결정 가능한 계획(Plan)** 으로 변환
-- 계획을 프로젝트/실행 단위로 나누고 우선순위를 배치
-- Human-in-the-loop 기반 승인/조율
+### 2.2.1 Mission
+신호/이슈를 그대로 실행하지 않고, 멀티 에이전트 토론을 통해 대안 비교, 전략 수립, 실행 계획 생성까지 담당한다.
 
-### 스크린샷에서 확인된 UI 단서
-- 상단 탭: `Dashboard`, `Ideas`, `Debates`, `Projects`, `Agents`, `System`
-- 파이프라인 카드/보드: `Signals → Trends → Ideas → Plans → Projects`
-- 통계: Total Ideas, Plans, In Development, Trends Analyzed
-- 실시간 실행 상태: RUNNING, uptime 등
+### 2.2.2 화면 구조(스크린샷 기반)
+- 상단 탭: Dashboard, Ideas, Debates, Projects, Agents, System
+- 파이프라인: Signals → Trends → Ideas → Plans → Projects
+- 요약 카드: Total Ideas, Plans, In Development, Trends Analyzed
+- 실행 상태: RUNNING, uptime, 최근/다음 실행 시점
 
-### 해석
-AO는 "문제를 어떻게 풀지"를 설계하는 엔진입니다.
-Algora가 탐지한 신호/이슈를 입력받아,
-**토론 → 계획화 → 프로젝트화**로 변환합니다.
+### 2.2.3 Functional Role
+- 다중 관점 토론(Debates)
+- 문제 재정의 및 대안 생성
+- 계획(Plan) 수립
+- 프로젝트 단위 분해(Projects)
+- 승인 기반 실행 준비(Human-in-the-loop)
+
+### 2.2.4 I/O
+**Input**
+- Algora에서 전달된 신호/이슈
+- 정책/목표/제약 조건
+
+**Output**
+- 실행 가능한 Plan
+- 우선순위가 반영된 Project/Task 구조
+- Bridge에 전달되는 실행 명세
 
 ---
 
 ## 2.3 Bridge
 
-### 역할
-- Reality Ops/Physical AI Governance 관점에서
-  계획을 실제 실행 단계로 연결하고 결과를 검증
-- 위임(Delegation), 실행 결과(Outcomes), 증빙(Proof) 관리
-- 현실 이벤트/오라클/연동 결과를 다시 상위 시스템에 피드백
+### 2.3.1 Mission
+계획을 현실 운영 맥락에서 실행하고, 결과를 검증 가능 형태로 기록해 상위 레이어로 환류한다.
 
-### 스크린샷에서 확인된 UI 단서
-- 상단 탭: `Dashboard`, `Signals`, `Issues`, `Proposals`, `Delegation`, `Outcomes`
-- 경고 배너: Experimental / Research / Non-Production
-- 지표: Total Signals, Issue Detection, Active Proposals, Success Rate
-- 최근 신호 목록: Reality Feed, Governance Proposals, Issue Detection, Proof of Outcome
+### 2.3.2 화면 구조(스크린샷 기반)
+- 상단 탭: Dashboard, Signals, Issues, Proposals, Delegation, Outcomes
+- 안내 배너: Experimental / Research / Non-Production
+- KPI: Total Signals, Issue Detection, Active Proposals, Success Rate
+- 최근 신호: Reality Feed, Governance Proposals, Issue Detection, Proof of Outcome
+- 뷰 전환: Signals / Issues / Proposals / Delegation
 
-### 해석
-Bridge는 실제 행동 계층입니다.
-AO가 만든 계획을 실행하고, 실행의 결과를 수치/상태/증빙으로 남깁니다.
+### 2.3.3 Functional Role
+- 실행 위임(Delegation)
+- 실행 상태 추적
+- 결과 검증(Proof/Outcome)
+- 상태/결과 환류
 
----
+### 2.3.4 I/O
+**Input**
+- AO가 확정한 실행 명세(Plan/Task)
+- 실행 환경 컨텍스트
 
-## 3) 서비스 간 차이
-
-## 3.1 문제를 다루는 위치
-- **Algora**: 문제를 "발견"하고 "안건화"
-- **AO**: 문제를 "토론"하고 "계획으로 결정"
-- **Bridge**: 결정을 "실행"하고 "검증"
-
-## 3.2 시간 축 관점
-- **Algora**: 상시 감시(continuous sensing)
-- **AO**: 배치/사이클 기반 전략화(decision cycles)
-- **Bridge**: 실행 트랜잭션/운영 이벤트 중심(action cycles)
-
-## 3.3 위험 통제 관점
-- **Algora**: 위험 감지/분류/잠금(게이트)
-- **AO**: 리스크-효율 균형 의사결정
-- **Bridge**: 실행 실패/검증 실패 대응 및 결과 증빙
-
----
-
-## 4) 입출력(I/O) 정리
-
-## 4.1 Algora I/O
-
-### 입력(Input)
-- 외부/내부 신호(뉴스, GitHub, 시스템 로그, 커뮤니티 이벤트, 온체인 지표 등)
-- 수집기 헬스/운영 텔레메트리
-
-### 출력(Output)
-- 구조화된 신호/이슈 레코드
-- 우선순위, 심각도, 근거 링크
-- AO에 전달할 안건 큐
-
----
-
-## 4.2 AO I/O
-
-### 입력(Input)
-- Algora의 신호/이슈
-- 토론 컨텍스트(역할별 관점, 정책 기준, 목표)
-
-### 출력(Output)
-- 계획(Plan), 제안(Proposal), 프로젝트(Task graph)
-- 실행 우선순위와 승인 상태
-- Bridge로 전달할 실행 명세
-
----
-
-## 4.3 Bridge I/O
-
-### 입력(Input)
-- AO의 확정 계획/실행 명세
-- 실행 대상 환경 정보(연구/실험 환경 포함)
-
-### 출력(Output)
-- 실행 상태(성공/실패/진행)
-- 위임 결과, 검증 결과, Outcome/Proof
+**Output**
+- 실행 결과(성공/실패/보류)
+- Outcome/Proof 데이터
 - Algora/AO로 돌아가는 피드백 이벤트
 
 ---
 
-## 5) End-to-End 예시 시나리오
+## 3. Comparative Model (차이점)
 
-1. Algora 수집기가 특정 저장소/커뮤니티에서 이상 신호를 감지
-2. Algora가 이슈를 생성하고 우선순위를 부여
-3. AO에서 페르소나 에이전트가 토론해 대응 옵션 비교
-4. AO가 실행 계획(작업 단위/담당/승인 조건) 확정
-5. Bridge가 계획을 실행/위임
-6. Bridge가 결과를 Outcome/Proof로 기록
-7. 결과가 Algora/AO로 피드백되어 다음 라운드 판단 품질 개선
+## 3.1 Primary Responsibility
+- **Algora**: Detect & Structure
+- **AO**: Decide & Plan
+- **Bridge**: Execute & Verify
 
----
+## 3.2 Time Perspective
+- **Algora**: 상시 감시(continuous sensing)
+- **AO**: 의사결정 사이클(decision cycles)
+- **Bridge**: 실행 사이클(execution cycles)
 
-## 6) "Algora에 AO 기능이 포함되나?"에 대한 정리
-
-짧은 답: **UI 상 일부 겹쳐 보일 수 있으나, 핵심 책임은 분리되어 있음**.
-
-- Algora에도 에이전트/거버넌스 화면이 있어 토론적 기능처럼 보일 수 있음
-- 하지만 **멀티 페르소나 토론→계획화 파이프라인 중심은 AO**
-- Algora는 감지/관제 중심, AO는 설계/의사결정 중심, Bridge는 실행/검증 중심
+## 3.3 Risk Perspective
+- **Algora**: 리스크 감지와 경보
+- **AO**: 리스크-효율 균형 의사결정
+- **Bridge**: 실행 리스크 관리 및 결과 검증
 
 ---
 
-## 7) 실무 적용 시 체크포인트
+## 4. End-to-End Flow
 
-- 서비스 경계가 흐려지지 않도록 이벤트 스키마를 분리
-  - `signal_detected` (Algora)
-  - `plan_approved` (AO)
-  - `execution_verified` (Bridge)
-- 승인 게이트를 명시적으로 모델링
-- 실행 결과의 원인/근거 링크를 Outcome에 반드시 남김
+1. **Signal Capture (Algora)**
+   - 다중 소스에서 신호 수집
+2. **Issue Detection (Algora)**
+   - 이상 이벤트를 이슈로 구조화
+3. **Debate & Planning (AO)**
+   - 멀티 에이전트 토론 후 계획 확정
+4. **Execution & Delegation (Bridge)**
+   - 계획을 실제 실행 단위로 처리
+5. **Outcome Verification (Bridge)**
+   - 결과/증빙 생성
+6. **Feedback Loop (Algora/AO)**
+   - 결과가 다음 탐지/계획 정확도 향상에 반영
 
 ---
 
-## 8) Notes
+## 5. Operational Interpretation for Product Design
 
-- 본 문서는 대화에서 공유된 서비스 설명과 스크린샷을 기반으로 작성됨
-- 운영/아키텍처 세부 스펙은 각 서비스의 최신 문서/저장소 기준으로 추가 검증 권장
+UI/UX 또는 시각화 시스템 설계 시, 세 서비스를 하나로 섞기보다 아래처럼 분리 표현하는 것이 이해도를 높인다.
+
+- **Algora Zone**: 신호 스트림, 이슈 생성, 경보 밀도
+- **AO Zone**: 토론 상태, 계획 큐, 우선순위 변화
+- **Bridge Zone**: 실행 진행률, 위임 상태, 검증/결과
+
+추천 지표 매핑:
+- Algora: Signal Volume, Issue Detection Rate, Open Issues
+- AO: Debate Throughput, Plan Conversion Rate, Active Projects
+- Bridge: Execution Success Rate, Delegation Queue, Verified Outcomes
+
+---
+
+## 6. Canonical Data Handoff Contract (개념적)
+
+### 6.1 Algora → AO
+- `issue_id`
+- `severity`
+- `evidence_links`
+- `detected_at`
+- `recommended_action`
+
+### 6.2 AO → Bridge
+- `plan_id`
+- `tasks[]`
+- `priority`
+- `approval_state`
+- `constraints`
+
+### 6.3 Bridge → Algora/AO
+- `execution_id`
+- `status`
+- `outcome_summary`
+- `proof_refs`
+- `observed_risks`
+
+---
+
+## 7. Practical Summary
+
+- **Algora**는 "무슨 일이 벌어졌는가"를 잡아내는 레이어
+- **AO**는 "무엇을 할 것인가"를 결정하는 레이어
+- **Bridge**는 "실제로 무엇이 실행되었는가"를 증명하는 레이어
+
+세 서비스는 개별 도구가 아니라, 하나의 거버넌스 루프를 이루는 유기적 구조다.
