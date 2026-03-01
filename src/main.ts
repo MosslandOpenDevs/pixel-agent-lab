@@ -1,448 +1,502 @@
 import './style.css'
 import Phaser from 'phaser'
 
-type TileType = 'floor' | 'wall' | 'desk' | 'chair'
-type AgentState = 'idle' | 'moving' | 'working'
+type Role = 'AO' | 'Bridge' | 'Algora' | 'Ops'
+type Mood = 'focus' | 'chat' | 'debug' | 'shipping'
 
 type Agent = {
   id: number
-  color: number
+  role: Role
+  mood: Mood
+  sprite: Phaser.GameObjects.Sprite
+  shadow: Phaser.GameObjects.Ellipse
+  label: Phaser.GameObjects.Text
   x: number
   y: number
-  sprite: Phaser.GameObjects.Rectangle
-  state: AgentState
   path: { x: number; y: number }[]
   speed: number
+  pause: number
+  targetName: string
 }
 
-const TILE = 24
-const MAP_W = 36
-const MAP_H = 22
-
-const COLORS: Record<TileType, number> = {
-  floor: 0x1f2937,
-  wall: 0x111827,
-  desk: 0x8b5cf6,
-  chair: 0x06b6d4,
-}
-
-const WALKABLE: Record<TileType, boolean> = {
-  floor: true,
-  wall: false,
-  desk: false,
-  chair: true,
-}
+const TILE = 28
+const W = 34
+const H = 20
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 app.innerHTML = `
   <div class="layout">
     <aside class="panel">
-      <h1>Pixel Agent Lab</h1>
-      <p class="sub">#1 맵 + 캐릭터 구현 데모 (테스트 기능 포함)</p>
+      <h1>Pixel Agent Lab · Art Demo</h1>
+      <p class="sub">pixel-agents 스타일 참고 · 맵/오브젝트/캐릭터 비주얼 중심</p>
 
       <div class="group">
-        <h2>에디터</h2>
-        <div class="tiles">
-          <button data-tile="floor" class="active">Floor</button>
-          <button data-tile="wall">Wall</button>
-          <button data-tile="desk">Desk</button>
-          <button data-tile="chair">Chair</button>
-        </div>
-        <button id="toggle-edit">에디트 모드: ON</button>
+        <h2>Scene Direction</h2>
+        <label>에이전트 밀도 <input id="density" type="range" min="8" max="80" value="32" /></label>
+        <label>시뮬레이션 속도 <input id="speed" type="range" min="0.5" max="2.5" value="1.1" step="0.1" /></label>
+        <label><input id="showLabels" type="checkbox" checked /> 에이전트 라벨</label>
+        <label><input id="showRoutes" type="checkbox" checked /> 이동 라우트 미리보기</label>
+        <label><input id="chaos" type="checkbox" /> Rush Hour 모드</label>
       </div>
 
       <div class="group">
-        <h2>시뮬레이션</h2>
-        <button id="spawn-agent">에이전트 추가</button>
-        <button id="remove-agent">에이전트 제거</button>
-        <label>속도
-          <input id="speed" type="range" min="0.25" max="3" step="0.25" value="1" />
-        </label>
-      </div>
-
-      <div class="group">
-        <h2>뷰 옵션</h2>
-        <label><input id="show-grid" type="checkbox" checked /> 그리드</label>
-        <label><input id="show-path" type="checkbox" checked /> 경로</label>
-        <label><input id="show-coll" type="checkbox" checked /> 충돌 타일 강조</label>
-      </div>
-
-      <div class="group">
-        <h2>맵 데이터</h2>
-        <button id="save-map">맵 저장(LocalStorage)</button>
-        <button id="load-map">맵 불러오기</button>
-        <button id="reset-map">초기화</button>
-      </div>
-
-      <div class="group">
-        <h2>컨트롤</h2>
-        <p>WASD 이동 / 클릭 이동 / 마우스휠 줌 / 드래그 팬</p>
+        <h2>Creative UI / UX</h2>
+        <ul>
+          <li>역할별 에이전트 색상 + 아이콘 라벨</li>
+          <li>커피머신/화이트보드/박스존으로 목적지 흐름</li>
+          <li>가끔 뜨는 "상태 버블"로 살아있는 느낌</li>
+          <li>우측 라이브 패널: 지금 가장 바쁜 팀 + 분위기</li>
+        </ul>
       </div>
 
       <div id="stats" class="stats"></div>
-      <div id="log" class="log"></div>
+      <div id="feed" class="feed"></div>
     </aside>
 
     <main class="stage-wrap">
       <div id="stage"></div>
+      <div class="overlay" id="overlay"></div>
     </main>
   </div>
 `
 
-class DemoScene extends Phaser.Scene {
-  map: TileType[][] = []
-  selectedTile: TileType = 'floor'
-  editMode = true
-  showGrid = true
-  showPath = true
-  showCollision = true
-  simSpeed = 1
+const statsEl = document.querySelector<HTMLDivElement>('#stats')!
+const feedEl = document.querySelector<HTMLDivElement>('#feed')!
+const overlayEl = document.querySelector<HTMLDivElement>('#overlay')!
 
-  mapLayer!: Phaser.GameObjects.Graphics
-  pathLayer!: Phaser.GameObjects.Graphics
-  cameraDragStart?: Phaser.Math.Vector2
-
-  player = { x: 3, y: 3, path: [] as { x: number; y: number }[], sprite: null as unknown as Phaser.GameObjects.Rectangle }
+class OfficeScene extends Phaser.Scene {
+  blocked: boolean[][] = []
+  floorSpots: { x: number; y: number; name: string }[] = []
   agents: Agent[] = []
-  nextAgentId = 1
+  nextId = 1
 
-  cursors!: Phaser.Types.Input.Keyboard.CursorKeys
-  wasd!: Record<string, Phaser.Input.Keyboard.Key>
+  routesLayer!: Phaser.GameObjects.Graphics
+  worldLayer!: Phaser.GameObjects.Container
 
-  logEl = document.querySelector<HTMLDivElement>('#log')!
-  statsEl = document.querySelector<HTMLDivElement>('#stats')!
+  simSpeed = 1.1
+  showLabels = true
+  showRoutes = true
+  chaos = false
 
-  constructor() {
-    super('demo')
+  get desiredAgents() {
+    return Number((document.querySelector('#density') as HTMLInputElement).value)
   }
 
   create() {
-    this.createDefaultMap()
+    this.blocked = Array.from({ length: H }, () => Array.from({ length: W }, () => false))
+    this.worldLayer = this.add.container(0, 0)
+    this.routesLayer = this.add.graphics().setDepth(2000)
 
-    this.mapLayer = this.add.graphics()
-    this.pathLayer = this.add.graphics()
+    this.buildTextures()
+    this.buildFloorAndWalls()
+    this.buildOfficeProps()
 
-    this.player.sprite = this.add.rectangle(0, 0, TILE * 0.75, TILE * 0.75, 0x22c55e)
-    this.player.sprite.setDepth(10)
+    for (let i = 0; i < this.desiredAgents; i++) this.spawnAgent()
 
-    for (let i = 0; i < 4; i++) this.spawnAgent()
-
-    this.cursors = this.input.keyboard!.createCursorKeys()
-    this.wasd = this.input.keyboard!.addKeys('W,A,S,D') as Record<string, Phaser.Input.Keyboard.Key>
-
-    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
-      if (p.rightButtonDown()) return
-      const world = this.cameras.main.getWorldPoint(p.x, p.y)
-      const tx = Math.floor(world.x / TILE)
-      const ty = Math.floor(world.y / TILE)
-      if (!this.inBounds(tx, ty)) return
-
-      if (this.editMode) {
-        this.paint(tx, ty, this.selectedTile)
-        return
-      }
-
-      if (this.isWalkable(tx, ty)) {
-        const path = findPath(this.map, { x: this.player.x, y: this.player.y }, { x: tx, y: ty })
-        if (path.length) {
-          this.player.path = path
-          this.log(`플레이어 경로 설정: (${tx}, ${ty})`)
-        }
-      }
+    this.input.on('wheel', (_p: Phaser.Input.Pointer, _go: any, _dx: number, dy: number) => {
+      this.cameras.main.zoom = Phaser.Math.Clamp(this.cameras.main.zoom - dy * 0.001, 0.7, 2)
     })
 
-    this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
-      if (this.editMode && p.isDown) {
-        const world = this.cameras.main.getWorldPoint(p.x, p.y)
-        const tx = Math.floor(world.x / TILE)
-        const ty = Math.floor(world.y / TILE)
-        if (this.inBounds(tx, ty)) this.paint(tx, ty, this.selectedTile)
-      }
-
-      if (!this.editMode && p.rightButtonDown()) {
-        if (!this.cameraDragStart) this.cameraDragStart = new Phaser.Math.Vector2(p.x, p.y)
-        const dx = p.x - this.cameraDragStart.x
-        const dy = p.y - this.cameraDragStart.y
-        this.cameras.main.scrollX -= dx / this.cameras.main.zoom
-        this.cameras.main.scrollY -= dy / this.cameras.main.zoom
-        this.cameraDragStart.set(p.x, p.y)
-      }
+    this.time.addEvent({
+      delay: 1500,
+      loop: true,
+      callback: () => this.randomBubble(),
     })
 
-    this.input.on('pointerup', () => (this.cameraDragStart = undefined))
-    this.input.on('wheel', (_: any, __: any, ___: number, dy: number) => {
-      this.cameras.main.zoom = Phaser.Math.Clamp(this.cameras.main.zoom - dy * 0.001, 0.6, 2.2)
-    })
-
-    this.syncUI()
-    this.redrawAll()
+    this.refreshOverlay()
   }
 
-  update(_: number, delta: number) {
-    this.handleManualMove()
+  update(_t: number, dt: number) {
+    this.simSpeed = Number((document.querySelector('#speed') as HTMLInputElement).value)
+    this.showLabels = (document.querySelector('#showLabels') as HTMLInputElement).checked
+    this.showRoutes = (document.querySelector('#showRoutes') as HTMLInputElement).checked
+    this.chaos = (document.querySelector('#chaos') as HTMLInputElement).checked
 
-    const step = (delta / 1000) * this.simSpeed
+    this.balanceAgentCount()
 
-    this.followPath(this.player, step * 5)
-    for (const agent of this.agents) {
-      if (agent.path.length === 0) this.assignAgentTask(agent)
-      this.followPath(agent, step * agent.speed)
+    const stepBase = (dt / 1000) * this.simSpeed * (this.chaos ? 1.8 : 1)
+    for (const a of this.agents) {
+      a.label.setVisible(this.showLabels)
+
+      if (a.pause > 0) {
+        a.pause -= dt
+      } else {
+        if (a.path.length === 0) this.pickNextPath(a)
+        this.stepAgent(a, stepBase)
+      }
+
+      a.label.setPosition(a.sprite.x, a.sprite.y - 22)
+      a.shadow.setPosition(a.sprite.x, a.sprite.y + 10)
     }
 
-    this.drawPaths()
+    this.drawRoutes()
     this.drawStats()
+    this.refreshOverlay()
   }
 
-  followPath(entity: { x: number; y: number; path: { x: number; y: number }[]; sprite: Phaser.GameObjects.Rectangle }, amount: number) {
-    if (!entity.path.length) return
-    const target = entity.path[0]
-    const dx = target.x - entity.x
-    const dy = target.y - entity.y
+  buildTextures() {
+    const p = this.textures
 
-    if (Math.abs(dx) + Math.abs(dy) <= amount) {
-      entity.x = target.x
-      entity.y = target.y
-      entity.path.shift()
-    } else {
-      const len = Math.hypot(dx, dy) || 1
-      entity.x += (dx / len) * amount
-      entity.y += (dy / len) * amount
+    p.generate('tile-floor', {
+      pixelWidth: 2,
+      data: ['aaaaaaaaaaaaaa', 'abbbbbbbbbbbba', 'abccccccccccba', 'abccccccccccba', 'abccccccccccba', 'abccccccccccba', 'abbbbbbbbbbbba', 'aaaaaaaaaaaaaa'],
+      palette: { a: '#d6dee7', b: '#c7d0da', c: '#e3eaf1' } as any,
+    })
+
+    p.generate('tile-wall', {
+      pixelWidth: 2,
+      data: ['aaaaaaaaaaaaaa', 'abbbbbbbbbbbba', 'abccccccccccba', 'abccccccccccba', 'abccccccccccba', 'abbbbbbbbbbbba', 'adddddddddddda', 'aaaaaaaaaaaaaa'],
+      palette: { a: '#4b5563', b: '#374151', c: '#6b7280', d: '#1f2937' } as any,
+    })
+
+    p.generate('desk', {
+      pixelWidth: 2,
+      data: ['................', '.aaaaaaaaaaaaaa.', '.abbbbbbbbbbbb a', '.abccccccccccba.', '.abccccccccccba.', '.abbbbbbbbbbbb a', '.d............d.', '.d............d.'],
+      palette: { a: '#8b6b45', b: '#c49b63', c: '#e2bf86', d: '#4a3322', '.': '#00000000' } as any,
+    })
+
+    p.generate('chair', {
+      pixelWidth: 2,
+      data: ['......', '.aaaa.', '.abca.', '.abca.', '.dddd.', '..ee..'],
+      palette: { a: '#8b6b45', b: '#d6b07d', c: '#c59a61', d: '#6b4a2c', e: '#3b2a1c', '.': '#00000000' } as any,
+    })
+
+    p.generate('plant', {
+      pixelWidth: 2,
+      data: ['....aa....', '...abca...', '..abccca..', '..abccca..', '....dd....', '...deed...'],
+      palette: { a: '#3f9f4a', b: '#62c65e', c: '#2f7f39', d: '#8b6b45', e: '#a77f55', '.': '#00000000' } as any,
+    })
+
+    p.generate('box', {
+      pixelWidth: 2,
+      data: ['aaaaaaaa', 'abbbbbba', 'abccccba', 'abbbbbba', 'adddddd a'],
+      palette: { a: '#7c5630', b: '#d9af76', c: '#c9995e', d: '#5a3c22', ' ': '#00000000' } as any,
+    })
+
+    p.generate('monitor', {
+      pixelWidth: 2,
+      data: ['aaaaaaaa', 'abbbbbba', 'abccccba', 'abbbbbba', '..dddd..'],
+      palette: { a: '#475569', b: '#cbd5e1', c: '#60a5fa', d: '#334155', '.': '#00000000' } as any,
+    })
+
+    p.generate('coffee', {
+      pixelWidth: 2,
+      data: ['..aa..', '.abca.', '.abca.', '..dd..'],
+      palette: { a: '#ffffff', b: '#d6d3d1', c: '#8b5e34', d: '#64748b', '.': '#00000000' } as any,
+    })
+
+    const rolePalettes: Record<Role, { skin: string; hair: string; cloth: string; cloth2: string }> = {
+      AO: { skin: '#f4c08f', hair: '#2b2a29', cloth: '#4f46e5', cloth2: '#312e81' },
+      Bridge: { skin: '#f1bb86', hair: '#5b351e', cloth: '#059669', cloth2: '#065f46' },
+      Algora: { skin: '#f4c59c', hair: '#3f3f46', cloth: '#dc2626', cloth2: '#7f1d1d' },
+      Ops: { skin: '#f0b888', hair: '#1f2937', cloth: '#0284c7', cloth2: '#0c4a6e' },
     }
 
-    entity.sprite.setPosition(entity.x * TILE + TILE / 2, entity.y * TILE + TILE / 2)
-  }
-
-  handleManualMove() {
-    if (this.editMode) return
-    const dirs: { x: number; y: number }[] = []
-    if (this.wasd.W.isDown || this.cursors.up.isDown) dirs.push({ x: 0, y: -1 })
-    if (this.wasd.S.isDown || this.cursors.down.isDown) dirs.push({ x: 0, y: 1 })
-    if (this.wasd.A.isDown || this.cursors.left.isDown) dirs.push({ x: -1, y: 0 })
-    if (this.wasd.D.isDown || this.cursors.right.isDown) dirs.push({ x: 1, y: 0 })
-    if (!dirs.length || this.player.path.length) return
-
-    const d = dirs[0]
-    const tx = Math.round(this.player.x + d.x)
-    const ty = Math.round(this.player.y + d.y)
-    if (this.isWalkable(tx, ty)) this.player.path = [{ x: tx, y: ty }]
-  }
-
-  createDefaultMap() {
-    this.map = Array.from({ length: MAP_H }, () => Array.from({ length: MAP_W }, () => 'floor' as TileType))
-
-    for (let y = 0; y < MAP_H; y++) {
-      this.map[y][0] = 'wall'
-      this.map[y][MAP_W - 1] = 'wall'
-    }
-    for (let x = 0; x < MAP_W; x++) {
-      this.map[0][x] = 'wall'
-      this.map[MAP_H - 1][x] = 'wall'
-    }
-
-    for (let y = 4; y < MAP_H - 3; y += 5) {
-      for (let x = 5; x < MAP_W - 5; x += 6) {
-        this.map[y][x] = 'desk'
-        this.map[y + 1]?.[x] && (this.map[y + 1][x] = 'chair')
+    for (const role of Object.keys(rolePalettes) as Role[]) {
+      const pal = rolePalettes[role]
+      for (let f = 0; f < 3; f++) {
+        const legs = f === 1 ? ['...gg...', '..g..g..'] : ['..g..g..', '...gg...']
+        p.generate(`agent-${role}-${f}`, {
+          pixelWidth: 2,
+          data: ['..hhhh..', '.hshshh.', '.hssssh.', '..cccc..', '..cccc..', legs[0], legs[1]],
+          palette: { h: pal.hair, s: pal.skin, c: pal.cloth, g: pal.cloth2, '.': '#00000000' } as any,
+        })
       }
     }
   }
 
-  redrawAll() {
-    this.mapLayer.clear()
+  buildFloorAndWalls() {
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const floor = this.add.image(x * TILE + TILE / 2, y * TILE + TILE / 2, 'tile-floor').setOrigin(0.5)
+        floor.setDisplaySize(TILE, TILE)
+        floor.setDepth(y * 10)
+        this.worldLayer.add(floor)
 
-    for (let y = 0; y < MAP_H; y++) {
-      for (let x = 0; x < MAP_W; x++) {
-        const tile = this.map[y][x]
-        this.mapLayer.fillStyle(COLORS[tile], 1)
-        this.mapLayer.fillRect(x * TILE, y * TILE, TILE, TILE)
-
-        if (this.showCollision && !WALKABLE[tile]) {
-          this.mapLayer.fillStyle(0xef4444, 0.2)
-          this.mapLayer.fillRect(x * TILE, y * TILE, TILE, TILE)
-        }
-
-        if (this.showGrid) {
-          this.mapLayer.lineStyle(1, 0x334155, 0.5)
-          this.mapLayer.strokeRect(x * TILE, y * TILE, TILE, TILE)
+        if (x === 0 || y === 0 || x === W - 1 || y === H - 1) {
+          const wall = this.add.image(x * TILE + TILE / 2, y * TILE + TILE / 2, 'tile-wall').setOrigin(0.5)
+          wall.setDisplaySize(TILE, TILE)
+          wall.setDepth(y * 10 + 2)
+          this.worldLayer.add(wall)
+          this.blocked[y][x] = true
         }
       }
     }
-
-    this.player.sprite.setPosition(this.player.x * TILE + TILE / 2, this.player.y * TILE + TILE / 2)
-    this.drawPaths()
   }
 
-  drawPaths() {
-    this.pathLayer.clear()
-    if (!this.showPath) return
+  placeProp(key: string, tx: number, ty: number, w = 1, h = 1, block = true) {
+    const image = this.add.image(tx * TILE + TILE / 2, ty * TILE + TILE / 2, key)
+    image.setDisplaySize(w * TILE, h * TILE)
+    image.setDepth(ty * 10 + 6)
+    this.worldLayer.add(image)
 
-    const draw = (x: number, y: number, path: { x: number; y: number }[], color: number) => {
-      if (!path.length) return
-      this.pathLayer.lineStyle(2, color, 0.9)
-      this.pathLayer.beginPath()
-      this.pathLayer.moveTo(x * TILE + TILE / 2, y * TILE + TILE / 2)
-      for (const p of path) this.pathLayer.lineTo(p.x * TILE + TILE / 2, p.y * TILE + TILE / 2)
-      this.pathLayer.strokePath()
+    if (block) {
+      for (let y = ty; y < ty + h; y++) for (let x = tx; x < tx + w; x++) if (this.blocked[y]?.[x] !== undefined) this.blocked[y][x] = true
+    }
+  }
+
+  buildOfficeProps() {
+    const deskRows = [4, 8, 12]
+    const deskCols = [5, 12, 19, 26]
+
+    for (const y of deskRows) {
+      for (const x of deskCols) {
+        this.placeProp('desk', x, y, 2, 1, true)
+        this.placeProp('monitor', x, y, 1, 1, false)
+        this.placeProp('coffee', x + 1, y, 1, 1, false)
+        this.placeProp('chair', x, y + 1, 1, 1, false)
+        this.floorSpots.push({ x, y: y + 2, name: 'Seat' })
+      }
     }
 
-    draw(this.player.x, this.player.y, this.player.path, 0x22c55e)
-    for (const a of this.agents) draw(a.x, a.y, a.path, a.color)
-  }
+    this.placeProp('plant', 30, 3, 1, 1, false)
+    this.placeProp('plant', 30, 14, 1, 1, false)
 
-  paint(x: number, y: number, tile: TileType) {
-    if (!this.inBounds(x, y)) return
-    if (x === 0 || y === 0 || x === MAP_W - 1 || y === MAP_H - 1) return
-    this.map[y][x] = tile
-    this.redrawAll()
-  }
+    const boxSpot = [
+      [28, 15],
+      [29, 15],
+      [30, 16],
+      [27, 16],
+      [28, 17],
+    ]
+    boxSpot.forEach(([x, y]) => this.placeProp('box', x, y, 1, 1, true))
 
-  assignAgentTask(agent: Agent) {
-    const target = this.findRandomWalkable()
-    const path = findPath(this.map, { x: Math.round(agent.x), y: Math.round(agent.y) }, target)
-    if (path.length) {
-      agent.path = path
-      agent.state = Math.random() > 0.5 ? 'moving' : 'working'
-    } else {
-      agent.state = 'idle'
-    }
+    this.floorSpots.push(
+      { x: 3, y: 3, name: 'Meeting Board' },
+      { x: 16, y: 2, name: 'Signal Analyzer' },
+      { x: 31, y: 6, name: 'Coffee Machine' },
+      { x: 25, y: 17, name: 'Bridge Recorder' },
+      { x: 7, y: 17, name: 'Ops Review' },
+    )
   }
 
   spawnAgent() {
-    const pos = this.findRandomWalkable()
-    const color = Phaser.Display.Color.RandomRGB(100, 255).color
-    const sprite = this.add.rectangle(pos.x * TILE + TILE / 2, pos.y * TILE + TILE / 2, TILE * 0.7, TILE * 0.7, color)
-    sprite.setDepth(9)
+    const rolePool: Role[] = ['AO', 'Bridge', 'Algora', 'Ops']
+    const moods: Mood[] = ['focus', 'chat', 'debug', 'shipping']
+    const role = rolePool[Phaser.Math.Between(0, rolePool.length - 1)]
+    const mood = moods[Phaser.Math.Between(0, moods.length - 1)]
+    const start = this.randomWalkable()
 
-    this.agents.push({
-      id: this.nextAgentId++,
-      color,
-      x: pos.x,
-      y: pos.y,
+    const shadow = this.add.ellipse(0, 0, 14, 6, 0x000000, 0.25).setDepth(900)
+    const sprite = this.add.sprite(0, 0, `agent-${role}-0`).setDepth(910)
+    sprite.setDisplaySize(20, 20)
+
+    const label = this.add
+      .text(0, 0, role, {
+        fontFamily: 'monospace',
+        fontSize: '10px',
+        color: '#e2e8f0',
+        backgroundColor: '#0f172acc',
+        padding: { x: 4, y: 2 },
+      })
+      .setOrigin(0.5)
+      .setDepth(1000)
+
+    const a: Agent = {
+      id: this.nextId++,
+      role,
+      mood,
       sprite,
-      state: 'idle',
+      shadow,
+      label,
+      x: start.x,
+      y: start.y,
       path: [],
-      speed: Phaser.Math.FloatBetween(1.8, 3.4),
-    })
+      speed: Phaser.Math.FloatBetween(2.3, 3.5),
+      pause: Phaser.Math.Between(200, 1500),
+      targetName: 'Idle',
+    }
 
-    this.log(`에이전트 생성 #${this.nextAgentId - 1}`)
+    this.placeAgent(a)
+    this.pickNextPath(a)
+    this.agents.push(a)
+    this.feed(`${role} #${a.id} joined`) 
   }
 
   removeAgent() {
-    const last = this.agents.pop()
-    if (!last) return
-    last.sprite.destroy()
-    this.log(`에이전트 제거 #${last.id}`)
+    const a = this.agents.pop()
+    if (!a) return
+    a.sprite.destroy()
+    a.label.destroy()
+    a.shadow.destroy()
+    this.feed(`${a.role} #${a.id} left`)
   }
 
-  findRandomWalkable() {
-    for (let i = 0; i < 200; i++) {
-      const x = Phaser.Math.Between(1, MAP_W - 2)
-      const y = Phaser.Math.Between(1, MAP_H - 2)
-      if (this.isWalkable(x, y)) return { x, y }
+  placeAgent(a: Agent) {
+    a.sprite.x = a.x * TILE + TILE / 2
+    a.sprite.y = a.y * TILE + TILE / 2
+    a.shadow.x = a.sprite.x
+    a.shadow.y = a.sprite.y + 10
+    a.label.x = a.sprite.x
+    a.label.y = a.sprite.y - 22
+  }
+
+  stepAgent(a: Agent, amount: number) {
+    if (!a.path.length) return
+    const next = a.path[0]
+    const dx = next.x - a.x
+    const dy = next.y - a.y
+    const len = Math.hypot(dx, dy) || 1
+
+    if (len <= amount) {
+      a.x = next.x
+      a.y = next.y
+      a.path.shift()
+      if (a.path.length === 0) a.pause = Phaser.Math.Between(300, 2200)
+    } else {
+      a.x += (dx / len) * amount
+      a.y += (dy / len) * amount
     }
-    return { x: 1, y: 1 }
+
+    const frame = Math.floor(this.time.now / 150) % 3
+    a.sprite.setTexture(`agent-${a.role}-${frame}`)
+    this.placeAgent(a)
   }
 
-  inBounds(x: number, y: number) {
-    return x >= 0 && y >= 0 && x < MAP_W && y < MAP_H
+  pickNextPath(a: Agent) {
+    const t = this.floorSpots[Phaser.Math.Between(0, this.floorSpots.length - 1)]
+    const from = { x: Math.round(a.x), y: Math.round(a.y) }
+    const path = findPath(this.blocked, from, { x: t.x, y: t.y })
+    if (path.length) {
+      a.path = path
+      a.targetName = t.name
+    }
   }
 
-  isWalkable(x: number, y: number) {
-    if (!this.inBounds(x, y)) return false
-    return WALKABLE[this.map[y][x]]
+  randomWalkable() {
+    for (let i = 0; i < 300; i++) {
+      const x = Phaser.Math.Between(1, W - 2)
+      const y = Phaser.Math.Between(1, H - 2)
+      if (!this.blocked[y][x]) return { x, y }
+    }
+    return { x: 2, y: 2 }
   }
 
-  log(msg: string) {
-    const line = document.createElement('div')
-    line.textContent = `${new Date().toLocaleTimeString()} · ${msg}`
-    this.logEl.prepend(line)
-    while (this.logEl.children.length > 20) this.logEl.lastElementChild?.remove()
+  drawRoutes() {
+    this.routesLayer.clear()
+    if (!this.showRoutes) return
+
+    this.routesLayer.lineStyle(1, 0x38bdf8, 0.45)
+    for (const a of this.agents) {
+      if (!a.path.length) continue
+      this.routesLayer.beginPath()
+      this.routesLayer.moveTo(a.sprite.x, a.sprite.y)
+      for (const p of a.path) this.routesLayer.lineTo(p.x * TILE + TILE / 2, p.y * TILE + TILE / 2)
+      this.routesLayer.strokePath()
+    }
   }
 
   drawStats() {
+    const countByRole: Record<Role, number> = { AO: 0, Bridge: 0, Algora: 0, Ops: 0 }
+    this.agents.forEach((a) => (countByRole[a.role] += 1))
+
+    const busiest = Object.entries(countByRole).sort((a, b) => b[1] - a[1])[0]
     const moving = this.agents.filter((a) => a.path.length > 0).length
-    this.statsEl.innerHTML = `
+
+    statsEl.innerHTML = `
       <div>Agents: <b>${this.agents.length}</b></div>
       <div>Moving: <b>${moving}</b></div>
-      <div>Player: <b>${Math.round(this.player.x)}, ${Math.round(this.player.y)}</b></div>
+      <div>Busiest team: <b>${busiest[0]} (${busiest[1]})</b></div>
+      <div>Rush Hour: <b>${this.chaos ? 'ON' : 'OFF'}</b></div>
       <div>Zoom: <b>${this.cameras.main.zoom.toFixed(2)}x</b></div>
     `
   }
 
-  saveMap() {
-    localStorage.setItem('pixel-agent-lab-map', JSON.stringify(this.map))
-    this.log('맵 저장 완료')
+  randomBubble() {
+    if (!this.agents.length) return
+    const words = ['sync', 'compile', 'route', 'ship', 'monitor', 'debug', 'meeting']
+    const a = this.agents[Phaser.Math.Between(0, this.agents.length - 1)]
+    const text = this.add
+      .text(a.sprite.x, a.sprite.y - 34, words[Phaser.Math.Between(0, words.length - 1)], {
+        fontFamily: 'monospace',
+        fontSize: '9px',
+        color: '#0f172a',
+        backgroundColor: '#f8fafc',
+        padding: { x: 4, y: 2 },
+      })
+      .setOrigin(0.5)
+      .setDepth(1200)
+
+    this.tweens.add({
+      targets: text,
+      y: text.y - 8,
+      alpha: 0,
+      duration: 1300,
+      onComplete: () => text.destroy(),
+    })
   }
 
-  loadMap() {
-    const raw = localStorage.getItem('pixel-agent-lab-map')
-    if (!raw) return this.log('저장된 맵 없음')
-    const parsed = JSON.parse(raw) as TileType[][]
-    if (parsed.length === MAP_H && parsed[0]?.length === MAP_W) {
-      this.map = parsed
-      this.redrawAll()
-      this.log('맵 불러오기 완료')
-    }
+  feed(msg: string) {
+    const row = document.createElement('div')
+    row.textContent = `${new Date().toLocaleTimeString()} · ${msg}`
+    feedEl.prepend(row)
+    while (feedEl.children.length > 12) feedEl.lastElementChild?.remove()
   }
 
-  syncUI() {
-    ;(window as any).sceneRef = this
+  balanceAgentCount() {
+    while (this.agents.length < this.desiredAgents) this.spawnAgent()
+    while (this.agents.length > this.desiredAgents) this.removeAgent()
+  }
+
+  refreshOverlay() {
+    overlayEl.innerHTML = `
+      <div class="badge">Mossland Vision Prototype</div>
+      <div class="badge dim">No backend link · Visual only</div>
+    `
   }
 }
 
-function neighbors(x: number, y: number) {
-  return [
-    { x: x + 1, y },
-    { x: x - 1, y },
-    { x, y: y + 1 },
-    { x, y: y - 1 },
-  ]
-}
-
-function keyOf(x: number, y: number) {
+function key(x: number, y: number) {
   return `${x},${y}`
 }
 
-function heuristic(a: { x: number; y: number }, b: { x: number; y: number }) {
+function h(a: { x: number; y: number }, b: { x: number; y: number }) {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y)
 }
 
-function findPath(map: TileType[][], start: { x: number; y: number }, goal: { x: number; y: number }) {
+function findPath(blocked: boolean[][], start: { x: number; y: number }, goal: { x: number; y: number }) {
   if (start.x === goal.x && start.y === goal.y) return []
 
-  const open: { x: number; y: number; f: number }[] = [{ ...start, f: heuristic(start, goal) }]
+  const open: { x: number; y: number; f: number }[] = [{ ...start, f: h(start, goal) }]
   const came = new Map<string, string>()
-  const g = new Map<string, number>([[keyOf(start.x, start.y), 0]])
+  const g = new Map<string, number>([[key(start.x, start.y), 0]])
   const closed = new Set<string>()
 
   while (open.length) {
     open.sort((a, b) => a.f - b.f)
-    const current = open.shift()!
-    const ck = keyOf(current.x, current.y)
+    const cur = open.shift()!
+    const ck = key(cur.x, cur.y)
     if (closed.has(ck)) continue
     closed.add(ck)
 
-    if (current.x === goal.x && current.y === goal.y) {
+    if (cur.x === goal.x && cur.y === goal.y) {
       const path: { x: number; y: number }[] = []
-      let cur = keyOf(goal.x, goal.y)
-      while (cur !== keyOf(start.x, start.y)) {
-        const [x, y] = cur.split(',').map(Number)
+      let p = key(goal.x, goal.y)
+      while (p !== key(start.x, start.y)) {
+        const [x, y] = p.split(',').map(Number)
         path.unshift({ x, y })
-        cur = came.get(cur)!
+        p = came.get(p)!
       }
       return path
     }
 
-    for (const nb of neighbors(current.x, current.y)) {
-      if (!map[nb.y]?.[nb.x]) continue
-      if (!WALKABLE[map[nb.y][nb.x]]) continue
+    const neighbors = [
+      { x: cur.x + 1, y: cur.y },
+      { x: cur.x - 1, y: cur.y },
+      { x: cur.x, y: cur.y + 1 },
+      { x: cur.x, y: cur.y - 1 },
+    ]
 
-      const nk = keyOf(nb.x, nb.y)
+    for (const nb of neighbors) {
+      if (nb.x < 0 || nb.y < 0 || nb.x >= W || nb.y >= H) continue
+      if (blocked[nb.y][nb.x]) continue
+
+      const nk = key(nb.x, nb.y)
       const tentative = (g.get(ck) ?? Infinity) + 1
       if (tentative < (g.get(nk) ?? Infinity)) {
         came.set(nk, ck)
         g.set(nk, tentative)
-        open.push({ x: nb.x, y: nb.y, f: tentative + heuristic(nb, goal) })
+        open.push({ x: nb.x, y: nb.y, f: tentative + h(nb, goal) })
       }
     }
   }
@@ -450,63 +504,12 @@ function findPath(map: TileType[][], start: { x: number; y: number }, goal: { x:
   return []
 }
 
-const game = new Phaser.Game({
+new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'stage',
-  width: MAP_W * TILE,
-  height: MAP_H * TILE,
-  backgroundColor: '#0b1220',
+  width: W * TILE,
+  height: H * TILE,
   pixelArt: true,
-  scene: [DemoScene],
+  backgroundColor: '#111827',
+  scene: [OfficeScene],
 })
-
-const bindUI = () => {
-  const scene = () => ((window as any).sceneRef as DemoScene)
-
-  document.querySelectorAll<HTMLButtonElement>('[data-tile]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('[data-tile]').forEach((b) => b.classList.remove('active'))
-      btn.classList.add('active')
-      scene().selectedTile = btn.dataset.tile as TileType
-    })
-  })
-
-  document.querySelector<HTMLButtonElement>('#toggle-edit')!.addEventListener('click', (e) => {
-    scene().editMode = !scene().editMode
-    ;(e.currentTarget as HTMLButtonElement).textContent = `에디트 모드: ${scene().editMode ? 'ON' : 'OFF'}`
-    scene().log(`에디트 모드 ${scene().editMode ? '활성' : '비활성'}`)
-  })
-
-  document.querySelector<HTMLButtonElement>('#spawn-agent')!.addEventListener('click', () => scene().spawnAgent())
-  document.querySelector<HTMLButtonElement>('#remove-agent')!.addEventListener('click', () => scene().removeAgent())
-  document.querySelector<HTMLInputElement>('#speed')!.addEventListener('input', (e) => {
-    scene().simSpeed = Number((e.currentTarget as HTMLInputElement).value)
-  })
-
-  document.querySelector<HTMLInputElement>('#show-grid')!.addEventListener('change', (e) => {
-    scene().showGrid = (e.currentTarget as HTMLInputElement).checked
-    scene().redrawAll()
-  })
-
-  document.querySelector<HTMLInputElement>('#show-path')!.addEventListener('change', (e) => {
-    scene().showPath = (e.currentTarget as HTMLInputElement).checked
-    scene().drawPaths()
-  })
-
-  document.querySelector<HTMLInputElement>('#show-coll')!.addEventListener('change', (e) => {
-    scene().showCollision = (e.currentTarget as HTMLInputElement).checked
-    scene().redrawAll()
-  })
-
-  document.querySelector<HTMLButtonElement>('#save-map')!.addEventListener('click', () => scene().saveMap())
-  document.querySelector<HTMLButtonElement>('#load-map')!.addEventListener('click', () => scene().loadMap())
-  document.querySelector<HTMLButtonElement>('#reset-map')!.addEventListener('click', () => {
-    scene().createDefaultMap()
-    scene().redrawAll()
-    scene().log('맵 초기화 완료')
-  })
-}
-
-bindUI()
-
-window.addEventListener('beforeunload', () => game.destroy(true))
