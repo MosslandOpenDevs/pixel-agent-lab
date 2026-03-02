@@ -57,10 +57,10 @@ app.innerHTML = `
         <div class="hud-label route" style="left:1070px; top:413px;">Monitor</div>
         <div class="hud-label route" style="left:1070px; top:561px;">Defer</div>
 
-        <div class="hud-label truck" style="left:1260px; top:210px;">Express</div>
-        <div class="hud-label truck" style="left:1260px; top:360px;">Monitor</div>
-        <div class="hud-label truck" style="left:1260px; top:510px;">Defer</div>
-        <div class="hud-label loaded" id="loadedHud" style="left:1248px; top:660px;">Loaded: 0</div>
+        <div class="hud-label truck" style="left:1238px; top:210px;">Express</div>
+        <div class="hud-label truck" style="left:1238px; top:370px;">Monitor</div>
+        <div class="hud-label truck" style="left:1238px; top:530px;">Defer</div>
+        <div class="hud-label loaded" id="loadedHud" style="left:1226px; top:660px;">Loaded: 0</div>
       </div>
     </div>
     <div id="titleBar" class="titleBar">🚚 Mossland Space Hub</div>
@@ -342,50 +342,46 @@ class SpaceHubScene extends Phaser.Scene {
         ];
 
         for (const t of trucks) {
-            // cargo bed shell
+            // cargo bed shell (shifted left)
             this.truckG.fillStyle(0x111827, 0.98);
-            this.truckG.fillRoundedRect(1216, t.y - 46, 154, 78, 10);
+            this.truckG.fillRoundedRect(1196, t.y - 46, 154, 78, 10);
             this.truckG.lineStyle(2, 0x60a5fa, 0.95);
-            this.truckG.strokeRoundedRect(1216, t.y - 46, 154, 78, 10);
+            this.truckG.strokeRoundedRect(1196, t.y - 46, 154, 78, 10);
 
-            // cargo inner bay
+            // cargo inner bay (no basket/rail)
             this.truckG.fillStyle(0x1f2937, 1);
-            this.truckG.fillRoundedRect(1228, t.y - 32, 116, 50, 7);
+            this.truckG.fillRoundedRect(1208, t.y - 32, 116, 50, 7);
             this.truckG.lineStyle(1, 0x334155, 0.9);
-            this.truckG.strokeRoundedRect(1228, t.y - 32, 116, 50, 7);
-
-            // upper rail
-            this.truckG.lineStyle(2, 0x93c5fd, 0.8);
-            this.truckG.lineBetween(1228, t.y - 32, 1344, t.y - 32);
+            this.truckG.strokeRoundedRect(1208, t.y - 32, 116, 50, 7);
 
             // cab
             this.truckG.fillStyle(0x243244, 1);
-            this.truckG.fillRoundedRect(1372, t.y - 32, 30, 60, 6);
+            this.truckG.fillRoundedRect(1352, t.y - 32, 30, 60, 6);
             this.truckG.fillStyle(0x93c5fd, 0.8);
-            this.truckG.fillRect(1377, t.y - 22, 18, 13);
+            this.truckG.fillRect(1357, t.y - 22, 18, 13);
 
             // bumper + light
             this.truckG.fillStyle(0x0f172a, 1);
-            this.truckG.fillRect(1208, t.y + 12, 10, 8);
+            this.truckG.fillRect(1188, t.y + 12, 10, 8);
             this.truckG.fillStyle(0xfef08a, 0.9);
-            this.truckG.fillRect(1209, t.y + 14, 4, 4);
+            this.truckG.fillRect(1189, t.y + 14, 4, 4);
 
             // wheels with hub detail
             this.truckG.fillStyle(0x0b1220, 1);
-            this.truckG.fillCircle(1246, t.y + 34, 11);
-            this.truckG.fillCircle(1342, t.y + 34, 11);
+            this.truckG.fillCircle(1226, t.y + 34, 11);
+            this.truckG.fillCircle(1322, t.y + 34, 11);
             this.truckG.fillStyle(0x94a3b8, 0.85);
-            this.truckG.fillCircle(1246, t.y + 34, 4);
-            this.truckG.fillCircle(1342, t.y + 34, 4);
+            this.truckG.fillCircle(1226, t.y + 34, 4);
+            this.truckG.fillCircle(1322, t.y + 34, 4);
             this.truckG.fillStyle(0x1e293b, 0.9);
-            this.truckG.fillCircle(1246, t.y + 34, 2);
-            this.truckG.fillCircle(1342, t.y + 34, 2);
+            this.truckG.fillCircle(1226, t.y + 34, 2);
+            this.truckG.fillCircle(1322, t.y + 34, 2);
 
             // 4 hidden slots (2x2) for stacking logic
             const slots: Phaser.Math.Vector2[] = [];
             for (let r = 0; r < 2; r++) {
                 for (let c = 0; c < 2; c++) {
-                    const sx = 1244 + c * 34;
+                    const sx = 1224 + c * 34;
                     const sy = t.y - 12 + r * 22;
                     slots.push(new Phaser.Math.Vector2(sx, sy));
                 }
