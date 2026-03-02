@@ -105,6 +105,8 @@ class SpaceHubScene extends Phaser.Scene {
     activeAOCarrier?: Phaser.GameObjects.Sprite;
     activeBridgeCarrier?: Phaser.GameObjects.Sprite;
 
+    aoDebateCard?: Phaser.GameObjects.Text;
+
     busyAlgora = false;
     busyAO = false;
     busyBridge = false;
@@ -513,16 +515,23 @@ class SpaceHubScene extends Phaser.Scene {
         if (!b) return;
         this.busyAO = true;
 
-        const bubble = this.add
-            .text(760, 130, "💬 debate → route", {
-                fontFamily: "monospace",
-                fontSize: "11px",
-                color: "#0f172a",
-                backgroundColor: "#fde68a",
-                padding: { x: 5, y: 2 },
-            })
-            .setOrigin(0.5)
-            .setDepth(60);
+        this.aoDebateCard?.destroy();
+        this.aoDebateCard = this.add
+            .text(
+                760,
+                124,
+                `AO DEBATE\nInput: ${b.id} · ${b.source.toUpperCase()} · ${b.risk.toUpperCase()}\nA) Immediate Action\nB) Monitor\nC) Defer`,
+                {
+                    fontFamily: "monospace",
+                    fontSize: "10px",
+                    color: "#0f172a",
+                    backgroundColor: "#fde68a",
+                    padding: { x: 6, y: 4 },
+                    lineSpacing: 2,
+                }
+            )
+            .setOrigin(0.5, 0)
+            .setDepth(96);
 
         const carrier = this.aoAgents[this.aoTurn % this.aoAgents.length];
         this.activeAOCarrier = carrier;
@@ -530,11 +539,20 @@ class SpaceHubScene extends Phaser.Scene {
         const home = new Phaser.Math.Vector2(carrier.x, carrier.y);
 
         this.time.delayedCall(620, () => {
-            bubble.destroy();
             this.debatesRun += 1;
             b.route = this.decideRoute(b);
             this.plansCreated += 1;
             b.status = "rerouting";
+
+            this.aoDebateCard?.setText(
+                `AO DEBATE\nInput: ${b.id}\nResult: ${b.route}\nReason: ${b.risk.toUpperCase()} risk + ${b.priority} priority`
+            );
+
+            this.time.delayedCall(520, () => {
+                this.aoDebateCard?.destroy();
+                this.aoDebateCard = undefined;
+            });
+
             this.carrierPickAndCarry(carrier, b, 820, ROUTE_Y[b.route], 620, () => {
                 b.status = "on-belt";
                 b.y = ROUTE_Y[b.route];
