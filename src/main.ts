@@ -371,12 +371,12 @@ class SpaceHubScene extends Phaser.Scene {
             this.truckG.fillCircle(1226, t.y + 34, 2);
             this.truckG.fillCircle(1322, t.y + 34, 2);
 
-            // 6 hidden slots (3x2) for stacking logic
+            // 6 hidden slots (3x2) centered in cargo bay with slight spread
             const slots: Phaser.Math.Vector2[] = [];
             for (let r = 0; r < 2; r++) {
                 for (let c = 0; c < 3; c++) {
-                    const sx = 1218 + c * 28;
-                    const sy = t.y - 12 + r * 22;
+                    const sx = 1232 + c * 26;
+                    const sy = t.y - 2 + r * 20;
                     slots.push(new Phaser.Math.Vector2(sx, sy));
                 }
             }
