@@ -26,8 +26,8 @@ type Box = {
 
 const W = 1440;
 const H = 760;
-const BELT_LEFT = 180;
-const BELT_RIGHT = 1140;
+const BELT_LEFT = 220;
+const BELT_RIGHT = 1080;
 const LANE_Y: Record<Priority, number> = { P1: 270, P2: 420, P3: 570 };
 const ROUTE_Y: Record<Route, number> = { "Immediate Action": 260, Monitor: 420, Defer: 580 };
 
