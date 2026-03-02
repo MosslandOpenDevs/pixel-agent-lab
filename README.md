@@ -3,6 +3,8 @@
 `pixel-agent-lab`은 Mossland 핵심 서비스(Algora, AO, Bridge)의 운영 흐름을 **우주 물류 센터 시각화**로 구현한 데모입니다.  
 본 README는 데모의 목적, 서비스 역할, 에이전트 행동, UI 구성, 상태 전이 모델을 공식 문서 형태로 정리합니다.
 
+https://github.com/user-attachments/assets/1e3ab6cb-41f0-4bff-a227-a6b4505b2c3e
+
 ## 1) 데모 목적
 
 이 데모의 목표는 다음과 같습니다.
