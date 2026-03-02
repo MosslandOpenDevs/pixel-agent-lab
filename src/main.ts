@@ -3,7 +3,8 @@ import Phaser from 'phaser'
 
 type Priority = 'P1' | 'P2' | 'P3'
 type Route = 'Immediate Action' | 'Monitor' | 'Defer'
-type Phase = 'algora' | 'ao' | 'bridge'
+type Phase = 'algora' | 'ao' | 'bridge' | 'done'
+type BoxStatus = 'inbound' | 'on-belt' | 'debating' | 'rerouting' | 'loading' | 'loaded'
 
 type Box = {
   id: string
@@ -11,29 +12,22 @@ type Box = {
   category: string
   risk: 'high' | 'medium' | 'low'
   priority: Priority
-  route?: Route
+  route: Route
   phase: Phase
-  status: string
+  status: BoxStatus
   x: number
   y: number
-  speed: number
-  waitMs: number
+  beltY: number
   sprite: Phaser.GameObjects.Image
   tag: Phaser.GameObjects.Text
 }
 
 const W = 1440
 const H = 760
-const BELT_LEFT = 80
-const BELT_RIGHT = 1170
-const LANE_Y = { P1: 230, P2: 380, P3: 530 }
+const BELT_LEFT = 180
+const BELT_RIGHT = 1140
+const LANE_Y: Record<Priority, number> = { P1: 230, P2: 380, P3: 530 }
 const ROUTE_Y: Record<Route, number> = { 'Immediate Action': 220, Monitor: 380, Defer: 540 }
-
-const COLOR = {
-  algora: 0x34d399,
-  ao: 0xf59e0b, // swapped (was bridge)
-  bridge: 0x60a5fa, // swapped (was ao)
-}
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 app.innerHTML = `
@@ -41,16 +35,13 @@ app.innerHTML = `
   <aside class="panel">
     <h1>Mossland Space Hub</h1>
     <p class="sub">우주 물류 센터 · Algora → AO → Bridge</p>
-
     <div class="mini">
       <label>속도 <input id="speed" type="range" min="0.7" max="1.8" step="0.1" value="1" /></label>
       <label>박스 수 <input id="maxBoxes" type="range" min="4" max="10" value="8" /></label>
     </div>
-
     <div id="stats" class="stats"></div>
     <div id="detail" class="detail"><h2>상세 정보</h2><p>박스를 클릭하면 상세 정보가 표시됩니다.</p></div>
   </aside>
-
   <main class="stage-wrap">
     <div id="stage"></div>
     <div id="titleBar" class="titleBar">🚚 Orbital Conveyor Operations</div>
@@ -66,92 +57,115 @@ class SpaceHubScene extends Phaser.Scene {
   nextId = 1
   lastSpawn = 0
   beltOffset = 0
-  loadedCount = 0
+  loaded = 0
 
-  beltLayer!: Phaser.GameObjects.Graphics
-  fxLayer!: Phaser.GameObjects.Graphics
-  truckLayer!: Phaser.GameObjects.Graphics
-  truckCountText!: Phaser.GameObjects.Text
+  beltG!: Phaser.GameObjects.Graphics
+  decoG!: Phaser.GameObjects.Graphics
+  truckG!: Phaser.GameObjects.Graphics
+  truckCount!: Phaser.GameObjects.Text
+
+  algoraCarrier!: Phaser.GameObjects.Sprite
+  aoCarrier!: Phaser.GameObjects.Sprite
+  bridgeCarrier!: Phaser.GameObjects.Sprite
+  aoDiscussA!: Phaser.GameObjects.Sprite
+  aoDiscussB!: Phaser.GameObjects.Sprite
+
+  busyAlgora = false
+  busyAO = false
+  busyBridge = false
+
   cargoSlots: Phaser.Math.Vector2[] = []
 
-  algoraBots: Phaser.GameObjects.Sprite[] = []
-  aoBots: Phaser.GameObjects.Sprite[] = []
-  bridgeBots: Phaser.GameObjects.Sprite[] = []
-
   create() {
-    this.createTextures()
+    this.makeTextures()
     this.drawBackground()
 
-    this.beltLayer = this.add.graphics().setDepth(10)
-    this.fxLayer = this.add.graphics().setDepth(50)
-    this.truckLayer = this.add.graphics().setDepth(35)
+    this.beltG = this.add.graphics().setDepth(10)
+    this.decoG = this.add.graphics().setDepth(14)
+    this.truckG = this.add.graphics().setDepth(30)
 
-    this.drawServiceLabels()
-    this.drawAOBranchHints()
+    this.drawBelts()
+    this.drawLabels()
     this.spawnAgents()
-    this.buildTruck()
+    this.buildTrucks()
 
     this.input.on('gameobjectdown', (_: any, go: any) => {
       const box = this.boxes.find((b) => b.sprite === go)
       if (box) this.showDetail(box)
     })
 
-    this.time.addEvent({ delay: 420, loop: true, callback: () => this.updateAgentAnim() })
+    this.time.addEvent({ delay: 420, loop: true, callback: () => this.animateAgents() })
   }
 
   update(_: number, dt: number) {
-    const speedMul = Number((document.querySelector('#speed') as HTMLInputElement).value)
+    const speed = Number((document.querySelector('#speed') as HTMLInputElement).value)
     const maxBoxes = Number((document.querySelector('#maxBoxes') as HTMLInputElement).value)
 
-    this.beltOffset += dt * 0.06
+    this.beltOffset += dt * 0.07 * speed
     this.drawBelts()
 
-    if (this.time.now - this.lastSpawn > 1600 && this.boxes.length < maxBoxes) {
-      this.spawnBox()
+    if (this.time.now - this.lastSpawn > 1700 && this.boxes.filter((b) => b.phase !== 'done').length < maxBoxes) {
+      this.spawnInboundBox()
       this.lastSpawn = this.time.now
     }
 
-    for (const b of this.boxes) {
-      if (b.waitMs > 0) b.waitMs -= dt
-      else this.moveBox(b, (dt / 1000) * b.speed * speedMul)
+    this.tryAlgoraCarry()
+    this.tryAODebateAndCarry()
+    this.tryBridgeLoad()
 
-      b.tag.setPosition(b.x, b.y - 25)
+    for (const b of this.boxes) {
+      if (b.status === 'on-belt') {
+        b.x += 0.8 * speed
+        if (b.phase === 'algora' && b.x >= 650) {
+          b.phase = 'ao'
+          b.status = 'debating'
+        }
+        if (b.phase === 'ao' && b.x >= 980) {
+          b.phase = 'bridge'
+          b.status = 'loading'
+        }
+      }
+
       b.sprite.setPosition(b.x, b.y)
+      b.tag.setPosition(b.x, b.y - 26)
     }
 
-    this.drawFlowFX()
     this.drawStats()
   }
 
-  createTextures() {
+  makeTextures() {
     this.textures.generate('star', {
       pixelWidth: 2,
       data: ['..a..', '.aaa.', 'aaaaa', '.aaa.', '..a..'],
       palette: { a: '#ffffff', '.': '#00000000' } as any,
     })
 
+    // more box-like parcel texture
     this.textures.generate('parcel', {
       pixelWidth: 2,
       data: [
-        '.....aaaaaa.....',
-        '....abbbbbba....',
-        '...abccccccba...',
-        '..abccddddd cba..',
-        '..abccddddd cba..',
-        '..abccddddd cba..',
-        '..abccccccba....',
-        '...abbbbbba.....',
-        '....aeeffeea....',
-        '.....aaaaaa.....',
+        '.......aaaaaa.......',
+        '......abbbbbba......',
+        '.....abccccccba.....',
+        '....abccddddccba....',
+        '...abccddddddccba...',
+        '...abccddddddccba...',
+        '...abccddddddccba...',
+        '...abccddddddccba...',
+        '...abccddddddccba...',
+        '....abccddddccba....',
+        '.....abccccccba.....',
+        '......abbbbbba......',
+        '.......aeeffeea.....',
+        '........aaaaaa......',
       ],
       palette: {
         a: '#6b4f2f',
-        b: '#b68a58',
-        c: '#d1a671',
-        d: '#e8c38f',
-        e: '#f5e6b4',
+        b: '#b78955',
+        c: '#d5a870',
+        d: '#e8c693',
+        e: '#f1e3be',
         f: '#8b5cf6',
-        ' ': '#00000000',
         '.': '#00000000',
       } as any,
     })
@@ -176,209 +190,268 @@ class SpaceHubScene extends Phaser.Scene {
 
   drawBackground() {
     this.add.rectangle(W / 2, H / 2, W, H, 0x060b1b)
-    for (let i = 0; i < 130; i++) {
+    for (let i = 0; i < 120; i++) {
       const s = this.add.image(Phaser.Math.Between(0, W), Phaser.Math.Between(0, H), 'star').setDepth(2)
       s.setScale(Phaser.Math.FloatBetween(0.2, 0.6))
       s.setAlpha(Phaser.Math.FloatBetween(0.2, 0.9))
     }
-
-    this.add.rectangle(180, H / 2, 320, H - 80, 0x0f2d2a, 0.18).setStrokeStyle(2, COLOR.algora, 0.35)
-    this.add.rectangle(W / 2, H / 2, 460, H - 80, 0x3f2a12, 0.16).setStrokeStyle(2, COLOR.ao, 0.35)
-    this.add.rectangle(W - 190, H / 2, 340, H - 80, 0x10263f, 0.16).setStrokeStyle(2, COLOR.bridge, 0.35)
+    this.add.rectangle(220, H / 2, 320, H - 80, 0x0f2d2a, 0.18).setStrokeStyle(2, 0x34d399, 0.35)
+    this.add.rectangle(W / 2, H / 2, 420, H - 80, 0x3f2a12, 0.16).setStrokeStyle(2, 0xf59e0b, 0.35)
+    this.add.rectangle(W - 190, H / 2, 330, H - 80, 0x10263f, 0.16).setStrokeStyle(2, 0x60a5fa, 0.35)
   }
 
   drawBelts() {
-    this.beltLayer.clear()
+    this.beltG.clear()
 
-    const lanes: [Priority, number][] = [
-      ['P1', LANE_Y.P1],
-      ['P2', LANE_Y.P2],
-      ['P3', LANE_Y.P3],
-    ]
-
+    const lanes: [Priority, number][] = [['P1', LANE_Y.P1], ['P2', LANE_Y.P2], ['P3', LANE_Y.P3]]
     for (const [p, y] of lanes) {
       const tone = p === 'P1' ? 0x4b1a1a : p === 'P2' ? 0x1e293b : 0x131925
-      this.beltLayer.fillStyle(tone, 0.86)
-      this.beltLayer.fillRoundedRect(BELT_LEFT, y - 30, BELT_RIGHT - BELT_LEFT, 60, 14)
+      this.beltG.fillStyle(tone, 0.9)
+      this.beltG.fillRoundedRect(BELT_LEFT, y - 32, BELT_RIGHT - BELT_LEFT, 64, 14)
+      this.beltG.lineStyle(4, 0x475569, 0.7)
+      this.beltG.strokeRoundedRect(BELT_LEFT, y - 32, BELT_RIGHT - BELT_LEFT, 64, 14)
 
-      this.beltLayer.lineStyle(4, 0x475569, 0.7)
-      this.beltLayer.strokeRoundedRect(BELT_LEFT, y - 30, BELT_RIGHT - BELT_LEFT, 60, 14)
-
-      // rollers
-      for (let x = BELT_LEFT + 16; x < BELT_RIGHT - 16; x += 28) {
-        this.beltLayer.fillStyle(0x94a3b8, 0.35)
-        this.beltLayer.fillCircle(x, y, 4)
+      // wheel-like rollers
+      for (let x = BELT_LEFT + 12; x < BELT_RIGHT - 12; x += 30) {
+        this.beltG.fillStyle(0x64748b, 0.55)
+        this.beltG.fillCircle(x, y, 6)
+        this.beltG.fillStyle(0x334155, 0.85)
+        this.beltG.fillCircle(x, y, 2)
       }
 
-      // moving chevrons
-      for (let x = BELT_LEFT - 30; x < BELT_RIGHT; x += 54) {
+      // belt tread animation
+      for (let x = BELT_LEFT - 34; x < BELT_RIGHT + 10; x += 54) {
         const sx = x + (this.beltOffset % 54)
-        this.beltLayer.fillStyle(0xe2e8f0, 0.16)
-        this.beltLayer.fillTriangle(sx, y - 10, sx + 18, y, sx, y + 10)
+        this.beltG.fillStyle(0xe2e8f0, 0.18)
+        this.beltG.fillTriangle(sx, y - 10, sx + 22, y, sx, y + 10)
       }
     }
 
-    this.add.text(94, LANE_Y.P1 - 50, 'P1 URGENT', { fontSize: '11px', color: '#fca5a5', fontFamily: 'monospace' }).setDepth(12)
-    this.add.text(94, LANE_Y.P2 - 50, 'P2 NORMAL', { fontSize: '11px', color: '#93c5fd', fontFamily: 'monospace' }).setDepth(12)
-    this.add.text(94, LANE_Y.P3 - 50, 'P3 LOW', { fontSize: '11px', color: '#cbd5e1', fontFamily: 'monospace' }).setDepth(12)
+    this.beltG.fillStyle(0x0f172a, 0.85)
+    this.beltG.fillRoundedRect(BELT_LEFT - 14, LANE_Y.P1 - 40, 58, 380, 8)
+    this.beltG.fillRoundedRect(BELT_RIGHT - 45, LANE_Y.P1 - 40, 58, 380, 8)
   }
 
-  drawServiceLabels() {
-    this.add.text(115, 120, 'ALGORA · Inbound Tagging', { fontSize: '14px', color: '#86efac', fontFamily: 'monospace' })
-    this.add.text(W / 2 - 120, 120, 'AO · Routing Discussion', { fontSize: '14px', color: '#fcd34d', fontFamily: 'monospace' })
+  drawLabels() {
+    this.add.text(90, LANE_Y.P1 - 52, 'P1 URGENT', { fontSize: '11px', color: '#fca5a5', fontFamily: 'monospace' })
+    this.add.text(90, LANE_Y.P2 - 52, 'P2 NORMAL', { fontSize: '11px', color: '#93c5fd', fontFamily: 'monospace' })
+    this.add.text(90, LANE_Y.P3 - 52, 'P3 LOW', { fontSize: '11px', color: '#cbd5e1', fontFamily: 'monospace' })
+
+    this.add.text(130, 120, 'ALGORA · Inbound Tagging', { fontSize: '14px', color: '#86efac', fontFamily: 'monospace' })
+    this.add.text(W / 2 - 110, 120, 'AO · Routing Discussion', { fontSize: '14px', color: '#fcd34d', fontFamily: 'monospace' })
     this.add.text(W - 350, 120, 'BRIDGE · Dispatch Bay', { fontSize: '14px', color: '#93c5fd', fontFamily: 'monospace' })
-  }
 
-  drawAOBranchHints() {
-    this.add.line(0, 760, LANE_Y.P1, 980, ROUTE_Y['Immediate Action'], COLOR.ao, 0.35).setOrigin(0, 0).setLineWidth(2, 2)
-    this.add.line(0, 760, LANE_Y.P2, 980, ROUTE_Y.Monitor, COLOR.ao, 0.35).setOrigin(0, 0).setLineWidth(2, 2)
-    this.add.line(0, 760, LANE_Y.P3, 980, ROUTE_Y.Defer, COLOR.ao, 0.35).setOrigin(0, 0).setLineWidth(2, 2)
-
-    this.add.text(1010, 187, 'Immediate Action', { color: '#fde68a', fontSize: '11px', fontFamily: 'monospace' })
-    this.add.text(1010, 347, 'Monitor', { color: '#fde68a', fontSize: '11px', fontFamily: 'monospace' })
-    this.add.text(1010, 507, 'Defer', { color: '#fde68a', fontSize: '11px', fontFamily: 'monospace' })
+    this.add.text(990, 188, 'Immediate Action', { color: '#fde68a', fontSize: '11px', fontFamily: 'monospace' })
+    this.add.text(990, 348, 'Monitor', { color: '#fde68a', fontSize: '11px', fontFamily: 'monospace' })
+    this.add.text(990, 508, 'Defer', { color: '#fde68a', fontSize: '11px', fontFamily: 'monospace' })
   }
 
   spawnAgents() {
-    const make = (key: string, x: number, y: number) => this.add.sprite(x, y, `${key}-0`).setDepth(40).setDisplaySize(44, 44)
-
-    this.algoraBots.push(make('algora-bot', 150, 170), make('algora-bot', 220, 170))
-    this.aoBots.push(make('ao-bot', 650, 165), make('ao-bot', 720, 165), make('ao-bot', 790, 165))
-    this.bridgeBots.push(make('bridge-bot', 1210, 170), make('bridge-bot', 1280, 170))
+    const m = (key: string, x: number, y: number) => this.add.sprite(x, y, `${key}-0`).setDepth(40).setDisplaySize(44, 44)
+    this.algoraCarrier = m('algora-bot', 150, 170)
+    this.aoCarrier = m('ao-bot', 690, 168)
+    this.bridgeCarrier = m('bridge-bot', 1185, 168)
+    this.aoDiscussA = m('ao-bot', 760, 168)
+    this.aoDiscussB = m('ao-bot', 830, 168)
   }
 
-  buildTruck() {
-    this.truckLayer.clear()
-    this.truckLayer.fillStyle(0x111827, 0.95)
-    this.truckLayer.fillRoundedRect(1210, 300, 190, 170, 14)
-    this.truckLayer.lineStyle(3, COLOR.bridge, 0.9)
-    this.truckLayer.strokeRoundedRect(1210, 300, 190, 170, 14)
+  buildTrucks() {
+    this.truckG.clear()
 
-    this.truckLayer.fillStyle(0x1f2937, 1)
-    this.truckLayer.fillRoundedRect(1222, 335, 166, 100, 8)
-    this.add.text(1260, 313, 'DISPATCH SHUTTLE', { color: '#bfdbfe', fontSize: '11px', fontFamily: 'monospace' }).setDepth(36)
+    // 3 trucks for 3 routes
+    const trucks = [
+      { label: 'Express', y: 188 },
+      { label: 'Monitor', y: 348 },
+      { label: 'Defer', y: 508 },
+    ]
 
     this.cargoSlots = []
-    for (let r = 0; r < 2; r++) {
-      for (let c = 0; c < 3; c++) {
-        const x = 1248 + c * 46
-        const y = 360 + r * 44
-        this.cargoSlots.push(new Phaser.Math.Vector2(x, y))
-        this.truckLayer.lineStyle(1, 0x475569, 0.6)
-        this.truckLayer.strokeRoundedRect(x - 16, y - 12, 32, 24, 4)
+    for (const t of trucks) {
+      this.truckG.fillStyle(0x111827, 0.96)
+      this.truckG.fillRoundedRect(1200, t.y - 54, 200, 100, 12)
+      this.truckG.lineStyle(2, 0x60a5fa, 0.9)
+      this.truckG.strokeRoundedRect(1200, t.y - 54, 200, 100, 12)
+      this.truckG.fillStyle(0x1f2937, 1)
+      this.truckG.fillRoundedRect(1212, t.y - 30, 112, 56, 8)
+      this.add.text(1328, t.y - 40, t.label, { color: '#bfdbfe', fontSize: '11px', fontFamily: 'monospace' }).setDepth(36)
+
+      for (let i = 0; i < 2; i++) {
+        const slot = new Phaser.Math.Vector2(1238 + i * 38, t.y - 2)
+        this.cargoSlots.push(slot)
+        this.truckG.lineStyle(1, 0x475569, 0.6)
+        this.truckG.strokeRoundedRect(slot.x - 16, slot.y - 12, 32, 24, 4)
       }
     }
 
-    this.truckCountText = this.add.text(1258, 448, 'Loaded: 0', { color: '#93c5fd', fontSize: '11px', fontFamily: 'monospace' }).setDepth(36)
+    this.truckCount = this.add.text(1248, 610, 'Loaded: 0', { color: '#93c5fd', fontSize: '11px', fontFamily: 'monospace' }).setDepth(36)
   }
 
-  updateAgentAnim() {
+  animateAgents() {
     const frame = Math.floor(this.time.now / 420) % 2
-    const set = (arr: Phaser.GameObjects.Sprite[], key: string) => arr.forEach((s) => s.setTexture(`${key}-${frame}`))
-    set(this.algoraBots, 'algora-bot')
-    set(this.aoBots, 'ao-bot')
-    set(this.bridgeBots, 'bridge-bot')
+    const set = (s: Phaser.GameObjects.Sprite, key: string) => s.setTexture(`${key}-${frame}`)
+    set(this.algoraCarrier, 'algora-bot')
+    set(this.aoCarrier, 'ao-bot')
+    set(this.bridgeCarrier, 'bridge-bot')
+    set(this.aoDiscussA, 'ao-bot')
+    set(this.aoDiscussB, 'ao-bot')
   }
 
-  spawnBox() {
+  spawnInboundBox() {
     const riskPool: Array<Box['risk']> = ['high', 'medium', 'low']
     const sourcePool = ['github', 'rss', 'social', 'chain']
     const categoryPool = ['ai', 'dev', 'security', 'crypto']
 
-    const risk = riskPool[Phaser.Math.Between(0, riskPool.length - 1)]
+    const risk = riskPool[Phaser.Math.Between(0, 2)]
     const priority: Priority = risk === 'high' ? 'P1' : risk === 'medium' ? 'P2' : 'P3'
-
     const id = `BX-${String(this.nextId++).padStart(4, '0')}`
+
     const x = 120
-    const y = LANE_Y[priority]
-
-    const sprite = this.add.image(x, y, 'parcel').setDepth(30).setDisplaySize(54, 38)
+    const y = 110
+    const sprite = this.add.image(x, y, 'parcel').setDepth(30).setDisplaySize(56, 40)
     sprite.setInteractive({ cursor: 'pointer' })
-
     const tag = this.add
-      .text(x, y - 25, id, {
-        color: '#e2e8f0',
-        fontFamily: 'monospace',
-        fontSize: '10px',
-        backgroundColor: '#0f172acc',
-        padding: { x: 4, y: 2 },
+      .text(x, y - 26, id, {
+        color: '#e2e8f0', fontFamily: 'monospace', fontSize: '10px', backgroundColor: '#0f172acc', padding: { x: 4, y: 2 },
       })
       .setOrigin(0.5)
       .setDepth(31)
 
     this.boxes.push({
       id,
-      source: sourcePool[Phaser.Math.Between(0, sourcePool.length - 1)],
-      category: categoryPool[Phaser.Math.Between(0, categoryPool.length - 1)],
+      source: sourcePool[Phaser.Math.Between(0, 3)],
+      category: categoryPool[Phaser.Math.Between(0, 3)],
       risk,
       priority,
+      route: 'Monitor',
       phase: 'algora',
-      status: 'tagged',
+      status: 'inbound',
       x,
       y,
-      speed: Phaser.Math.FloatBetween(62, 85),
-      waitMs: Phaser.Math.Between(280, 900),
+      beltY: LANE_Y[priority],
       sprite,
       tag,
     })
   }
 
-  moveBox(b: Box, amount: number) {
-    if (b.phase === 'algora') {
-      b.x += amount
-      if (b.x >= 690) {
-        b.phase = 'ao'
-        b.status = 'under debate'
-        b.waitMs = Phaser.Math.Between(700, 1300)
-      }
-      return
-    }
+  tryAlgoraCarry() {
+    if (this.busyAlgora) return
+    const b = this.boxes.find((x) => x.status === 'inbound')
+    if (!b) return
+    this.busyAlgora = true
 
-    if (b.phase === 'ao') {
-      if (!b.route) {
-        b.route = this.decideRoute(b)
-        b.status = `routed: ${b.route}`
-      }
-      b.y = Phaser.Math.Linear(b.y, ROUTE_Y[b.route], 0.08)
-      b.x += amount * 1.08
+    this.algoraCarrierMoveTo(b.x + 22, b.y, () => {
+      b.status = 'on-belt'
+      // carry motion onto correct lane
+      this.tweens.add({
+        targets: b,
+        x: BELT_LEFT + 20,
+        y: b.beltY,
+        duration: 520,
+        onUpdate: () => {
+          b.sprite.setPosition(b.x, b.y)
+          b.tag.setPosition(b.x, b.y - 26)
+        },
+        onComplete: () => {
+          this.algoraCarrierMoveTo(150, 170, () => (this.busyAlgora = false))
+        },
+      })
+    })
+  }
 
-      if (b.x >= 1110) {
-        b.phase = 'bridge'
-        b.status = 'loading'
-      }
-      return
-    }
+  tryAODebateAndCarry() {
+    if (this.busyAO) return
+    const b = this.boxes.find((x) => x.phase === 'ao' && x.status === 'debating')
+    if (!b) return
+    this.busyAO = true
 
-    // bridge
-    const slot = this.cargoSlots[this.loadedCount % this.cargoSlots.length]
-    if (b.x < slot.x - 4) {
-      b.x += amount * 1.1
-      b.status = 'loading'
-    } else {
-      b.y = Phaser.Math.Linear(b.y, slot.y, 0.22)
-      b.x = Phaser.Math.Linear(b.x, slot.x, 0.22)
-      b.status = 'loaded'
-      if (Phaser.Math.Distance.Between(b.x, b.y, slot.x, slot.y) < 2) {
-        this.loadedCount += 1
-        this.truckCountText.setText(`Loaded: ${this.loadedCount}`)
-        b.sprite.destroy()
-        b.tag.destroy()
-        this.boxes = this.boxes.filter((x) => x !== b)
-      }
-    }
+    const bubble = this.add
+      .text(760, 130, '💬 route?', { fontFamily: 'monospace', fontSize: '11px', color: '#0f172a', backgroundColor: '#fde68a', padding: { x: 5, y: 2 } })
+      .setOrigin(0.5)
+      .setDepth(60)
+
+    this.time.delayedCall(600, () => {
+      bubble.destroy()
+      b.route = this.decideRoute(b)
+      b.status = 'rerouting'
+
+      this.aoCarrierMoveTo(b.x, b.y, () => {
+        this.tweens.add({
+          targets: b,
+          x: 820,
+          y: ROUTE_Y[b.route],
+          duration: 560,
+          onUpdate: () => {
+            b.sprite.setPosition(b.x, b.y)
+            b.tag.setPosition(b.x, b.y - 26)
+          },
+          onComplete: () => {
+            b.status = 'on-belt'
+            b.y = ROUTE_Y[b.route]
+            this.aoCarrierMoveTo(690, 168, () => (this.busyAO = false))
+          },
+        })
+      })
+    })
+  }
+
+  tryBridgeLoad() {
+    if (this.busyBridge) return
+    const b = this.boxes.find((x) => x.phase === 'bridge' && x.status === 'loading')
+    if (!b) return
+    this.busyBridge = true
+
+    const slot = this.findNextSlot(b.route)
+    this.bridgeCarrierMoveTo(b.x, b.y, () => {
+      this.tweens.add({
+        targets: b,
+        x: slot.x,
+        y: slot.y,
+        duration: 680,
+        onUpdate: () => {
+          b.sprite.setPosition(b.x, b.y)
+          b.tag.setPosition(b.x, b.y - 26)
+        },
+        onComplete: () => {
+          b.status = 'loaded'
+          b.phase = 'done'
+          b.sprite.setDepth(34)
+          b.tag.destroy()
+          this.loaded += 1
+          this.truckCount.setText(`Loaded: ${this.loaded}`)
+          this.bridgeCarrierMoveTo(1185, 168, () => (this.busyBridge = false))
+        },
+      })
+    })
+  }
+
+  findNextSlot(route: Route) {
+    const groupIndex = route === 'Immediate Action' ? 0 : route === 'Monitor' ? 1 : 2
+    const base = groupIndex * 2
+    const idx = base + (this.loaded % 2)
+    return this.cargoSlots[idx]
   }
 
   decideRoute(b: Box): Route {
     if (b.priority === 'P1') return 'Immediate Action'
-    if (b.priority === 'P2') return Math.random() > 0.52 ? 'Monitor' : 'Immediate Action'
-    return Math.random() > 0.56 ? 'Defer' : 'Monitor'
+    if (b.priority === 'P2') return Math.random() > 0.5 ? 'Monitor' : 'Immediate Action'
+    return Math.random() > 0.55 ? 'Defer' : 'Monitor'
+  }
+
+  algoraCarrierMoveTo(x: number, y: number, onDone: () => void) {
+    this.tweens.add({ targets: this.algoraCarrier, x, y, duration: 300, onComplete: onDone })
+  }
+  aoCarrierMoveTo(x: number, y: number, onDone: () => void) {
+    this.tweens.add({ targets: this.aoCarrier, x, y, duration: 320, onComplete: onDone })
+  }
+  bridgeCarrierMoveTo(x: number, y: number, onDone: () => void) {
+    this.tweens.add({ targets: this.bridgeCarrier, x, y, duration: 360, onComplete: onDone })
   }
 
   drawFlowFX() {
-    this.fxLayer.clear()
-    this.fxLayer.lineStyle(2, COLOR.ao, 0.25)
+    this.decoG.clear()
+    this.decoG.lineStyle(2, 0xf59e0b, 0.24)
     for (const b of this.boxes) {
-      if (b.phase === 'ao' || b.phase === 'bridge') this.fxLayer.lineBetween(760, LANE_Y[b.priority], b.x, b.y)
+      if (b.phase === 'ao' || b.phase === 'bridge') this.decoG.lineBetween(760, b.beltY, b.x, b.y)
     }
   }
 
@@ -391,8 +464,8 @@ class SpaceHubScene extends Phaser.Scene {
       <div class="row"><span>Algora</span><b>${algora}</b></div>
       <div class="row"><span>AO</span><b>${ao}</b></div>
       <div class="row"><span>Bridge</span><b>${bridge}</b></div>
-      <div class="row"><span>적재 완료</span><b>${this.loadedCount}</b></div>
-      <div class="row"><span>활성 박스</span><b>${this.boxes.length}</b></div>
+      <div class="row"><span>적재 완료</span><b>${this.loaded}</b></div>
+      <div class="row"><span>활성 박스</span><b>${this.boxes.filter((b) => b.phase !== 'done').length}</b></div>
     `
   }
 
@@ -405,8 +478,8 @@ class SpaceHubScene extends Phaser.Scene {
       <div class="drow"><span>category</span><b>${b.category}</b></div>
       <div class="drow"><span>risk</span><b>${b.risk}</b></div>
       <div class="drow"><span>priority</span><b>${b.priority}</b></div>
-      <div class="drow"><span>AO route</span><b>${b.route ?? '-'}</b></div>
-      <p class="hint">Algora가 태그 부착 → AO가 분기 라우팅 → Bridge가 셔틀에 적재하여 출고합니다.</p>
+      <div class="drow"><span>AO route</span><b>${b.route}</b></div>
+      <p class="hint">Algora 에이전트가 직접 벨트에 적재 → AO 토론 후 분기 이동 → Bridge 에이전트가 트럭에 직접 적재.</p>
     `
   }
 }
