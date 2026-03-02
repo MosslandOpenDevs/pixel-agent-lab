@@ -52,18 +52,18 @@ app.innerHTML = `
         <div class="hud-label lane p2" style="left:132px; top:411px;">P2 NORMAL</div>
         <div class="hud-label lane p3" style="left:132px; top:561px;">P3 LOW</div>
 
-        <div class="hud-label zone algora" style="left:112px; top:88px;">ALGORA</div>
-        <div class="hud-label zone ao" style="left:620px; top:88px;">Agentic Orchestrator</div>
-        <div class="hud-label zone bridge" style="left:1160px; top:88px;">BRIDGE</div>
+        <div class="hud-label zone algora" style="left:85px; top:68px;">ALGORA</div>
+        <div class="hud-label zone ao" style="left:540px; top:68px;">Agentic Orchestrator</div>
+        <div class="hud-label zone bridge" style="left:990px; top:68px;">BRIDGE</div>
 
         <div class="hud-label route" style="left:1020px; top:262px;">Immediate Action</div>
         <div class="hud-label route" style="left:1020px; top:413px;">Monitor</div>
         <div class="hud-label route" style="left:1020px; top:561px;">Defer</div>
 
-        <div class="hud-label truck" style="left:1222px; top:205px;">Express</div>
-        <div class="hud-label truck" style="left:1222px; top:355px;">Monitor</div>
-        <div class="hud-label truck" style="left:1222px; top:505px;">Defer</div>
-        <div class="hud-label loaded" id="loadedHud" style="left:1210px; top:660px;">Loaded: 0</div>
+        <div class="hud-label truck" style="left:1210px; top:205px;">Express</div>
+        <div class="hud-label truck" style="left:1210px; top:355px;">Monitor</div>
+        <div class="hud-label truck" style="left:1210px; top:505px;">Defer</div>
+        <div class="hud-label loaded" id="loadedHud" style="left:1198px; top:660px;">Loaded: 0</div>
       </div>
     </div>
     <div id="titleBar" class="titleBar">🚚 Mossland Space Hub</div>
@@ -430,38 +430,38 @@ class SpaceHubScene extends Phaser.Scene {
         for (const t of trucks) {
             // cargo bed shell
             this.truckG.fillStyle(0x131925, 0.98);
-            this.truckG.fillRoundedRect(1180, t.y - 46, 154, 78, 10);
+            this.truckG.fillRoundedRect(1168, t.y - 46, 154, 78, 10);
             this.truckG.lineStyle(2, 0x60a5fa, 0.95);
-            this.truckG.strokeRoundedRect(1180, t.y - 46, 154, 78, 10);
+            this.truckG.strokeRoundedRect(1168, t.y - 46, 154, 78, 10);
 
             // cab
             this.truckG.fillStyle(0x243244, 1);
-            this.truckG.fillRoundedRect(1336, t.y - 32, 30, 60, 6);
+            this.truckG.fillRoundedRect(1324, t.y - 32, 30, 60, 6);
             this.truckG.fillStyle(0x93c5fd, 0.8);
-            this.truckG.fillRect(1341, t.y - 22, 18, 13);
+            this.truckG.fillRect(1329, t.y - 22, 18, 13);
 
             // bumper + light
             this.truckG.fillStyle(0x0f172a, 1);
-            this.truckG.fillRect(1172, t.y + 12, 10, 8);
+            this.truckG.fillRect(1160, t.y + 12, 10, 8);
             this.truckG.fillStyle(0xfef08a, 0.9);
-            this.truckG.fillRect(1173, t.y + 14, 4, 4);
+            this.truckG.fillRect(1161, t.y + 14, 4, 4);
 
             // wheels with hub detail
             this.truckG.fillStyle(0x0b1220, 1);
-            this.truckG.fillCircle(1210, t.y + 34, 11);
-            this.truckG.fillCircle(1306, t.y + 34, 11);
+            this.truckG.fillCircle(1198, t.y + 34, 11);
+            this.truckG.fillCircle(1294, t.y + 34, 11);
             this.truckG.fillStyle(0x94a3b8, 0.85);
-            this.truckG.fillCircle(1210, t.y + 34, 4);
-            this.truckG.fillCircle(1306, t.y + 34, 4);
+            this.truckG.fillCircle(1198, t.y + 34, 4);
+            this.truckG.fillCircle(1294, t.y + 34, 4);
             this.truckG.fillStyle(0x1e293b, 0.9);
-            this.truckG.fillCircle(1210, t.y + 34, 2);
-            this.truckG.fillCircle(1306, t.y + 34, 2);
+            this.truckG.fillCircle(1198, t.y + 34, 2);
+            this.truckG.fillCircle(1294, t.y + 34, 2);
 
             // 6 hidden slots (3x2) centered in cargo bay with slight spread
             const slots: Phaser.Math.Vector2[] = [];
             for (let r = 0; r < 2; r++) {
                 for (let c = 0; c < 3; c++) {
-                    const sx = 1229 + c * 28;
+                    const sx = 1217 + c * 28;
                     const sy = t.y - 10 + r * 22;
                     slots.push(new Phaser.Math.Vector2(sx, sy));
                 }
@@ -627,7 +627,7 @@ class SpaceHubScene extends Phaser.Scene {
         this.aoDebateCard = this.add
             .text(
                 840,
-                132,
+                112,
                 `AO DISCUSSION  |  ${b.id} ${b.source.toUpperCase()} ${b.risk.toUpperCase()}\nDEBATE: propose/challenge · PLAN: execution draft · ROUTE: A/B/C`,
                 {
                     fontFamily: "monospace",
@@ -639,7 +639,7 @@ class SpaceHubScene extends Phaser.Scene {
                 }
             )
             .setOrigin(0.5)
-            .setDepth(94);
+            .setDepth(110);
 
         this.aoPlanChip?.destroy();
         this.aoPlanChip = this.add
