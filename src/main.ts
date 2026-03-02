@@ -141,8 +141,7 @@ class SpaceHubScene extends Phaser.Scene {
             if (box) this.showDetail(box);
         });
 
-        this.time.addEvent({ delay: 420, loop: true, callback: () => this.animateAgents() });
-        this.time.addEvent({ delay: 300, loop: true, callback: () => this.updateAgentBadges() });
+        this.time.addEvent({ delay: 500, loop: true, callback: () => this.animateAgents() });
     }
 
     update(_: number, dt: number) {
@@ -166,7 +165,7 @@ class SpaceHubScene extends Phaser.Scene {
 
         for (const b of this.boxes) {
             if (b.status === "on-belt") {
-                b.x += 0.8 * speed;
+                b.x += 0.52 * speed;
                 if (b.phase === "algora" && b.x >= 650) {
                     b.phase = "ao";
                     b.status = "debating";
@@ -179,11 +178,14 @@ class SpaceHubScene extends Phaser.Scene {
             }
 
             b.sprite.setPosition(b.x, b.y);
-            b.tag.setPosition(b.x, this.getTagY(b));
-            b.badge.setPosition(b.x, this.getTagY(b) - 14);
-            b.badge.setText(this.getBoxBadgeText(b));
+            if (b.phase !== "done") {
+                b.tag.setPosition(b.x, this.getTagY(b));
+                b.badge.setPosition(b.x, this.getTagY(b) - 14);
+                b.badge.setText(this.getBoxBadgeText(b));
+            }
         }
 
+        this.updateAgentBadges();
         this.drawStats();
     }
 
@@ -355,13 +357,14 @@ class SpaceHubScene extends Phaser.Scene {
             this.add
                 .text(x, y, text, {
                     fontFamily: "monospace",
-                    fontSize: "9px",
+                    fontSize: "10px",
                     color,
-                    backgroundColor: "#0f172acc",
-                    padding: { x: 4, y: 1 },
+                    backgroundColor: "#0b1226f0",
+                    padding: { x: 5, y: 2 },
                 })
                 .setOrigin(0.5)
-                .setDepth(95);
+                .setDepth(95)
+                .setShadow(0, 1, "#000000", 2);
 
         this.algoraAgents = [m("algora-bot", 130, 170), m("algora-bot", 210, 170)];
         this.aoAgents = [m("ao-bot", 650, 168), m("ao-bot", 740, 168), m("ao-bot", 830, 168)];
@@ -461,14 +464,15 @@ class SpaceHubScene extends Phaser.Scene {
         const category = categoryPool[Phaser.Math.Between(0, 3)];
         const badge = this.add
             .text(x, y - 40, `${source.toUpperCase()} · ${risk.toUpperCase()}`, {
-                color: "#cbd5e1",
+                color: "#e2e8f0",
                 fontFamily: "monospace",
-                fontSize: "8px",
-                backgroundColor: "#0f172acc",
-                padding: { x: 3, y: 1 },
+                fontSize: "9px",
+                backgroundColor: "#0b1226f0",
+                padding: { x: 4, y: 2 },
             })
             .setOrigin(0.5)
-            .setDepth(32);
+            .setDepth(32)
+            .setShadow(0, 1, "#000000", 2);
 
         this.boxes.push({
             id,
@@ -499,7 +503,7 @@ class SpaceHubScene extends Phaser.Scene {
         this.algoraTurn += 1;
         const home = new Phaser.Math.Vector2(carrier.x, carrier.y);
 
-        this.carrierPickAndCarry(carrier, b, BELT_LEFT + 20, b.beltY, 640, () => {
+        this.carrierPickAndCarry(carrier, b, BELT_LEFT + 20, b.beltY, 980, () => {
             b.status = "on-belt";
             this.taggedIssues += 1;
             this.moveCarrierHome(carrier, home, () => {
@@ -538,7 +542,7 @@ class SpaceHubScene extends Phaser.Scene {
         this.aoTurn += 1;
         const home = new Phaser.Math.Vector2(carrier.x, carrier.y);
 
-        this.time.delayedCall(620, () => {
+        this.time.delayedCall(980, () => {
             this.debatesRun += 1;
             b.route = this.decideRoute(b);
             this.plansCreated += 1;
@@ -548,12 +552,12 @@ class SpaceHubScene extends Phaser.Scene {
                 `AO DEBATE\nInput: ${b.id}\nResult: ${b.route}\nReason: ${b.risk.toUpperCase()} risk + ${b.priority} priority`
             );
 
-            this.time.delayedCall(520, () => {
+            this.time.delayedCall(900, () => {
                 this.aoDebateCard?.destroy();
                 this.aoDebateCard = undefined;
             });
 
-            this.carrierPickAndCarry(carrier, b, 820, ROUTE_Y[b.route], 620, () => {
+            this.carrierPickAndCarry(carrier, b, 820, ROUTE_Y[b.route], 980, () => {
                 b.status = "on-belt";
                 b.y = ROUTE_Y[b.route];
                 this.moveCarrierHome(carrier, home, () => {
@@ -576,12 +580,12 @@ class SpaceHubScene extends Phaser.Scene {
         const home = new Phaser.Math.Vector2(carrier.x, carrier.y);
 
         const slot = this.findNextSlot(b.route);
-        this.carrierPickAndCarry(carrier, b, slot.x, slot.y, 760, () => {
+        this.carrierPickAndCarry(carrier, b, slot.x, slot.y, 1100, () => {
             b.status = "loaded";
             b.phase = "done";
             b.sprite.setDepth(34);
-            b.tag.destroy();
-            b.badge.destroy();
+            b.tag.setVisible(false);
+            b.badge.setVisible(false);
             this.loaded += 1;
             this.verifiedOutcomes += 1;
             loadedHudEl.textContent = `Loaded: ${this.loaded}`;
