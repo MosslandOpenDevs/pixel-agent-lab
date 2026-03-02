@@ -57,9 +57,9 @@ app.innerHTML = `
         <div class="hud-label route" style="left:1070px; top:413px;">Monitor</div>
         <div class="hud-label route" style="left:1070px; top:561px;">Defer</div>
 
-        <div class="hud-label truck" style="left:1238px; top:210px;">Express</div>
-        <div class="hud-label truck" style="left:1238px; top:370px;">Monitor</div>
-        <div class="hud-label truck" style="left:1238px; top:530px;">Defer</div>
+        <div class="hud-label truck" style="left:1238px; top:205px;">Express</div>
+        <div class="hud-label truck" style="left:1238px; top:355px;">Monitor</div>
+        <div class="hud-label truck" style="left:1238px; top:505px;">Defer</div>
         <div class="hud-label loaded" id="loadedHud" style="left:1226px; top:660px;">Loaded: 0</div>
       </div>
     </div>
@@ -342,17 +342,11 @@ class SpaceHubScene extends Phaser.Scene {
         ];
 
         for (const t of trucks) {
-            // cargo bed shell (shifted left)
-            this.truckG.fillStyle(0x111827, 0.98);
+            // cargo bed shell
+            this.truckG.fillStyle(0x131925, 0.98);
             this.truckG.fillRoundedRect(1196, t.y - 46, 154, 78, 10);
             this.truckG.lineStyle(2, 0x60a5fa, 0.95);
             this.truckG.strokeRoundedRect(1196, t.y - 46, 154, 78, 10);
-
-            // cargo inner bay (no basket/rail)
-            this.truckG.fillStyle(0x1f2937, 1);
-            this.truckG.fillRoundedRect(1208, t.y - 32, 116, 50, 7);
-            this.truckG.lineStyle(1, 0x334155, 0.9);
-            this.truckG.strokeRoundedRect(1208, t.y - 32, 116, 50, 7);
 
             // cab
             this.truckG.fillStyle(0x243244, 1);
@@ -377,11 +371,11 @@ class SpaceHubScene extends Phaser.Scene {
             this.truckG.fillCircle(1226, t.y + 34, 2);
             this.truckG.fillCircle(1322, t.y + 34, 2);
 
-            // 4 hidden slots (2x2) for stacking logic
+            // 6 hidden slots (3x2) for stacking logic
             const slots: Phaser.Math.Vector2[] = [];
             for (let r = 0; r < 2; r++) {
-                for (let c = 0; c < 2; c++) {
-                    const sx = 1224 + c * 34;
+                for (let c = 0; c < 3; c++) {
+                    const sx = 1218 + c * 28;
                     const sy = t.y - 12 + r * 22;
                     slots.push(new Phaser.Math.Vector2(sx, sy));
                 }
