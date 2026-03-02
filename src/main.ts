@@ -301,9 +301,9 @@ class SpaceHubScene extends Phaser.Scene {
         }
 
         const zones = [
-            { x: 235, w: 430, fill: 0x0f2d2a, stroke: 0x34d399 },
-            { x: W / 2 + 40, w: 520, fill: 0x3f2a12, stroke: 0xf59e0b },
-            { x: W - 170, w: 360, fill: 0x10263f, stroke: 0x60a5fa },
+            { x: 250, w: 500, fill: 0x0f2d2a, stroke: 0x34d399 },
+            { x: W / 2 + 24, w: 500, fill: 0x3f2a12, stroke: 0xf59e0b },
+            { x: W - 170, w: 300, fill: 0x10263f, stroke: 0x60a5fa },
         ];
 
         zones.forEach((z) => {
@@ -603,20 +603,20 @@ class SpaceHubScene extends Phaser.Scene {
         this.aoDebateCard?.destroy();
         this.aoDebateCard = this.add
             .text(
-                1008,
-                150,
+                820,
+                132,
                 `AO DISCUSSION  |  ${b.id} ${b.source.toUpperCase()} ${b.risk.toUpperCase()}\nDEBATE: propose/challenge · PLAN: execution draft · ROUTE: A/B/C`,
                 {
                     fontFamily: "monospace",
-                    fontSize: "10px",
-                    color: "#f8fafc",
-                    backgroundColor: "#1f2937e6",
-                    padding: { x: 8, y: 4 },
+                    fontSize: "12px",
+                    color: "#0b1220",
+                    backgroundColor: "#fde68a",
+                    padding: { x: 10, y: 6 },
                     lineSpacing: 2,
                 }
             )
             .setOrigin(0.5)
-            .setDepth(90);
+            .setDepth(94);
 
         this.aoPlanChip?.destroy();
         this.aoPlanChip = this.add
@@ -740,7 +740,7 @@ class SpaceHubScene extends Phaser.Scene {
         ).length;
         const col = waiting % 2;
         const row = Math.floor(waiting / 2);
-        return new Phaser.Math.Vector2(126 + col * 34, LANE_Y.P2 + 8 - row * 24);
+        return new Phaser.Math.Vector2(96 + col * 34, LANE_Y.P2 + 8 - row * 24);
     }
 
     decideRoute(b: Box): Route {
@@ -836,8 +836,9 @@ class SpaceHubScene extends Phaser.Scene {
 
         if (this.aoRouteFlash && this.time.now < this.aoRouteFlash.until) {
             const y = ROUTE_Y[this.aoRouteFlash.route];
-            this.roleFxG.fillStyle(0xfbbf24, 0.15).fillRoundedRect(1000, y - 34, 130, 68, 10);
-            this.roleFxG.lineStyle(2, 0xfbbf24, 0.9).strokeRoundedRect(1000, y - 34, 130, 68, 10);
+            const pulse = 5 + Math.sin(t * 1.5) * 2;
+            this.roleFxG.fillStyle(0xfbbf24, 0.9).fillCircle(1110, y, pulse);
+            this.roleFxG.lineStyle(2, 0xfbbf24, 0.55).strokeCircle(1110, y, pulse + 6);
         }
 
         const loading = this.boxes.find((b) => b.phase === "bridge" && b.status === "loading");
