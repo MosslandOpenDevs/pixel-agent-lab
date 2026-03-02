@@ -176,5 +176,3 @@ Service I/O Status는 Algora/AO/Bridge를 **독립 카드 형태**로 구분 표
 7. verify 후 done
 
 이 상태 전이는 시각적 애니메이션과 패널 데이터가 동일하게 반영되어야 한다.
-
-
