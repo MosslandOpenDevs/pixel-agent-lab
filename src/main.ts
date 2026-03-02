@@ -40,6 +40,7 @@ app.innerHTML = `
       <label>박스 수 <input id="maxBoxes" type="range" min="4" max="10" value="8" /></label>
     </div>
     <div id="stats" class="stats"></div>
+    <div id="serviceStatus" class="stats"></div>
     <div id="detail" class="detail"><h2>상세 정보</h2><p>박스를 클릭하면 상세 정보가 표시됩니다.</p></div>
   </aside>
   <main class="stage-wrap">
@@ -71,6 +72,7 @@ app.innerHTML = `
 const statsEl = document.querySelector<HTMLDivElement>("#stats")!;
 const detailEl = document.querySelector<HTMLDivElement>("#detail")!;
 const loadedHudEl = document.querySelector<HTMLDivElement>("#loadedHud")!;
+const serviceStatusEl = document.querySelector<HTMLDivElement>("#serviceStatus")!;
 
 class SpaceHubScene extends Phaser.Scene {
     boxes: Box[] = [];
@@ -78,6 +80,14 @@ class SpaceHubScene extends Phaser.Scene {
     lastSpawn = 0;
     beltOffset = 0;
     loaded = 0;
+
+    // service-level demo telemetry
+    totalSignals = 0;
+    taggedIssues = 0;
+    debatesRun = 0;
+    plansCreated = 0;
+    delegatedToBridge = 0;
+    verifiedOutcomes = 0;
 
     beltG!: Phaser.GameObjects.Graphics;
     truckG!: Phaser.GameObjects.Graphics;
@@ -152,6 +162,7 @@ class SpaceHubScene extends Phaser.Scene {
                 if (b.phase === "ao" && b.x >= 980) {
                     b.phase = "bridge";
                     b.status = "loading";
+                    this.delegatedToBridge += 1;
                 }
             }
 
@@ -415,6 +426,8 @@ class SpaceHubScene extends Phaser.Scene {
             .setOrigin(0.5)
             .setDepth(31);
 
+        this.totalSignals += 1;
+
         this.boxes.push({
             id,
             source: sourcePool[Phaser.Math.Between(0, 3)],
@@ -444,6 +457,7 @@ class SpaceHubScene extends Phaser.Scene {
 
         this.carrierPickAndCarry(carrier, b, BELT_LEFT + 20, b.beltY, 640, () => {
             b.status = "on-belt";
+            this.taggedIssues += 1;
             this.moveCarrierHome(carrier, home, () => (this.busyAlgora = false));
         });
     }
@@ -471,7 +485,9 @@ class SpaceHubScene extends Phaser.Scene {
 
         this.time.delayedCall(620, () => {
             bubble.destroy();
+            this.debatesRun += 1;
             b.route = this.decideRoute(b);
+            this.plansCreated += 1;
             b.status = "rerouting";
             this.carrierPickAndCarry(carrier, b, 820, ROUTE_Y[b.route], 620, () => {
                 b.status = "on-belt";
@@ -498,6 +514,7 @@ class SpaceHubScene extends Phaser.Scene {
             b.sprite.setDepth(34);
             b.tag.destroy();
             this.loaded += 1;
+            this.verifiedOutcomes += 1;
             loadedHudEl.textContent = `Loaded: ${this.loaded}`;
             this.moveCarrierHome(carrier, home, () => (this.busyBridge = false));
         });
@@ -574,27 +591,75 @@ class SpaceHubScene extends Phaser.Scene {
         const algora = this.boxes.filter((b) => b.phase === "algora").length;
         const ao = this.boxes.filter((b) => b.phase === "ao").length;
         const bridge = this.boxes.filter((b) => b.phase === "bridge").length;
+        const active = this.boxes.filter((b) => b.phase !== "done").length;
+
+        const sourceCount = {
+            github: this.boxes.filter((b) => b.source === "github").length,
+            rss: this.boxes.filter((b) => b.source === "rss").length,
+            social: this.boxes.filter((b) => b.source === "social").length,
+            chain: this.boxes.filter((b) => b.source === "chain").length,
+        };
+
+        const routeCount = {
+            immediate: this.boxes.filter((b) => b.route === "Immediate Action" && b.phase !== "done").length,
+            monitor: this.boxes.filter((b) => b.route === "Monitor" && b.phase !== "done").length,
+            defer: this.boxes.filter((b) => b.route === "Defer" && b.phase !== "done").length,
+        };
 
         statsEl.innerHTML = `
-      <div class="row"><span>Algora</span><b>${algora}</b></div>
-      <div class="row"><span>AO</span><b>${ao}</b></div>
-      <div class="row"><span>Bridge</span><b>${bridge}</b></div>
-      <div class="row"><span>적재 완료</span><b>${this.loaded}</b></div>
-      <div class="row"><span>활성 박스</span><b>${this.boxes.filter((b) => b.phase !== "done").length}</b></div>
+      <div class="row"><span>Algora 단계</span><b>${algora}</b></div>
+      <div class="row"><span>AO 단계</span><b>${ao}</b></div>
+      <div class="row"><span>Bridge 단계</span><b>${bridge}</b></div>
+      <div class="row"><span>적재 완료(Outcome)</span><b>${this.loaded}</b></div>
+      <div class="row"><span>활성 박스</span><b>${active}</b></div>
+    `;
+
+        serviceStatusEl.innerHTML = `
+      <h2>서비스 I/O 상태</h2>
+      <div class="drow"><span>Algora Input</span><b>Signals ${this.totalSignals}</b></div>
+      <div class="drow"><span>Algora Output</span><b>Tagged Issues ${this.taggedIssues}</b></div>
+      <div class="hint">github:${sourceCount.github} · rss:${sourceCount.rss} · social:${sourceCount.social} · chain:${sourceCount.chain}</div>
+      <hr/>
+      <div class="drow"><span>AO Input</span><b>Issue Queue ${ao}</b></div>
+      <div class="drow"><span>AO Output</span><b>Plans ${this.plansCreated}</b></div>
+      <div class="hint">debates:${this.debatesRun} · immediate:${routeCount.immediate} · monitor:${routeCount.monitor} · defer:${routeCount.defer}</div>
+      <hr/>
+      <div class="drow"><span>Bridge Input</span><b>Delegated ${this.delegatedToBridge}</b></div>
+      <div class="drow"><span>Bridge Output</span><b>Verified ${this.verifiedOutcomes}</b></div>
+      <div class="hint">agents: execute · verify · log outcome</div>
     `;
     }
 
     showDetail(b: Box) {
+        const phaseAction =
+            b.phase === "algora"
+                ? "신호 수집 후 이슈 태깅 중"
+                : b.phase === "ao"
+                  ? "멀티 에이전트 토론 후 라우팅 결정 중"
+                  : b.phase === "bridge"
+                    ? "트럭 적재 + 실행 검증 중"
+                    : "Outcome 로그 완료";
+
+        const ioSummary =
+            b.phase === "algora"
+                ? `Input: ${b.source} signal / Output: tagged issue(${b.priority})`
+                : b.phase === "ao"
+                  ? `Input: issue context / Output: route=${b.route}`
+                  : b.phase === "bridge"
+                    ? `Input: delegated plan / Output: execution record`
+                    : `Input: execution result / Output: feedback event`;
+
         detailEl.innerHTML = `
       <h2>${b.id}</h2>
       <div class="drow"><span>단계</span><b>${b.phase.toUpperCase()}</b></div>
       <div class="drow"><span>상태</span><b>${b.status}</b></div>
+      <div class="drow"><span>현재 작업</span><b>${phaseAction}</b></div>
       <div class="drow"><span>source</span><b>${b.source}</b></div>
       <div class="drow"><span>category</span><b>${b.category}</b></div>
       <div class="drow"><span>risk</span><b>${b.risk}</b></div>
       <div class="drow"><span>priority</span><b>${b.priority}</b></div>
       <div class="drow"><span>AO route</span><b>${b.route}</b></div>
-      <p class="hint">Algora가 박스를 직접 들어 벨트에 올리고, AO가 토론 후 직접 분기 라인으로 옮기고, Bridge가 트럭 칸에 하나씩 적재합니다.</p>
+      <p class="hint">${ioSummary}</p>
     `;
     }
 }
