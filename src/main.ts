@@ -63,15 +63,16 @@ class SpaceHubScene extends Phaser.Scene {
   truckG!: Phaser.GameObjects.Graphics
   truckCount!: Phaser.GameObjects.Text
 
-  algoraCarrier!: Phaser.GameObjects.Sprite
-  aoCarrier!: Phaser.GameObjects.Sprite
-  bridgeCarrier!: Phaser.GameObjects.Sprite
-  aoDiscussA!: Phaser.GameObjects.Sprite
-  aoDiscussB!: Phaser.GameObjects.Sprite
+  algoraAgents: Phaser.GameObjects.Sprite[] = []
+  aoAgents: Phaser.GameObjects.Sprite[] = []
+  bridgeAgents: Phaser.GameObjects.Sprite[] = []
 
   busyAlgora = false
   busyAO = false
   busyBridge = false
+  algoraTurn = 0
+  aoTurn = 0
+  bridgeTurn = 0
 
   cargoSlots: Record<Route, Phaser.Math.Vector2[]> = {
     'Immediate Action': [],
@@ -236,9 +237,6 @@ class SpaceHubScene extends Phaser.Scene {
       }
     }
 
-    this.beltG.fillStyle(0x0f172a, 0.86)
-    this.beltG.fillRoundedRect(BELT_LEFT - 18, LANE_Y.P1 - 42, 58, 384, 8)
-    this.beltG.fillRoundedRect(BELT_RIGHT - 42, LANE_Y.P1 - 42, 58, 384, 8)
   }
 
   drawLabels() {
@@ -257,11 +255,10 @@ class SpaceHubScene extends Phaser.Scene {
 
   spawnAgents() {
     const m = (key: string, x: number, y: number) => this.add.sprite(x, y, `${key}-0`).setDepth(40).setDisplaySize(44, 44)
-    this.algoraCarrier = m('algora-bot', 150, 170)
-    this.aoCarrier = m('ao-bot', 690, 168)
-    this.bridgeCarrier = m('bridge-bot', 1185, 168)
-    this.aoDiscussA = m('ao-bot', 760, 168)
-    this.aoDiscussB = m('ao-bot', 830, 168)
+
+    this.algoraAgents = [m('algora-bot', 130, 170), m('algora-bot', 210, 170)]
+    this.aoAgents = [m('ao-bot', 650, 168), m('ao-bot', 740, 168), m('ao-bot', 830, 168)]
+    this.bridgeAgents = [m('bridge-bot', 1160, 168), m('bridge-bot', 1240, 168)]
   }
 
   buildTrucks() {
@@ -296,15 +293,13 @@ class SpaceHubScene extends Phaser.Scene {
 
       this.add.text(1228, t.y - 58, t.label, { color: '#bfdbfe', fontSize: '11px', fontFamily: 'monospace' }).setDepth(36)
 
-      // 4 slots (2x2) for stacking feel
+      // 4 hidden slots (2x2) for stacking logic
       const slots: Phaser.Math.Vector2[] = []
       for (let r = 0; r < 2; r++) {
         for (let c = 0; c < 2; c++) {
           const sx = 1244 + c * 36
           const sy = t.y - 10 + r * 24
           slots.push(new Phaser.Math.Vector2(sx, sy))
-          this.truckG.lineStyle(1, 0x475569, 0.6)
-          this.truckG.strokeRoundedRect(sx - 14, sy - 10, 28, 20, 4)
         }
       }
       this.cargoSlots[t.route] = slots
@@ -315,12 +310,9 @@ class SpaceHubScene extends Phaser.Scene {
 
   animateAgents() {
     const frame = Math.floor(this.time.now / 420) % 2
-    const set = (s: Phaser.GameObjects.Sprite, key: string) => s.setTexture(`${key}-${frame}`)
-    set(this.algoraCarrier, 'algora-bot')
-    set(this.aoCarrier, 'ao-bot')
-    set(this.bridgeCarrier, 'bridge-bot')
-    set(this.aoDiscussA, 'ao-bot')
-    set(this.aoDiscussB, 'ao-bot')
+    this.algoraAgents.forEach((s) => s.setTexture(`algora-bot-${frame}`))
+    this.aoAgents.forEach((s) => s.setTexture(`ao-bot-${frame}`))
+    this.bridgeAgents.forEach((s) => s.setTexture(`bridge-bot-${frame}`))
   }
 
   spawnInboundBox() {
@@ -366,9 +358,13 @@ class SpaceHubScene extends Phaser.Scene {
     if (!b) return
     this.busyAlgora = true
 
-    this.carrierPickAndCarry(this.algoraCarrier, b, BELT_LEFT + 20, b.beltY, 640, () => {
+    const carrier = this.algoraAgents[this.algoraTurn % this.algoraAgents.length]
+    this.algoraTurn += 1
+    const home = new Phaser.Math.Vector2(carrier.x, carrier.y)
+
+    this.carrierPickAndCarry(carrier, b, BELT_LEFT + 20, b.beltY, 640, () => {
       b.status = 'on-belt'
-      this.algoraCarrierMoveTo(150, 170, () => (this.busyAlgora = false))
+      this.moveCarrierHome(carrier, home, () => (this.busyAlgora = false))
     })
   }
 
@@ -383,14 +379,18 @@ class SpaceHubScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(60)
 
+    const carrier = this.aoAgents[this.aoTurn % this.aoAgents.length]
+    this.aoTurn += 1
+    const home = new Phaser.Math.Vector2(carrier.x, carrier.y)
+
     this.time.delayedCall(620, () => {
       bubble.destroy()
       b.route = this.decideRoute(b)
       b.status = 'rerouting'
-      this.carrierPickAndCarry(this.aoCarrier, b, 820, ROUTE_Y[b.route], 620, () => {
+      this.carrierPickAndCarry(carrier, b, 820, ROUTE_Y[b.route], 620, () => {
         b.status = 'on-belt'
         b.y = ROUTE_Y[b.route]
-        this.aoCarrierMoveTo(690, 168, () => (this.busyAO = false))
+        this.moveCarrierHome(carrier, home, () => (this.busyAO = false))
       })
     })
   }
@@ -401,15 +401,19 @@ class SpaceHubScene extends Phaser.Scene {
     if (!b) return
     this.busyBridge = true
 
+    const carrier = this.bridgeAgents[this.bridgeTurn % this.bridgeAgents.length]
+    this.bridgeTurn += 1
+    const home = new Phaser.Math.Vector2(carrier.x, carrier.y)
+
     const slot = this.findNextSlot(b.route)
-    this.carrierPickAndCarry(this.bridgeCarrier, b, slot.x, slot.y, 740, () => {
+    this.carrierPickAndCarry(carrier, b, slot.x, slot.y, 760, () => {
       b.status = 'loaded'
       b.phase = 'done'
       b.sprite.setDepth(34)
       b.tag.destroy()
       this.loaded += 1
       this.truckCount.setText(`Loaded: ${this.loaded}`)
-      this.bridgeCarrierMoveTo(1185, 168, () => (this.busyBridge = false))
+      this.moveCarrierHome(carrier, home, () => (this.busyBridge = false))
     })
   }
 
@@ -453,14 +457,8 @@ class SpaceHubScene extends Phaser.Scene {
     return Math.random() > 0.55 ? 'Defer' : 'Monitor'
   }
 
-  algoraCarrierMoveTo(x: number, y: number, onDone: () => void) {
-    this.tweens.add({ targets: this.algoraCarrier, x, y, duration: 280, onComplete: onDone })
-  }
-  aoCarrierMoveTo(x: number, y: number, onDone: () => void) {
-    this.tweens.add({ targets: this.aoCarrier, x, y, duration: 300, onComplete: onDone })
-  }
-  bridgeCarrierMoveTo(x: number, y: number, onDone: () => void) {
-    this.tweens.add({ targets: this.bridgeCarrier, x, y, duration: 320, onComplete: onDone })
+  moveCarrierHome(carrier: Phaser.GameObjects.Sprite, home: Phaser.Math.Vector2, onDone: () => void) {
+    this.tweens.add({ targets: carrier, x: home.x, y: home.y, duration: 300, onComplete: onDone })
   }
 
   drawStats() {
