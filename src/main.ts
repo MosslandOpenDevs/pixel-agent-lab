@@ -300,10 +300,17 @@ class SpaceHubScene extends Phaser.Scene {
             s.setAlpha(Phaser.Math.FloatBetween(0.2, 0.9));
         }
 
+        const zoneGap = 18;
+        const wA = 500;
+        const wB = 500;
+        const wC = 300;
+        const total = wA + wB + wC + zoneGap * 2;
+        const left = (W - total) / 2;
+
         const zones = [
-            { x: 250, w: 500, fill: 0x0f2d2a, stroke: 0x34d399 },
-            { x: W / 2 + 44, w: 500, fill: 0x3f2a12, stroke: 0xf59e0b },
-            { x: W - 170, w: 300, fill: 0x10263f, stroke: 0x60a5fa },
+            { x: left + wA / 2, w: wA, fill: 0x0f2d2a, stroke: 0x34d399 },
+            { x: left + wA + zoneGap + wB / 2, w: wB, fill: 0x3f2a12, stroke: 0xf59e0b },
+            { x: left + wA + zoneGap + wB + zoneGap + wC / 2, w: wC, fill: 0x10263f, stroke: 0x60a5fa },
         ];
 
         zones.forEach((z) => {
