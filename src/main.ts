@@ -20,6 +20,7 @@ type Box = {
     beltY: number;
     sprite: Phaser.GameObjects.Image;
     tag: Phaser.GameObjects.Text;
+    badge: Phaser.GameObjects.Text;
 };
 
 const W = 1440;
@@ -96,6 +97,14 @@ class SpaceHubScene extends Phaser.Scene {
     aoAgents: Phaser.GameObjects.Sprite[] = [];
     bridgeAgents: Phaser.GameObjects.Sprite[] = [];
 
+    algoraAgentBadges: Phaser.GameObjects.Text[] = [];
+    aoAgentBadges: Phaser.GameObjects.Text[] = [];
+    bridgeAgentBadges: Phaser.GameObjects.Text[] = [];
+
+    activeAlgoraCarrier?: Phaser.GameObjects.Sprite;
+    activeAOCarrier?: Phaser.GameObjects.Sprite;
+    activeBridgeCarrier?: Phaser.GameObjects.Sprite;
+
     busyAlgora = false;
     busyAO = false;
     busyBridge = false;
@@ -131,6 +140,7 @@ class SpaceHubScene extends Phaser.Scene {
         });
 
         this.time.addEvent({ delay: 420, loop: true, callback: () => this.animateAgents() });
+        this.time.addEvent({ delay: 300, loop: true, callback: () => this.updateAgentBadges() });
     }
 
     update(_: number, dt: number) {
@@ -168,6 +178,8 @@ class SpaceHubScene extends Phaser.Scene {
 
             b.sprite.setPosition(b.x, b.y);
             b.tag.setPosition(b.x, this.getTagY(b));
+            b.badge.setPosition(b.x, this.getTagY(b) - 14);
+            b.badge.setText(this.getBoxBadgeText(b));
         }
 
         this.drawStats();
@@ -337,10 +349,25 @@ class SpaceHubScene extends Phaser.Scene {
     spawnAgents() {
         const m = (key: string, x: number, y: number) =>
             this.add.sprite(x, y, `${key}-0`).setDepth(40).setDisplaySize(44, 44);
+        const badge = (x: number, y: number, text: string, color = "#e2e8f0") =>
+            this.add
+                .text(x, y, text, {
+                    fontFamily: "monospace",
+                    fontSize: "9px",
+                    color,
+                    backgroundColor: "#0f172acc",
+                    padding: { x: 4, y: 1 },
+                })
+                .setOrigin(0.5)
+                .setDepth(95);
 
         this.algoraAgents = [m("algora-bot", 130, 170), m("algora-bot", 210, 170)];
         this.aoAgents = [m("ao-bot", 650, 168), m("ao-bot", 740, 168), m("ao-bot", 830, 168)];
         this.bridgeAgents = [m("bridge-bot", 1160, 168), m("bridge-bot", 1240, 168)];
+
+        this.algoraAgentBadges = [badge(130, 142, "SCAN", "#86efac"), badge(210, 142, "TAG", "#86efac")];
+        this.aoAgentBadges = [badge(650, 140, "DEBATE", "#fcd34d"), badge(740, 140, "PLAN", "#fcd34d"), badge(830, 140, "ROUTE", "#fcd34d")];
+        this.bridgeAgentBadges = [badge(1160, 140, "EXECUTE", "#93c5fd"), badge(1240, 140, "VERIFY", "#93c5fd")];
     }
 
     buildTrucks() {
@@ -428,10 +455,23 @@ class SpaceHubScene extends Phaser.Scene {
 
         this.totalSignals += 1;
 
+        const source = sourcePool[Phaser.Math.Between(0, 3)];
+        const category = categoryPool[Phaser.Math.Between(0, 3)];
+        const badge = this.add
+            .text(x, y - 40, `${source.toUpperCase()} · ${risk.toUpperCase()}`, {
+                color: "#cbd5e1",
+                fontFamily: "monospace",
+                fontSize: "8px",
+                backgroundColor: "#0f172acc",
+                padding: { x: 3, y: 1 },
+            })
+            .setOrigin(0.5)
+            .setDepth(32);
+
         this.boxes.push({
             id,
-            source: sourcePool[Phaser.Math.Between(0, 3)],
-            category: categoryPool[Phaser.Math.Between(0, 3)],
+            source,
+            category,
             risk,
             priority,
             route: "Monitor",
@@ -442,6 +482,7 @@ class SpaceHubScene extends Phaser.Scene {
             beltY: LANE_Y[priority],
             sprite,
             tag,
+            badge,
         });
     }
 
@@ -452,13 +493,17 @@ class SpaceHubScene extends Phaser.Scene {
         this.busyAlgora = true;
 
         const carrier = this.algoraAgents[this.algoraTurn % this.algoraAgents.length];
+        this.activeAlgoraCarrier = carrier;
         this.algoraTurn += 1;
         const home = new Phaser.Math.Vector2(carrier.x, carrier.y);
 
         this.carrierPickAndCarry(carrier, b, BELT_LEFT + 20, b.beltY, 640, () => {
             b.status = "on-belt";
             this.taggedIssues += 1;
-            this.moveCarrierHome(carrier, home, () => (this.busyAlgora = false));
+            this.moveCarrierHome(carrier, home, () => {
+                this.activeAlgoraCarrier = undefined;
+                this.busyAlgora = false;
+            });
         });
     }
 
@@ -480,6 +525,7 @@ class SpaceHubScene extends Phaser.Scene {
             .setDepth(60);
 
         const carrier = this.aoAgents[this.aoTurn % this.aoAgents.length];
+        this.activeAOCarrier = carrier;
         this.aoTurn += 1;
         const home = new Phaser.Math.Vector2(carrier.x, carrier.y);
 
@@ -492,7 +538,10 @@ class SpaceHubScene extends Phaser.Scene {
             this.carrierPickAndCarry(carrier, b, 820, ROUTE_Y[b.route], 620, () => {
                 b.status = "on-belt";
                 b.y = ROUTE_Y[b.route];
-                this.moveCarrierHome(carrier, home, () => (this.busyAO = false));
+                this.moveCarrierHome(carrier, home, () => {
+                    this.activeAOCarrier = undefined;
+                    this.busyAO = false;
+                });
             });
         });
     }
@@ -504,6 +553,7 @@ class SpaceHubScene extends Phaser.Scene {
         this.busyBridge = true;
 
         const carrier = this.bridgeAgents[this.bridgeTurn % this.bridgeAgents.length];
+        this.activeBridgeCarrier = carrier;
         this.bridgeTurn += 1;
         const home = new Phaser.Math.Vector2(carrier.x, carrier.y);
 
@@ -513,10 +563,14 @@ class SpaceHubScene extends Phaser.Scene {
             b.phase = "done";
             b.sprite.setDepth(34);
             b.tag.destroy();
+            b.badge.destroy();
             this.loaded += 1;
             this.verifiedOutcomes += 1;
             loadedHudEl.textContent = `Loaded: ${this.loaded}`;
-            this.moveCarrierHome(carrier, home, () => (this.busyBridge = false));
+            this.moveCarrierHome(carrier, home, () => {
+                this.activeBridgeCarrier = undefined;
+                this.busyBridge = false;
+            });
         });
     }
 
@@ -547,6 +601,7 @@ class SpaceHubScene extends Phaser.Scene {
                         b.y = carrier.y - 26;
                         b.sprite.setPosition(b.x, b.y);
                         b.tag.setPosition(b.x, this.getTagY(b));
+                        b.badge.setPosition(b.x, this.getTagY(b) - 14);
                     },
                     onComplete: onDone,
                 });
@@ -587,6 +642,31 @@ class SpaceHubScene extends Phaser.Scene {
         return b.y + laneBias + jitter;
     }
 
+    getBoxBadgeText(b: Box) {
+        const src = b.source.slice(0, 2).toUpperCase();
+        const phase = b.phase === "algora" ? "SENSE" : b.phase === "ao" ? "PLAN" : b.phase === "bridge" ? "EXEC" : "DONE";
+        return `${src} · ${b.risk.toUpperCase()} · ${phase}`;
+    }
+
+    updateAgentBadges() {
+        this.algoraAgentBadges.forEach((t, i) => {
+            const active = this.activeAlgoraCarrier === this.algoraAgents[i];
+            t.setText(active ? "TAG+LOAD" : i === 0 ? "SCAN" : "FILTER");
+            t.setPosition(this.algoraAgents[i].x, this.algoraAgents[i].y - 30);
+        });
+        this.aoAgentBadges.forEach((t, i) => {
+            const active = this.activeAOCarrier === this.aoAgents[i];
+            const base = i === 0 ? "DEBATE" : i === 1 ? "PLAN" : "ROUTE";
+            t.setText(active ? "CARRY" : base);
+            t.setPosition(this.aoAgents[i].x, this.aoAgents[i].y - 30);
+        });
+        this.bridgeAgentBadges.forEach((t, i) => {
+            const active = this.activeBridgeCarrier === this.bridgeAgents[i];
+            t.setText(active ? "LOAD" : i === 0 ? "EXECUTE" : "VERIFY");
+            t.setPosition(this.bridgeAgents[i].x, this.bridgeAgents[i].y - 30);
+        });
+    }
+
     drawStats() {
         const algora = this.boxes.filter((b) => b.phase === "algora").length;
         const ao = this.boxes.filter((b) => b.phase === "ao").length;
@@ -619,6 +699,7 @@ class SpaceHubScene extends Phaser.Scene {
       <div class="drow"><span>Algora Input</span><b>Signals ${this.totalSignals}</b></div>
       <div class="drow"><span>Algora Output</span><b>Tagged Issues ${this.taggedIssues}</b></div>
       <div class="hint">github:${sourceCount.github} · rss:${sourceCount.rss} · social:${sourceCount.social} · chain:${sourceCount.chain}</div>
+      <div class="hint">agents: scan · filter · tag+load</div>
       <hr/>
       <div class="drow"><span>AO Input</span><b>Issue Queue ${ao}</b></div>
       <div class="drow"><span>AO Output</span><b>Plans ${this.plansCreated}</b></div>
