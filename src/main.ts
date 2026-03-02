@@ -106,6 +106,12 @@ class SpaceHubScene extends Phaser.Scene {
     activeBridgeCarrier?: Phaser.GameObjects.Sprite;
 
     aoDebateCard?: Phaser.GameObjects.Text;
+    selectedBoxId?: string;
+
+    roleFxG!: Phaser.GameObjects.Graphics;
+    aoPlanChip?: Phaser.GameObjects.Text;
+    aoRouteFlash?: { route: Route; until: number };
+    bridgeVerifyPing?: { x: number; y: number; until: number };
 
     busyAlgora = false;
     busyAO = false;
@@ -131,6 +137,7 @@ class SpaceHubScene extends Phaser.Scene {
 
         this.beltG = this.add.graphics().setDepth(10);
         this.truckG = this.add.graphics().setDepth(30);
+        this.roleFxG = this.add.graphics().setDepth(88);
 
         this.drawBelts();
         this.spawnAgents();
@@ -138,7 +145,10 @@ class SpaceHubScene extends Phaser.Scene {
 
         this.input.on("gameobjectdown", (_: any, go: any) => {
             const box = this.boxes.find((b) => b.sprite === go);
-            if (box) this.showDetail(box);
+            if (box) {
+                this.selectedBoxId = box.id;
+                this.showDetail(box);
+            }
         });
 
         this.time.addEvent({ delay: 500, loop: true, callback: () => this.animateAgents() });
@@ -186,6 +196,8 @@ class SpaceHubScene extends Phaser.Scene {
         }
 
         this.updateAgentBadges();
+        this.drawRoleEffects();
+        this.updateSelectedDetail();
         this.drawStats();
     }
 
@@ -522,20 +534,32 @@ class SpaceHubScene extends Phaser.Scene {
         this.aoDebateCard?.destroy();
         this.aoDebateCard = this.add
             .text(
-                760,
-                124,
-                `AO DEBATE\nInput: ${b.id} · ${b.source.toUpperCase()} · ${b.risk.toUpperCase()}\nA) Immediate Action\nB) Monitor\nC) Defer`,
+                1008,
+                150,
+                `AO DISCUSSION  |  ${b.id} ${b.source.toUpperCase()} ${b.risk.toUpperCase()}\nA: Immediate  ·  B: Monitor  ·  C: Defer`,
                 {
                     fontFamily: "monospace",
                     fontSize: "10px",
-                    color: "#0f172a",
-                    backgroundColor: "#fde68a",
-                    padding: { x: 6, y: 4 },
+                    color: "#f8fafc",
+                    backgroundColor: "#1f2937e6",
+                    padding: { x: 8, y: 4 },
                     lineSpacing: 2,
                 }
             )
-            .setOrigin(0.5, 0)
-            .setDepth(96);
+            .setOrigin(0.5)
+            .setDepth(90);
+
+        this.aoPlanChip?.destroy();
+        this.aoPlanChip = this.add
+            .text(740, 206, `PLAN: ${b.id} review`, {
+                fontFamily: "monospace",
+                fontSize: "9px",
+                color: "#111827",
+                backgroundColor: "#fcd34d",
+                padding: { x: 5, y: 2 },
+            })
+            .setOrigin(0.5)
+            .setDepth(89);
 
         const carrier = this.aoAgents[this.aoTurn % this.aoAgents.length];
         this.activeAOCarrier = carrier;
@@ -547,14 +571,18 @@ class SpaceHubScene extends Phaser.Scene {
             b.route = this.decideRoute(b);
             this.plansCreated += 1;
             b.status = "rerouting";
+            this.aoRouteFlash = { route: b.route, until: this.time.now + 1100 };
 
             this.aoDebateCard?.setText(
-                `AO DEBATE\nInput: ${b.id}\nResult: ${b.route}\nReason: ${b.risk.toUpperCase()} risk + ${b.priority} priority`
+                `AO RESULT  |  ${b.id}\nROUTE: ${b.route}  ·  based on ${b.risk.toUpperCase()} + ${b.priority}`
             );
+            this.aoPlanChip?.setText(`PLAN: ${b.route}`);
 
-            this.time.delayedCall(900, () => {
+            this.time.delayedCall(850, () => {
                 this.aoDebateCard?.destroy();
                 this.aoDebateCard = undefined;
+                this.aoPlanChip?.destroy();
+                this.aoPlanChip = undefined;
             });
 
             this.carrierPickAndCarry(carrier, b, 820, ROUTE_Y[b.route], 980, () => {
@@ -588,6 +616,7 @@ class SpaceHubScene extends Phaser.Scene {
             b.badge.setVisible(false);
             this.loaded += 1;
             this.verifiedOutcomes += 1;
+            this.bridgeVerifyPing = { x: slot.x, y: slot.y, until: this.time.now + 500 };
             loadedHudEl.textContent = `Loaded: ${this.loaded}`;
             this.moveCarrierHome(carrier, home, () => {
                 this.activeBridgeCarrier = undefined;
@@ -687,6 +716,58 @@ class SpaceHubScene extends Phaser.Scene {
             t.setText(active ? "LOAD" : i === 0 ? "EXECUTE" : "VERIFY");
             t.setPosition(this.bridgeAgents[i].x, this.bridgeAgents[i].y - 30);
         });
+    }
+
+    drawRoleEffects() {
+        this.roleFxG.clear();
+
+        const t = this.time.now * 0.012;
+
+        const scan = this.algoraAgents[0];
+        if (scan) {
+            const r = 10 + Math.sin(t) * 3;
+            this.roleFxG.lineStyle(2, 0x34d399, 0.65).strokeCircle(scan.x + 24, scan.y + 8, r);
+        }
+
+        const inbound = this.boxes.find((b) => b.phase === "algora" && b.status === "inbound");
+        if (inbound) {
+            this.roleFxG.lineStyle(2, 0x86efac, 0.9).strokeRoundedRect(inbound.x - 33, inbound.y - 24, 66, 48, 6);
+        }
+
+        const debate = this.aoAgents[0];
+        if (debate) {
+            const w = 18 + Math.sin(t * 0.9) * 4;
+            this.roleFxG.lineStyle(2, 0xf59e0b, 0.55).strokeEllipse(debate.x, debate.y + 10, w, 10);
+        }
+
+        if (this.aoRouteFlash && this.time.now < this.aoRouteFlash.until) {
+            const y = ROUTE_Y[this.aoRouteFlash.route];
+            this.roleFxG.fillStyle(0xfbbf24, 0.15).fillRoundedRect(1000, y - 34, 130, 68, 10);
+            this.roleFxG.lineStyle(2, 0xfbbf24, 0.9).strokeRoundedRect(1000, y - 34, 130, 68, 10);
+        }
+
+        const bridge = this.bridgeAgents[0];
+        const loading = this.boxes.find((b) => b.phase === "bridge" && b.status === "loading");
+        if (bridge && loading) {
+            const y = ROUTE_Y[loading.route];
+            this.roleFxG.fillStyle(0x60a5fa, 0.18).fillCircle(1188, y + 16, 8 + Math.sin(t) * 2);
+        }
+
+        if (this.bridgeVerifyPing && this.time.now < this.bridgeVerifyPing.until) {
+            const age = (this.bridgeVerifyPing.until - this.time.now) / 500;
+            this.roleFxG.lineStyle(2, 0x93c5fd, 0.9 * age).strokeCircle(this.bridgeVerifyPing.x, this.bridgeVerifyPing.y, 8 + (1 - age) * 16);
+        }
+    }
+
+    updateSelectedDetail() {
+        if (!this.selectedBoxId) return;
+        const b = this.boxes.find((x) => x.id === this.selectedBoxId);
+        if (!b) {
+            this.selectedBoxId = undefined;
+            detailEl.innerHTML = `<h2>상세 정보</h2><p>선택한 박스가 처리 완료되어 목록에서 제거되었습니다.</p>`;
+            return;
+        }
+        this.showDetail(b);
     }
 
     drawStats() {
