@@ -301,9 +301,9 @@ class SpaceHubScene extends Phaser.Scene {
         }
 
         const zones = [
-            { x: 220, w: 320, fill: 0x0f2d2a, stroke: 0x34d399 },
-            { x: W / 2, w: 420, fill: 0x3f2a12, stroke: 0xf59e0b },
-            { x: W - 190, w: 330, fill: 0x10263f, stroke: 0x60a5fa },
+            { x: 235, w: 430, fill: 0x0f2d2a, stroke: 0x34d399 },
+            { x: W / 2 + 40, w: 520, fill: 0x3f2a12, stroke: 0xf59e0b },
+            { x: W - 170, w: 360, fill: 0x10263f, stroke: 0x60a5fa },
         ];
 
         zones.forEach((z) => {
@@ -382,14 +382,14 @@ class SpaceHubScene extends Phaser.Scene {
                 .setDepth(95)
                 .setShadow(0, 1, "#000000", 2);
 
-        this.algoraAgents = [m("algora-bot", 112, 170), m("algora-bot", 190, 170), m("algora-bot", 268, 170)];
+        this.algoraAgents = [m("algora-bot", 104, 170), m("algora-bot", 188, 170), m("algora-bot", 272, 170)];
         this.aoAgents = [m("ao-bot", 650, 168), m("ao-bot", 740, 168), m("ao-bot", 830, 168)];
         this.bridgeAgents = [m("bridge-bot", 1160, 168), m("bridge-bot", 1240, 168)];
 
         this.algoraAgentBadges = [
-            badge(112, 142, "SCAN", "#86efac"),
-            badge(190, 142, "FILTER", "#86efac"),
-            badge(268, 142, "LOAD", "#86efac"),
+            badge(104, 142, "SCAN", "#86efac"),
+            badge(188, 142, "FILTER", "#86efac"),
+            badge(272, 142, "LOAD", "#86efac"),
         ];
         this.aoAgentBadges = [badge(650, 140, "DEBATE", "#fcd34d"), badge(740, 140, "PLAN", "#fcd34d"), badge(830, 140, "ROUTE", "#fcd34d")];
         this.bridgeAgentBadges = [badge(1160, 140, "EXECUTE", "#93c5fd"), badge(1240, 140, "VERIFY", "#93c5fd")];
@@ -522,9 +522,11 @@ class SpaceHubScene extends Phaser.Scene {
         const scanner = this.algoraAgents[0];
         this.activeAlgoraScan = scanner;
         const home = new Phaser.Math.Vector2(scanner.x, scanner.y);
+        const target = this.getAlgoraStackPoint();
 
-        this.carrierPickAndCarry(scanner, b, 206, 236, 860, () => {
+        this.carrierPickAndCarry(scanner, b, target.x, target.y, 860, () => {
             b.algoraStep = "at-filter";
+            b.status = "debating";
             this.moveCarrierHome(scanner, home, () => {
                 this.activeAlgoraScan = undefined;
                 this.busyAlgoraScan = false;
@@ -539,7 +541,7 @@ class SpaceHubScene extends Phaser.Scene {
         this.busyAlgoraFilter = true;
         this.activeAlgoraFilter = this.algoraAgents[1];
 
-        const reject = b.risk === "low" && Math.random() > 0.55;
+        const reject = b.risk === "low";
         this.time.delayedCall(760, () => {
             if (reject) {
                 b.algoraStep = "rejected";
@@ -547,10 +549,11 @@ class SpaceHubScene extends Phaser.Scene {
                 b.status = "loaded";
                 this.tweens.add({
                     targets: [b.sprite, b.tag, b.badge],
-                    x: 40,
-                    y: 660,
+                    x: 36,
+                    y: 650,
+                    angle: -30,
                     alpha: 0,
-                    duration: 520,
+                    duration: 560,
                     onComplete: () => {
                         b.sprite.setVisible(false);
                         b.tag.setVisible(false);
@@ -559,6 +562,7 @@ class SpaceHubScene extends Phaser.Scene {
                 });
             } else {
                 b.algoraStep = "approved";
+                b.status = "rerouting";
             }
             this.activeAlgoraFilter = undefined;
             this.busyAlgoraFilter = false;
@@ -575,7 +579,7 @@ class SpaceHubScene extends Phaser.Scene {
         this.activeAlgoraLoad = loader;
         const home = new Phaser.Math.Vector2(loader.x, loader.y);
 
-        this.carrierPickAndCarry(loader, b, BELT_LEFT + 20, b.beltY, 940, () => {
+        this.carrierPickAndCarry(loader, b, BELT_LEFT + 24, b.beltY, 940, () => {
             b.status = "on-belt";
             this.taggedIssues += 1;
             this.moveCarrierHome(loader, home, () => {
@@ -723,6 +727,15 @@ class SpaceHubScene extends Phaser.Scene {
         const idx = this.loadIndex[route] % slots.length;
         this.loadIndex[route] += 1;
         return slots[idx];
+    }
+
+    getAlgoraStackPoint() {
+        const waiting = this.boxes.filter(
+            (b) => b.phase === "algora" && (b.algoraStep === "at-filter" || b.algoraStep === "approved")
+        ).length;
+        const col = waiting % 2;
+        const row = Math.floor(waiting / 2);
+        return new Phaser.Math.Vector2(258 + col * 38, LANE_Y.P2 - 8 - row * 24);
     }
 
     decideRoute(b: Box): Route {
