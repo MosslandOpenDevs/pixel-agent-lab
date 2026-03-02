@@ -37,10 +37,6 @@ app.innerHTML = `
   <aside class="panel">
     <h1>Mossland Space Hub</h1>
     <p class="sub">우주 물류 센터 · Algora → AO → Bridge</p>
-    <div class="mini">
-      <label>속도 <input id="speed" type="range" min="0.7" max="1.8" step="0.1" value="1" /></label>
-      <label>박스 수 <input id="maxBoxes" type="range" min="4" max="10" value="8" /></label>
-    </div>
     <div id="stats" class="stats"></div>
     <div id="serviceStatus" class="stats"></div>
     <div id="detail" class="detail"><h2>상세 정보</h2><p>박스를 클릭하면 상세 정보가 표시됩니다.</p></div>
@@ -157,10 +153,11 @@ class SpaceHubScene extends Phaser.Scene {
     }
 
     update(_: number, dt: number) {
-        const speed = Number((document.querySelector("#speed") as HTMLInputElement).value);
-        const maxBoxes = Number((document.querySelector("#maxBoxes") as HTMLInputElement).value);
+        const speed = 1;
+        const maxBoxes = 8;
+        const laneStep = dt * 0.031 * speed;
 
-        this.beltOffset += dt * 0.07 * speed;
+        this.beltOffset += laneStep;
         this.drawBelts();
 
         if (
@@ -179,7 +176,7 @@ class SpaceHubScene extends Phaser.Scene {
 
         for (const b of this.boxes) {
             if (b.status === "on-belt") {
-                b.x += 0.52 * speed;
+                b.x += laneStep;
                 if (b.phase === "algora" && b.x >= 650) {
                     b.phase = "ao";
                     b.status = "debating";
@@ -953,18 +950,24 @@ class SpaceHubScene extends Phaser.Scene {
 
         serviceStatusEl.innerHTML = `
       <h2>서비스 I/O 상태</h2>
-      <div class="drow"><span>Algora Input</span><b>Signals ${this.totalSignals}</b></div>
-      <div class="drow"><span>Algora Output</span><b>Tagged Issues ${this.taggedIssues}</b></div>
-      <div class="hint">github:${sourceCount.github} · rss:${sourceCount.rss} · social:${sourceCount.social} · chain:${sourceCount.chain}</div>
-      <div class="hint">agents: scan · filter · tag+load</div>
-      <hr/>
-      <div class="drow"><span>AO Input</span><b>Issue Queue ${ao}</b></div>
-      <div class="drow"><span>AO Output</span><b>Plans ${this.plansCreated}</b></div>
-      <div class="hint">debates:${this.debatesRun} · immediate:${routeCount.immediate} · monitor:${routeCount.monitor} · defer:${routeCount.defer}</div>
-      <hr/>
-      <div class="drow"><span>Bridge Input</span><b>Delegated ${this.delegatedToBridge}</b></div>
-      <div class="drow"><span>Bridge Output</span><b>Verified ${this.verifiedOutcomes}</b></div>
-      <div class="hint">agents: execute · verify · log outcome</div>
+      <div class="svc algora">
+        <div class="svc-title">ALGORA</div>
+        <div class="drow"><span>Input</span><b>Signals ${this.totalSignals}</b></div>
+        <div class="drow"><span>Output</span><b>Tagged Issues ${this.taggedIssues}</b></div>
+        <div class="hint">github:${sourceCount.github} · rss:${sourceCount.rss} · social:${sourceCount.social} · chain:${sourceCount.chain}</div>
+      </div>
+      <div class="svc ao">
+        <div class="svc-title">AO</div>
+        <div class="drow"><span>Input</span><b>Issue Queue ${ao}</b></div>
+        <div class="drow"><span>Output</span><b>Plans ${this.plansCreated}</b></div>
+        <div class="hint">debates:${this.debatesRun} · immediate:${routeCount.immediate} · monitor:${routeCount.monitor} · defer:${routeCount.defer}</div>
+      </div>
+      <div class="svc bridge">
+        <div class="svc-title">BRIDGE</div>
+        <div class="drow"><span>Input</span><b>Delegated ${this.delegatedToBridge}</b></div>
+        <div class="drow"><span>Output</span><b>Verified ${this.verifiedOutcomes}</b></div>
+        <div class="hint">execution record · proof · trust score</div>
+      </div>
     `;
     }
 
