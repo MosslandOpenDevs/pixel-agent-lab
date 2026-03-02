@@ -15,7 +15,7 @@ type Box = {
     route: Route;
     phase: Phase;
     status: BoxStatus;
-    algoraStep: "new" | "at-filter" | "approved" | "rejected";
+    algoraStep: "new" | "at-filter" | "approved" | "loading" | "rejected";
     x: number;
     y: number;
     beltY: number;
@@ -539,31 +539,31 @@ class SpaceHubScene extends Phaser.Scene {
         const b = this.boxes.find((x) => x.phase === "algora" && x.algoraStep === "at-filter");
         if (!b) return;
         this.busyAlgoraFilter = true;
-        this.activeAlgoraFilter = this.algoraAgents[1];
+
+        const filter = this.algoraAgents[1];
+        this.activeAlgoraFilter = filter;
+        const home = new Phaser.Math.Vector2(filter.x, filter.y);
 
         const reject = b.risk === "low";
-        this.time.delayedCall(760, () => {
+        this.time.delayedCall(560, () => {
             if (reject) {
-                b.algoraStep = "rejected";
-                b.phase = "done";
-                b.status = "loaded";
-                this.tweens.add({
-                    targets: [b.sprite, b.tag, b.badge],
-                    x: 36,
-                    y: 650,
-                    angle: -30,
-                    alpha: 0,
-                    duration: 560,
-                    onComplete: () => {
-                        b.sprite.setVisible(false);
-                        b.tag.setVisible(false);
-                        b.badge.setVisible(false);
-                    },
+                this.carrierPickAndCarry(filter, b, 42, 650, 740, () => {
+                    b.algoraStep = "rejected";
+                    b.phase = "done";
+                    b.status = "loaded";
+                    b.sprite.setVisible(false);
+                    b.tag.setVisible(false);
+                    b.badge.setVisible(false);
+                    this.moveCarrierHome(filter, home, () => {
+                        this.activeAlgoraFilter = undefined;
+                        this.busyAlgoraFilter = false;
+                    });
                 });
-            } else {
-                b.algoraStep = "approved";
-                b.status = "rerouting";
+                return;
             }
+
+            b.algoraStep = "approved";
+            b.status = "rerouting";
             this.activeAlgoraFilter = undefined;
             this.busyAlgoraFilter = false;
         });
@@ -571,9 +571,14 @@ class SpaceHubScene extends Phaser.Scene {
 
     tryAlgoraLoad() {
         if (this.busyAlgoraLoad) return;
-        const b = this.boxes.find((x) => x.phase === "algora" && x.algoraStep === "approved");
+        const b = this.boxes.find(
+            (x) => x.phase === "algora" && x.algoraStep === "approved" && x.status === "rerouting"
+        );
         if (!b) return;
         this.busyAlgoraLoad = true;
+
+        b.algoraStep = "loading";
+        b.status = "loading";
 
         const loader = this.algoraAgents[2];
         this.activeAlgoraLoad = loader;
@@ -735,7 +740,7 @@ class SpaceHubScene extends Phaser.Scene {
         ).length;
         const col = waiting % 2;
         const row = Math.floor(waiting / 2);
-        return new Phaser.Math.Vector2(258 + col * 38, LANE_Y.P2 - 8 - row * 24);
+        return new Phaser.Math.Vector2(126 + col * 34, LANE_Y.P2 + 8 - row * 24);
     }
 
     decideRoute(b: Box): Route {
@@ -770,7 +775,7 @@ class SpaceHubScene extends Phaser.Scene {
             b.phase === "algora"
                 ? b.algoraStep === "at-filter"
                     ? "FILTER"
-                    : b.algoraStep === "approved"
+                    : b.algoraStep === "approved" || b.algoraStep === "loading"
                       ? "LOAD"
                       : "SCAN"
                 : b.phase === "ao"
