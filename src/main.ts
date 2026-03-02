@@ -48,22 +48,22 @@ app.innerHTML = `
   <main class="stage-wrap">
     <div id="stage">
       <div id="hud" class="hud" aria-hidden="true">
-        <div class="hud-label lane p1" style="left:92px; top:261px;">P1 URGENT</div>
-        <div class="hud-label lane p2" style="left:92px; top:411px;">P2 NORMAL</div>
-        <div class="hud-label lane p3" style="left:92px; top:561px;">P3 LOW</div>
+        <div class="hud-label lane p1" style="left:132px; top:261px;">P1 URGENT</div>
+        <div class="hud-label lane p2" style="left:132px; top:411px;">P2 NORMAL</div>
+        <div class="hud-label lane p3" style="left:132px; top:561px;">P3 LOW</div>
 
-        <div class="hud-label zone algora" style="left:112px; top:88px;">ALGORA · Inbound Tagging</div>
-        <div class="hud-label zone ao" style="left:620px; top:88px;">AO · Routing Discussion</div>
-        <div class="hud-label zone bridge" style="left:1160px; top:88px;">BRIDGE · Dispatch Bay</div>
+        <div class="hud-label zone algora" style="left:112px; top:88px;">ALGORA</div>
+        <div class="hud-label zone ao" style="left:620px; top:88px;">Agentic Orchestrator</div>
+        <div class="hud-label zone bridge" style="left:1160px; top:88px;">BRIDGE</div>
 
-        <div class="hud-label route" style="left:1070px; top:262px;">Immediate Action</div>
-        <div class="hud-label route" style="left:1070px; top:413px;">Monitor</div>
-        <div class="hud-label route" style="left:1070px; top:561px;">Defer</div>
+        <div class="hud-label route" style="left:1020px; top:262px;">Immediate Action</div>
+        <div class="hud-label route" style="left:1020px; top:413px;">Monitor</div>
+        <div class="hud-label route" style="left:1020px; top:561px;">Defer</div>
 
-        <div class="hud-label truck" style="left:1238px; top:205px;">Express</div>
-        <div class="hud-label truck" style="left:1238px; top:355px;">Monitor</div>
-        <div class="hud-label truck" style="left:1238px; top:505px;">Defer</div>
-        <div class="hud-label loaded" id="loadedHud" style="left:1226px; top:660px;">Loaded: 0</div>
+        <div class="hud-label truck" style="left:1218px; top:205px;">Express</div>
+        <div class="hud-label truck" style="left:1218px; top:355px;">Monitor</div>
+        <div class="hud-label truck" style="left:1218px; top:505px;">Defer</div>
+        <div class="hud-label loaded" id="loadedHud" style="left:1206px; top:660px;">Loaded: 0</div>
       </div>
     </div>
     <div id="titleBar" class="titleBar">🚚 Mossland Space Hub</div>
@@ -310,7 +310,12 @@ class SpaceHubScene extends Phaser.Scene {
         const zones = [
             { x: left + wA / 2, w: wA, fill: 0x0f2d2a, stroke: 0x34d399 },
             { x: left + wA + zoneGap + wB / 2, w: wB, fill: 0x3f2a12, stroke: 0xf59e0b },
-            { x: left + wA + zoneGap + wB + zoneGap + wC / 2, w: wC, fill: 0x10263f, stroke: 0x60a5fa },
+            {
+                x: left + wA + zoneGap + wB + zoneGap + wC / 2,
+                w: wC,
+                fill: 0x10263f,
+                stroke: 0x60a5fa,
+            },
         ];
 
         zones.forEach((z) => {
@@ -389,7 +394,11 @@ class SpaceHubScene extends Phaser.Scene {
                 .setDepth(95)
                 .setShadow(0, 1, "#000000", 2);
 
-        this.algoraAgents = [m("algora-bot", 104, 170), m("algora-bot", 188, 170), m("algora-bot", 272, 170)];
+        this.algoraAgents = [
+            m("algora-bot", 104, 170),
+            m("algora-bot", 188, 170),
+            m("algora-bot", 272, 170),
+        ];
         this.aoAgents = [m("ao-bot", 670, 168), m("ao-bot", 760, 168), m("ao-bot", 850, 168)];
         this.bridgeAgents = [m("bridge-bot", 1160, 168), m("bridge-bot", 1240, 168)];
 
@@ -398,8 +407,15 @@ class SpaceHubScene extends Phaser.Scene {
             badge(188, 142, "FILTER", "#86efac"),
             badge(272, 142, "LOAD", "#86efac"),
         ];
-        this.aoAgentBadges = [badge(670, 140, "DEBATE", "#fcd34d"), badge(760, 140, "PLAN", "#fcd34d"), badge(850, 140, "ROUTE", "#fcd34d")];
-        this.bridgeAgentBadges = [badge(1160, 140, "EXECUTE", "#93c5fd"), badge(1240, 140, "VERIFY", "#93c5fd")];
+        this.aoAgentBadges = [
+            badge(670, 140, "DEBATE", "#fcd34d"),
+            badge(760, 140, "PLAN", "#fcd34d"),
+            badge(850, 140, "ROUTE", "#fcd34d"),
+        ];
+        this.bridgeAgentBadges = [
+            badge(1160, 140, "EXECUTE", "#93c5fd"),
+            badge(1240, 140, "VERIFY", "#93c5fd"),
+        ];
     }
 
     buildTrucks() {
@@ -414,38 +430,38 @@ class SpaceHubScene extends Phaser.Scene {
         for (const t of trucks) {
             // cargo bed shell
             this.truckG.fillStyle(0x131925, 0.98);
-            this.truckG.fillRoundedRect(1196, t.y - 46, 154, 78, 10);
+            this.truckG.fillRoundedRect(1176, t.y - 46, 154, 78, 10);
             this.truckG.lineStyle(2, 0x60a5fa, 0.95);
-            this.truckG.strokeRoundedRect(1196, t.y - 46, 154, 78, 10);
+            this.truckG.strokeRoundedRect(1176, t.y - 46, 154, 78, 10);
 
             // cab
             this.truckG.fillStyle(0x243244, 1);
-            this.truckG.fillRoundedRect(1352, t.y - 32, 30, 60, 6);
+            this.truckG.fillRoundedRect(1332, t.y - 32, 30, 60, 6);
             this.truckG.fillStyle(0x93c5fd, 0.8);
-            this.truckG.fillRect(1357, t.y - 22, 18, 13);
+            this.truckG.fillRect(1337, t.y - 22, 18, 13);
 
             // bumper + light
             this.truckG.fillStyle(0x0f172a, 1);
-            this.truckG.fillRect(1188, t.y + 12, 10, 8);
+            this.truckG.fillRect(1168, t.y + 12, 10, 8);
             this.truckG.fillStyle(0xfef08a, 0.9);
-            this.truckG.fillRect(1189, t.y + 14, 4, 4);
+            this.truckG.fillRect(1169, t.y + 14, 4, 4);
 
             // wheels with hub detail
             this.truckG.fillStyle(0x0b1220, 1);
-            this.truckG.fillCircle(1226, t.y + 34, 11);
-            this.truckG.fillCircle(1322, t.y + 34, 11);
+            this.truckG.fillCircle(1206, t.y + 34, 11);
+            this.truckG.fillCircle(1302, t.y + 34, 11);
             this.truckG.fillStyle(0x94a3b8, 0.85);
-            this.truckG.fillCircle(1226, t.y + 34, 4);
-            this.truckG.fillCircle(1322, t.y + 34, 4);
+            this.truckG.fillCircle(1206, t.y + 34, 4);
+            this.truckG.fillCircle(1302, t.y + 34, 4);
             this.truckG.fillStyle(0x1e293b, 0.9);
-            this.truckG.fillCircle(1226, t.y + 34, 2);
-            this.truckG.fillCircle(1322, t.y + 34, 2);
+            this.truckG.fillCircle(1206, t.y + 34, 2);
+            this.truckG.fillCircle(1302, t.y + 34, 2);
 
             // 6 hidden slots (3x2) centered in cargo bay with slight spread
             const slots: Phaser.Math.Vector2[] = [];
             for (let r = 0; r < 2; r++) {
                 for (let c = 0; c < 3; c++) {
-                    const sx = 1232 + c * 26;
+                    const sx = 1212 + c * 26;
                     const sy = t.y - 2 + r * 20;
                     slots.push(new Phaser.Math.Vector2(sx, sy));
                 }
@@ -743,7 +759,9 @@ class SpaceHubScene extends Phaser.Scene {
 
     getAlgoraStackPoint() {
         const waiting = this.boxes.filter(
-            (b) => b.phase === "algora" && (b.algoraStep === "at-filter" || b.algoraStep === "approved")
+            (b) =>
+                b.phase === "algora" &&
+                (b.algoraStep === "at-filter" || b.algoraStep === "approved")
         ).length;
         const col = waiting % 2;
         const row = Math.floor(waiting / 2);
@@ -807,7 +825,15 @@ class SpaceHubScene extends Phaser.Scene {
         this.aoAgentBadges.forEach((t, i) => {
             const active = this.activeAOCarrier === this.aoAgents[i];
             const base = i === 0 ? "DEBATE" : i === 1 ? "PLAN" : "ROUTE";
-            const duringDebate = this.busyAO ? (i === 0 ? "PROPOSE" : i === 1 ? "SYNTH" : active ? "SEND" : "DECIDE") : base;
+            const duringDebate = this.busyAO
+                ? i === 0
+                    ? "PROPOSE"
+                    : i === 1
+                      ? "SYNTH"
+                      : active
+                        ? "SEND"
+                        : "DECIDE"
+                : base;
             t.setText(duringDebate);
             t.setPosition(this.aoAgents[i].x, this.aoAgents[i].y - 30);
         });
@@ -831,15 +857,33 @@ class SpaceHubScene extends Phaser.Scene {
 
         const filter = this.algoraAgents[1];
         if (filter) {
-            this.roleFxG.lineStyle(2, 0x86efac, 0.55).strokeRect(filter.x - 16, filter.y + 2, 32, 12);
+            this.roleFxG
+                .lineStyle(2, 0x86efac, 0.55)
+                .strokeRect(filter.x - 16, filter.y + 2, 32, 12);
         }
 
         const debate = this.aoAgents[0];
         const planner = this.aoAgents[1];
         const router = this.aoAgents[2];
-        if (debate) this.roleFxG.lineStyle(2, 0xf59e0b, 0.55).strokeCircle(debate.x, debate.y + 10, 11 + Math.sin(t) * 2);
-        if (planner) this.roleFxG.fillStyle(0xfcd34d, 0.22).fillRoundedRect(planner.x - 18, planner.y + 2, 36, 12, 4);
-        if (router) this.roleFxG.lineStyle(2, 0xfbbf24, 0.6).strokeTriangle(router.x - 8, router.y + 12, router.x + 8, router.y + 12, router.x, router.y + 2);
+        if (debate)
+            this.roleFxG
+                .lineStyle(2, 0xf59e0b, 0.55)
+                .strokeCircle(debate.x, debate.y + 10, 11 + Math.sin(t) * 2);
+        if (planner)
+            this.roleFxG
+                .fillStyle(0xfcd34d, 0.22)
+                .fillRoundedRect(planner.x - 18, planner.y + 2, 36, 12, 4);
+        if (router)
+            this.roleFxG
+                .lineStyle(2, 0xfbbf24, 0.6)
+                .strokeTriangle(
+                    router.x - 8,
+                    router.y + 12,
+                    router.x + 8,
+                    router.y + 12,
+                    router.x,
+                    router.y + 2
+                );
 
         if (this.aoRouteFlash && this.time.now < this.aoRouteFlash.until) {
             const y = ROUTE_Y[this.aoRouteFlash.route];
@@ -856,9 +900,14 @@ class SpaceHubScene extends Phaser.Scene {
 
         if (this.bridgeVerifyPing && this.time.now < this.bridgeVerifyPing.until) {
             const age = (this.bridgeVerifyPing.until - this.time.now) / 500;
-            this.roleFxG.lineStyle(2, 0x93c5fd, 0.9 * age).strokeCircle(this.bridgeVerifyPing.x, this.bridgeVerifyPing.y, 8 + (1 - age) * 16);
+            this.roleFxG
+                .lineStyle(2, 0x93c5fd, 0.9 * age)
+                .strokeCircle(this.bridgeVerifyPing.x, this.bridgeVerifyPing.y, 8 + (1 - age) * 16);
             const verifier = this.bridgeAgents[1];
-            if (verifier) this.roleFxG.fillStyle(0x93c5fd, 0.6 * age).fillCircle(verifier.x, verifier.y + 8, 5);
+            if (verifier)
+                this.roleFxG
+                    .fillStyle(0x93c5fd, 0.6 * age)
+                    .fillCircle(verifier.x, verifier.y + 8, 5);
         }
     }
 
@@ -887,7 +936,9 @@ class SpaceHubScene extends Phaser.Scene {
         };
 
         const routeCount = {
-            immediate: this.boxes.filter((b) => b.route === "Immediate Action" && b.phase !== "done").length,
+            immediate: this.boxes.filter(
+                (b) => b.route === "Immediate Action" && b.phase !== "done"
+            ).length,
             monitor: this.boxes.filter((b) => b.route === "Monitor" && b.phase !== "done").length,
             defer: this.boxes.filter((b) => b.route === "Defer" && b.phase !== "done").length,
         };
