@@ -302,7 +302,7 @@ class SpaceHubScene extends Phaser.Scene {
 
         const zones = [
             { x: 250, w: 500, fill: 0x0f2d2a, stroke: 0x34d399 },
-            { x: W / 2 + 24, w: 500, fill: 0x3f2a12, stroke: 0xf59e0b },
+            { x: W / 2 + 44, w: 500, fill: 0x3f2a12, stroke: 0xf59e0b },
             { x: W - 170, w: 300, fill: 0x10263f, stroke: 0x60a5fa },
         ];
 
@@ -383,7 +383,7 @@ class SpaceHubScene extends Phaser.Scene {
                 .setShadow(0, 1, "#000000", 2);
 
         this.algoraAgents = [m("algora-bot", 104, 170), m("algora-bot", 188, 170), m("algora-bot", 272, 170)];
-        this.aoAgents = [m("ao-bot", 650, 168), m("ao-bot", 740, 168), m("ao-bot", 830, 168)];
+        this.aoAgents = [m("ao-bot", 670, 168), m("ao-bot", 760, 168), m("ao-bot", 850, 168)];
         this.bridgeAgents = [m("bridge-bot", 1160, 168), m("bridge-bot", 1240, 168)];
 
         this.algoraAgentBadges = [
@@ -391,7 +391,7 @@ class SpaceHubScene extends Phaser.Scene {
             badge(188, 142, "FILTER", "#86efac"),
             badge(272, 142, "LOAD", "#86efac"),
         ];
-        this.aoAgentBadges = [badge(650, 140, "DEBATE", "#fcd34d"), badge(740, 140, "PLAN", "#fcd34d"), badge(830, 140, "ROUTE", "#fcd34d")];
+        this.aoAgentBadges = [badge(670, 140, "DEBATE", "#fcd34d"), badge(760, 140, "PLAN", "#fcd34d"), badge(850, 140, "ROUTE", "#fcd34d")];
         this.bridgeAgentBadges = [badge(1160, 140, "EXECUTE", "#93c5fd"), badge(1240, 140, "VERIFY", "#93c5fd")];
     }
 
@@ -603,7 +603,7 @@ class SpaceHubScene extends Phaser.Scene {
         this.aoDebateCard?.destroy();
         this.aoDebateCard = this.add
             .text(
-                820,
+                840,
                 132,
                 `AO DISCUSSION  |  ${b.id} ${b.source.toUpperCase()} ${b.risk.toUpperCase()}\nDEBATE: propose/challenge · PLAN: execution draft · ROUTE: A/B/C`,
                 {
@@ -620,7 +620,7 @@ class SpaceHubScene extends Phaser.Scene {
 
         this.aoPlanChip?.destroy();
         this.aoPlanChip = this.add
-            .text(740, 206, `PLAN: ${b.id} review`, {
+            .text(760, 206, `PLAN: ${b.id} review`, {
                 fontFamily: "monospace",
                 fontSize: "9px",
                 color: "#111827",
