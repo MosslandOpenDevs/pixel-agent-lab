@@ -229,28 +229,32 @@ class SpaceHubScene extends Phaser.Scene {
         this.beltG.fillCircle(x, y + 22, 2)
       }
 
-      // center treads
-      for (let x = BELT_LEFT - 34; x < BELT_RIGHT + 10; x += 50) {
-        const sx = x + (this.beltOffset % 50)
-        this.beltG.fillStyle(0xe2e8f0, 0.2)
-        this.beltG.fillRect(sx, y - 7, 20, 14)
+      // center treads (strictly clipped inside belt bounds)
+      const phase = this.beltOffset % 50
+      for (let x = BELT_LEFT - 50 + phase; x < BELT_RIGHT; x += 50) {
+        const left = Math.max(x, BELT_LEFT)
+        const width = Math.min(20, BELT_RIGHT - left)
+        if (width > 0) {
+          this.beltG.fillStyle(0xe2e8f0, 0.2)
+          this.beltG.fillRect(left, y - 7, width, 14)
+        }
       }
     }
 
   }
 
   drawLabels() {
-    this.add.text(90, LANE_Y.P1 - 52, 'P1 URGENT', { fontSize: '11px', color: '#fca5a5', fontFamily: 'monospace' })
-    this.add.text(90, LANE_Y.P2 - 52, 'P2 NORMAL', { fontSize: '11px', color: '#93c5fd', fontFamily: 'monospace' })
-    this.add.text(90, LANE_Y.P3 - 52, 'P3 LOW', { fontSize: '11px', color: '#cbd5e1', fontFamily: 'monospace' })
+    this.add.text(90, LANE_Y.P1 - 56, 'P1 URGENT', { fontSize: '11px', color: '#fca5a5', fontFamily: 'monospace' }).setDepth(80)
+    this.add.text(90, LANE_Y.P2 - 56, 'P2 NORMAL', { fontSize: '11px', color: '#93c5fd', fontFamily: 'monospace' }).setDepth(80)
+    this.add.text(90, LANE_Y.P3 - 56, 'P3 LOW', { fontSize: '11px', color: '#cbd5e1', fontFamily: 'monospace' }).setDepth(80)
 
-    this.add.text(130, 120, 'ALGORA · Inbound Tagging', { fontSize: '14px', color: '#86efac', fontFamily: 'monospace' })
-    this.add.text(W / 2 - 110, 120, 'AO · Routing Discussion', { fontSize: '14px', color: '#fcd34d', fontFamily: 'monospace' })
-    this.add.text(W - 350, 120, 'BRIDGE · Dispatch Bay', { fontSize: '14px', color: '#93c5fd', fontFamily: 'monospace' })
+    this.add.text(130, 120, 'ALGORA · Inbound Tagging', { fontSize: '14px', color: '#86efac', fontFamily: 'monospace' }).setDepth(80)
+    this.add.text(W / 2 - 110, 120, 'AO · Routing Discussion', { fontSize: '14px', color: '#fcd34d', fontFamily: 'monospace' }).setDepth(80)
+    this.add.text(W - 350, 120, 'BRIDGE · Dispatch Bay', { fontSize: '14px', color: '#93c5fd', fontFamily: 'monospace' }).setDepth(80)
 
-    this.add.text(990, 188, 'Immediate Action', { color: '#fde68a', fontSize: '11px', fontFamily: 'monospace' })
-    this.add.text(990, 348, 'Monitor', { color: '#fde68a', fontSize: '11px', fontFamily: 'monospace' })
-    this.add.text(990, 508, 'Defer', { color: '#fde68a', fontSize: '11px', fontFamily: 'monospace' })
+    this.add.text(990, 176, 'Immediate Action', { color: '#fde68a', fontSize: '11px', fontFamily: 'monospace', backgroundColor: '#0f172acc' }).setDepth(82)
+    this.add.text(990, 336, 'Monitor', { color: '#fde68a', fontSize: '11px', fontFamily: 'monospace', backgroundColor: '#0f172acc' }).setDepth(82)
+    this.add.text(990, 496, 'Defer', { color: '#fde68a', fontSize: '11px', fontFamily: 'monospace', backgroundColor: '#0f172acc' }).setDepth(82)
   }
 
   spawnAgents() {
@@ -291,7 +295,7 @@ class SpaceHubScene extends Phaser.Scene {
       this.truckG.fillCircle(1245, t.y + 30, 4)
       this.truckG.fillCircle(1338, t.y + 30, 4)
 
-      this.add.text(1228, t.y - 58, t.label, { color: '#bfdbfe', fontSize: '11px', fontFamily: 'monospace' }).setDepth(36)
+      this.add.text(1228, t.y - 72, t.label, { color: '#bfdbfe', fontSize: '11px', fontFamily: 'monospace', backgroundColor: '#0f172acc' }).setDepth(82)
 
       // 4 hidden slots (2x2) for stacking logic
       const slots: Phaser.Math.Vector2[] = []
@@ -305,7 +309,7 @@ class SpaceHubScene extends Phaser.Scene {
       this.cargoSlots[t.route] = slots
     }
 
-    this.truckCount = this.add.text(1248, 620, 'Loaded: 0', { color: '#93c5fd', fontSize: '11px', fontFamily: 'monospace' }).setDepth(36)
+    this.truckCount = this.add.text(1248, 620, 'Loaded: 0', { color: '#93c5fd', fontSize: '11px', fontFamily: 'monospace', backgroundColor: '#0f172acc' }).setDepth(82)
   }
 
   animateAgents() {
