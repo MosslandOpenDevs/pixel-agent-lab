@@ -58,8 +58,8 @@ app.innerHTML = `
         <div class="hud-label route" style="left:1070px; top:561px;">Defer</div>
 
         <div class="hud-label truck" style="left:1260px; top:210px;">Express</div>
-        <div class="hud-label truck" style="left:1260px; top:370px;">Monitor</div>
-        <div class="hud-label truck" style="left:1260px; top:530px;">Defer</div>
+        <div class="hud-label truck" style="left:1260px; top:360px;">Monitor</div>
+        <div class="hud-label truck" style="left:1260px; top:510px;">Defer</div>
         <div class="hud-label loaded" id="loadedHud" style="left:1248px; top:660px;">Loaded: 0</div>
       </div>
     </div>
@@ -256,15 +256,37 @@ class SpaceHubScene extends Phaser.Scene {
             s.setScale(Phaser.Math.FloatBetween(0.2, 0.6));
             s.setAlpha(Phaser.Math.FloatBetween(0.2, 0.9));
         }
-        this.add
-            .rectangle(220, H / 2, 320, H - 80, 0x0f2d2a, 0.18)
-            .setStrokeStyle(2, 0x34d399, 0.35);
-        this.add
-            .rectangle(W / 2, H / 2, 420, H - 80, 0x3f2a12, 0.16)
-            .setStrokeStyle(2, 0xf59e0b, 0.35);
-        this.add
-            .rectangle(W - 190, H / 2, 330, H - 80, 0x10263f, 0.16)
-            .setStrokeStyle(2, 0x60a5fa, 0.35);
+
+        const zones = [
+            { x: 220, w: 320, fill: 0x0f2d2a, stroke: 0x34d399 },
+            { x: W / 2, w: 420, fill: 0x3f2a12, stroke: 0xf59e0b },
+            { x: W - 190, w: 330, fill: 0x10263f, stroke: 0x60a5fa },
+        ];
+
+        zones.forEach((z) => {
+            const panel = this.add.rectangle(z.x, H / 2, z.w, H - 80, z.fill, 0.16).setDepth(3);
+            panel.setStrokeStyle(2, z.stroke, 0.42);
+
+            // inner frame for richer zone detail
+            const inner = this.add.rectangle(z.x, H / 2, z.w - 18, H - 98, 0x000000, 0).setDepth(3);
+            inner.setStrokeStyle(1, z.stroke, 0.24);
+
+            // corner beacons
+            const halfW = z.w / 2;
+            const top = 42;
+            const bottom = H - 42;
+            const left = z.x - halfW + 10;
+            const right = z.x + halfW - 10;
+            [
+                [left, top],
+                [right, top],
+                [left, bottom],
+                [right, bottom],
+            ].forEach(([cx, cy]) => {
+                this.add.circle(cx, cy, 2.6, z.stroke, 0.85).setDepth(4);
+                this.add.circle(cx, cy, 6.5, z.stroke, 0.16).setDepth(3);
+            });
+        });
     }
 
     drawBelts() {
@@ -320,32 +342,51 @@ class SpaceHubScene extends Phaser.Scene {
         ];
 
         for (const t of trucks) {
-            // cargo bed
-            this.truckG.fillStyle(0x111827, 0.96);
-            this.truckG.fillRoundedRect(1220, t.y - 44, 140, 72, 8);
-            this.truckG.lineStyle(2, 0x60a5fa, 0.9);
-            this.truckG.strokeRoundedRect(1220, t.y - 44, 140, 72, 8);
+            // cargo bed shell
+            this.truckG.fillStyle(0x111827, 0.98);
+            this.truckG.fillRoundedRect(1216, t.y - 46, 154, 78, 10);
+            this.truckG.lineStyle(2, 0x60a5fa, 0.95);
+            this.truckG.strokeRoundedRect(1216, t.y - 46, 154, 78, 10);
+
+            // cargo inner bay
+            this.truckG.fillStyle(0x1f2937, 1);
+            this.truckG.fillRoundedRect(1228, t.y - 32, 116, 50, 7);
+            this.truckG.lineStyle(1, 0x334155, 0.9);
+            this.truckG.strokeRoundedRect(1228, t.y - 32, 116, 50, 7);
+
+            // upper rail
+            this.truckG.lineStyle(2, 0x93c5fd, 0.8);
+            this.truckG.lineBetween(1228, t.y - 32, 1344, t.y - 32);
 
             // cab
-            this.truckG.fillStyle(0x1e293b, 1);
-            this.truckG.fillRoundedRect(1362, t.y - 30, 36, 56, 6);
-            this.truckG.fillStyle(0x93c5fd, 0.75);
-            this.truckG.fillRect(1368, t.y - 22, 20, 14);
+            this.truckG.fillStyle(0x243244, 1);
+            this.truckG.fillRoundedRect(1372, t.y - 32, 30, 60, 6);
+            this.truckG.fillStyle(0x93c5fd, 0.8);
+            this.truckG.fillRect(1377, t.y - 22, 18, 13);
 
-            // wheels
+            // bumper + light
+            this.truckG.fillStyle(0x0f172a, 1);
+            this.truckG.fillRect(1208, t.y + 12, 10, 8);
+            this.truckG.fillStyle(0xfef08a, 0.9);
+            this.truckG.fillRect(1209, t.y + 14, 4, 4);
+
+            // wheels with hub detail
             this.truckG.fillStyle(0x0b1220, 1);
-            this.truckG.fillCircle(1245, t.y + 30, 10);
-            this.truckG.fillCircle(1338, t.y + 30, 10);
-            this.truckG.fillStyle(0x94a3b8, 0.8);
-            this.truckG.fillCircle(1245, t.y + 30, 4);
-            this.truckG.fillCircle(1338, t.y + 30, 4);
+            this.truckG.fillCircle(1246, t.y + 34, 11);
+            this.truckG.fillCircle(1342, t.y + 34, 11);
+            this.truckG.fillStyle(0x94a3b8, 0.85);
+            this.truckG.fillCircle(1246, t.y + 34, 4);
+            this.truckG.fillCircle(1342, t.y + 34, 4);
+            this.truckG.fillStyle(0x1e293b, 0.9);
+            this.truckG.fillCircle(1246, t.y + 34, 2);
+            this.truckG.fillCircle(1342, t.y + 34, 2);
 
             // 4 hidden slots (2x2) for stacking logic
             const slots: Phaser.Math.Vector2[] = [];
             for (let r = 0; r < 2; r++) {
                 for (let c = 0; c < 2; c++) {
-                    const sx = 1244 + c * 36;
-                    const sy = t.y - 10 + r * 24;
+                    const sx = 1244 + c * 34;
+                    const sy = t.y - 12 + r * 22;
                     slots.push(new Phaser.Math.Vector2(sx, sy));
                 }
             }
