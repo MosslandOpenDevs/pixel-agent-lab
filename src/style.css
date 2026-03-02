@@ -76,11 +76,42 @@ input[type='range'] { flex: 1; }
 }
 
 #stage {
+  position: relative;
   border: 1px solid #334155;
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 25px 70px rgba(0, 0, 0, 0.45);
 }
+
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.hud-label {
+  position: absolute;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #0f172acc;
+  color: #e2e8f0;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.hud-label.zone { font-size: 13px; }
+.hud-label.p1 { color: #fca5a5; }
+.hud-label.p2 { color: #93c5fd; }
+.hud-label.p3 { color: #cbd5e1; }
+.hud-label.algora { color: #86efac; }
+.hud-label.ao { color: #fcd34d; }
+.hud-label.bridge { color: #93c5fd; }
+.hud-label.route { color: #fde68a; }
+.hud-label.truck { color: #bfdbfe; }
+.hud-label.loaded { color: #93c5fd; }
 
 .titleBar {
   position: absolute;

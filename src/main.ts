@@ -43,7 +43,26 @@ app.innerHTML = `
     <div id="detail" class="detail"><h2>상세 정보</h2><p>박스를 클릭하면 상세 정보가 표시됩니다.</p></div>
   </aside>
   <main class="stage-wrap">
-    <div id="stage"></div>
+    <div id="stage">
+      <div id="hud" class="hud" aria-hidden="true">
+        <div class="hud-label lane p1" style="left:92px; top:172px;">P1 URGENT</div>
+        <div class="hud-label lane p2" style="left:92px; top:322px;">P2 NORMAL</div>
+        <div class="hud-label lane p3" style="left:92px; top:472px;">P3 LOW</div>
+
+        <div class="hud-label zone algora" style="left:112px; top:88px;">ALGORA · Inbound Tagging</div>
+        <div class="hud-label zone ao" style="left:600px; top:88px;">AO · Routing Discussion</div>
+        <div class="hud-label zone bridge" style="left:1068px; top:88px;">BRIDGE · Dispatch Bay</div>
+
+        <div class="hud-label route" style="left:1120px; top:176px;">Immediate Action</div>
+        <div class="hud-label route" style="left:1120px; top:336px;">Monitor</div>
+        <div class="hud-label route" style="left:1120px; top:496px;">Defer</div>
+
+        <div class="hud-label truck" style="left:1228px; top:130px;">Express</div>
+        <div class="hud-label truck" style="left:1228px; top:290px;">Monitor</div>
+        <div class="hud-label truck" style="left:1228px; top:450px;">Defer</div>
+        <div class="hud-label loaded" id="loadedHud" style="left:1248px; top:620px;">Loaded: 0</div>
+      </div>
+    </div>
     <div id="titleBar" class="titleBar">🚚 Orbital Conveyor Operations</div>
   </main>
 </div>
@@ -51,6 +70,7 @@ app.innerHTML = `
 
 const statsEl = document.querySelector<HTMLDivElement>('#stats')!
 const detailEl = document.querySelector<HTMLDivElement>('#detail')!
+const loadedHudEl = document.querySelector<HTMLDivElement>('#loadedHud')!
 
 class SpaceHubScene extends Phaser.Scene {
   boxes: Box[] = []
@@ -61,7 +81,6 @@ class SpaceHubScene extends Phaser.Scene {
 
   beltG!: Phaser.GameObjects.Graphics
   truckG!: Phaser.GameObjects.Graphics
-  truckCount!: Phaser.GameObjects.Text
 
   algoraAgents: Phaser.GameObjects.Sprite[] = []
   aoAgents: Phaser.GameObjects.Sprite[] = []
@@ -93,7 +112,6 @@ class SpaceHubScene extends Phaser.Scene {
     this.truckG = this.add.graphics().setDepth(30)
 
     this.drawBelts()
-    this.drawLabels()
     this.spawnAgents()
     this.buildTrucks()
 
@@ -243,22 +261,6 @@ class SpaceHubScene extends Phaser.Scene {
 
   }
 
-  drawLabels() {
-    const style = { fontFamily: 'monospace', backgroundColor: '#0f172acc' }
-
-    this.add.text(92, LANE_Y.P1 - 58, 'P1 URGENT', { ...style, fontSize: '11px', color: '#fca5a5' }).setDepth(120)
-    this.add.text(92, LANE_Y.P2 - 58, 'P2 NORMAL', { ...style, fontSize: '11px', color: '#93c5fd' }).setDepth(120)
-    this.add.text(92, LANE_Y.P3 - 58, 'P3 LOW', { ...style, fontSize: '11px', color: '#cbd5e1' }).setDepth(120)
-
-    this.add.text(112, 88, 'ALGORA · Inbound Tagging', { ...style, fontSize: '13px', color: '#86efac' }).setDepth(120)
-    this.add.text(W / 2 - 118, 88, 'AO · Routing Discussion', { ...style, fontSize: '13px', color: '#fcd34d' }).setDepth(120)
-    this.add.text(W - 372, 88, 'BRIDGE · Dispatch Bay', { ...style, fontSize: '13px', color: '#93c5fd' }).setDepth(120)
-
-    this.add.text(1120, 176, 'Immediate Action', { ...style, color: '#fde68a', fontSize: '11px' }).setDepth(121)
-    this.add.text(1120, 336, 'Monitor', { ...style, color: '#fde68a', fontSize: '11px' }).setDepth(121)
-    this.add.text(1120, 496, 'Defer', { ...style, color: '#fde68a', fontSize: '11px' }).setDepth(121)
-  }
-
   spawnAgents() {
     const m = (key: string, x: number, y: number) => this.add.sprite(x, y, `${key}-0`).setDepth(40).setDisplaySize(44, 44)
 
@@ -297,8 +299,6 @@ class SpaceHubScene extends Phaser.Scene {
       this.truckG.fillCircle(1245, t.y + 30, 4)
       this.truckG.fillCircle(1338, t.y + 30, 4)
 
-      this.add.text(1228, t.y - 72, t.label, { color: '#bfdbfe', fontSize: '11px', fontFamily: 'monospace', backgroundColor: '#0f172acc' }).setDepth(82)
-
       // 4 hidden slots (2x2) for stacking logic
       const slots: Phaser.Math.Vector2[] = []
       for (let r = 0; r < 2; r++) {
@@ -311,7 +311,6 @@ class SpaceHubScene extends Phaser.Scene {
       this.cargoSlots[t.route] = slots
     }
 
-    this.truckCount = this.add.text(1248, 620, 'Loaded: 0', { color: '#93c5fd', fontSize: '11px', fontFamily: 'monospace', backgroundColor: '#0f172acc' }).setDepth(82)
   }
 
   animateAgents() {
@@ -418,7 +417,7 @@ class SpaceHubScene extends Phaser.Scene {
       b.sprite.setDepth(34)
       b.tag.destroy()
       this.loaded += 1
-      this.truckCount.setText(`Loaded: ${this.loaded}`)
+      loadedHudEl.textContent = `Loaded: ${this.loaded}`
       this.moveCarrierHome(carrier, home, () => (this.busyBridge = false))
     })
   }
