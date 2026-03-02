@@ -301,9 +301,9 @@ class SpaceHubScene extends Phaser.Scene {
         }
 
         const zoneGap = 18;
-        const wA = 500;
-        const wB = 500;
-        const wC = 300;
+        const wA = 430;
+        const wB = 430;
+        const wC = 430;
         const total = wA + wB + wC + zoneGap * 2;
         const left = (W - total) / 2;
 
@@ -843,9 +843,9 @@ class SpaceHubScene extends Phaser.Scene {
 
         if (this.aoRouteFlash && this.time.now < this.aoRouteFlash.until) {
             const y = ROUTE_Y[this.aoRouteFlash.route];
-            const pulse = 8 + Math.sin(t * 1.3) * 2.5;
-            this.roleFxG.lineStyle(2, 0xfbbf24, 0.72).strokeCircle(1110, y, pulse);
-            this.roleFxG.lineStyle(2, 0xfbbf24, 0.42).strokeCircle(1110, y, pulse + 7);
+            const pulse = 10 + Math.sin(t * 1.2) * 3;
+            this.roleFxG.lineStyle(2, 0xfbbf24, 0.7).strokeCircle(1038, y, pulse);
+            this.roleFxG.lineStyle(2, 0xfbbf24, 0.35).strokeCircle(1038, y, pulse + 6);
         }
 
         const loading = this.boxes.find((b) => b.phase === "bridge" && b.status === "loading");
