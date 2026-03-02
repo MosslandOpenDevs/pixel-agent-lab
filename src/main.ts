@@ -26,8 +26,8 @@ const W = 1440;
 const H = 760;
 const BELT_LEFT = 180;
 const BELT_RIGHT = 1140;
-const LANE_Y: Record<Priority, number> = { P1: 230, P2: 380, P3: 530 };
-const ROUTE_Y: Record<Route, number> = { "Immediate Action": 220, Monitor: 380, Defer: 540 };
+const LANE_Y: Record<Priority, number> = { P1: 270, P2: 420, P3: 570 };
+const ROUTE_Y: Record<Route, number> = { "Immediate Action": 260, Monitor: 420, Defer: 580 };
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
@@ -45,22 +45,22 @@ app.innerHTML = `
   <main class="stage-wrap">
     <div id="stage">
       <div id="hud" class="hud" aria-hidden="true">
-        <div class="hud-label lane p1" style="left:92px; top:221px;">P1 URGENT</div>
-        <div class="hud-label lane p2" style="left:92px; top:371px;">P2 NORMAL</div>
-        <div class="hud-label lane p3" style="left:92px; top:521px;">P3 LOW</div>
+        <div class="hud-label lane p1" style="left:92px; top:261px;">P1 URGENT</div>
+        <div class="hud-label lane p2" style="left:92px; top:411px;">P2 NORMAL</div>
+        <div class="hud-label lane p3" style="left:92px; top:561px;">P3 LOW</div>
 
         <div class="hud-label zone algora" style="left:112px; top:88px;">ALGORA · Inbound Tagging</div>
-        <div class="hud-label zone ao" style="left:600px; top:88px;">AO · Routing Discussion</div>
-        <div class="hud-label zone bridge" style="left:1068px; top:88px;">BRIDGE · Dispatch Bay</div>
+        <div class="hud-label zone ao" style="left:620px; top:88px;">AO · Routing Discussion</div>
+        <div class="hud-label zone bridge" style="left:1160px; top:88px;">BRIDGE · Dispatch Bay</div>
 
-        <div class="hud-label route" style="left:1070px; top:222px;">Immediate Action</div>
-        <div class="hud-label route" style="left:1070px; top:373px;">Monitor</div>
-        <div class="hud-label route" style="left:1070px; top:521px;">Defer</div>
+        <div class="hud-label route" style="left:1070px; top:262px;">Immediate Action</div>
+        <div class="hud-label route" style="left:1070px; top:413px;">Monitor</div>
+        <div class="hud-label route" style="left:1070px; top:561px;">Defer</div>
 
-        <div class="hud-label truck" style="left:1260px; top:170px;">Express</div>
-        <div class="hud-label truck" style="left:1260px; top:330px;">Monitor</div>
-        <div class="hud-label truck" style="left:1260px; top:490px;">Defer</div>
-        <div class="hud-label loaded" id="loadedHud" style="left:1248px; top:620px;">Loaded: 0</div>
+        <div class="hud-label truck" style="left:1260px; top:210px;">Express</div>
+        <div class="hud-label truck" style="left:1260px; top:370px;">Monitor</div>
+        <div class="hud-label truck" style="left:1260px; top:530px;">Defer</div>
+        <div class="hud-label loaded" id="loadedHud" style="left:1248px; top:660px;">Loaded: 0</div>
       </div>
     </div>
     <div id="titleBar" class="titleBar">🚚 Mossland Space Hub</div>
@@ -292,15 +292,11 @@ class SpaceHubScene extends Phaser.Scene {
                 this.beltG.fillCircle(x, y + 22, 2);
             }
 
-            // center treads (strictly clipped inside belt bounds)
+            // center treads (no clipped/stuck segment at the left edge)
             const phase = this.beltOffset % 50;
-            for (let x = BELT_LEFT - 50 + phase; x < BELT_RIGHT; x += 50) {
-                const left = Math.max(x, BELT_LEFT);
-                const width = Math.min(20, BELT_RIGHT - left);
-                if (width > 0) {
-                    this.beltG.fillStyle(0xe2e8f0, 0.2);
-                    this.beltG.fillRect(left, y - 7, width, 14);
-                }
+            for (let x = BELT_LEFT + phase; x < BELT_RIGHT - 20; x += 50) {
+                this.beltG.fillStyle(0xe2e8f0, 0.2);
+                this.beltG.fillRect(x, y - 7, 20, 14);
             }
         }
     }
