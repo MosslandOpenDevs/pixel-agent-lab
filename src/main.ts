@@ -843,9 +843,9 @@ class SpaceHubScene extends Phaser.Scene {
 
         if (this.aoRouteFlash && this.time.now < this.aoRouteFlash.until) {
             const y = ROUTE_Y[this.aoRouteFlash.route];
-            const pulse = 5 + Math.sin(t * 1.5) * 2;
-            this.roleFxG.fillStyle(0xfbbf24, 0.9).fillCircle(1110, y, pulse);
-            this.roleFxG.lineStyle(2, 0xfbbf24, 0.55).strokeCircle(1110, y, pulse + 6);
+            const pulse = 8 + Math.sin(t * 1.3) * 2.5;
+            this.roleFxG.lineStyle(2, 0xfbbf24, 0.72).strokeCircle(1110, y, pulse);
+            this.roleFxG.lineStyle(2, 0xfbbf24, 0.42).strokeCircle(1110, y, pulse + 7);
         }
 
         const loading = this.boxes.find((b) => b.phase === "bridge" && b.status === "loading");
