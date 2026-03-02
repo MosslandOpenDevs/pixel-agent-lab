@@ -1,185 +1,204 @@
-# Mossland Space Hub
+# Mossland Space Hub Demo Specification
 
-## 목적
-본 문서는 Mossland의 3개 서비스(**Algora**, **AO**, **Bridge**)를 하나의 일관된 시각적 메타포로 설명하기 위한 콘셉트 문서입니다.
+## 1. 문서 목적
 
-핵심 목표:
-- 서비스 역할을 한 화면에서 직관적으로 이해
-- 복잡한 내부 로직 대신 상태 흐름 중심으로 전달
-- 더미 데이터만으로도 데모 시연 가능
+본 문서는 `pixel-agent-lab`의 **Mossland Space Hub 데모 구성 원칙, 서비스 역할, 에이전트 동작, UI 설계 의도**를 공식적으로 정의한다.  
+이 문서만으로 데모의 전체 구조를 이해할 수 있도록, `mossland-services-overview.md`의 핵심 서비스 정의(Algora/AO/Bridge의 책임·I/O·연계)를 포함해 재정리한다.
 
 ---
 
-## 핵심 메타포: 우주 물류 컨베이어 운영
+## 2. 데모 컨셉
 
-우주 물류 허브에서 하나의 박스(**Signal Box**)가 3단계를 거칩니다.
+### 2.1 핵심 컨셉
 
-1. **Algora**: 들어온 박스에 태그를 붙여 메인 벨트에 올림
-2. **AO**: 토론을 통해 박스를 분기 벨트로 라우팅
-3. **Bridge**: 라우팅된 박스를 출고 차량에 적재해 발송
+데모 컨셉은 다음과 같다.
 
-파이프라인:
+> **“모스랜드 우주 물류 센터에서, 역할이 부여된 에이전트들이 각 서비스 단계에서 현재 어떤 일을 처리 중인지 직관적으로 보여준다.”**
 
-`Tag (Algora) → Route (AO) → Dispatch (Bridge)`
+즉, 추상적인 데이터 파이프라인을 택배 박스 흐름으로 시각화하여:
 
----
+- 어떤 입력이 들어오고,
+- 어떤 판단을 거치며,
+- 어떤 실행/검증 결과가 나오는지,
 
-## 화면 구성 (단일 화면)
+를 한 화면에서 이해하도록 설계한다.
 
-- 좌측: **Algora Inbound Dock**
-- 중앙: **AO Routing Hub**
-- 우측: **Bridge Dispatch Bay**
+### 2.2 운영 루프
 
-메인 컨베이어는 가로 3줄 우선순위 레인으로 구성:
-- **Top lane (P1)**: 긴급
-- **Middle lane (P2)**: 보통
-- **Bottom lane (P3)**: 낮음
+데모는 Mossland 3-레이어 루프를 그대로 반영한다.
 
-> 위 레인일수록 우선순위가 높습니다.
+`Signals → Issues → Debates/Plans → Execution/Delegation → Outcomes/Proof → Feedback`
 
----
-
-## 서비스별 동작
-
-## 1) Algora
-### 역할
-감지된 신호를 박스로 만들고 태그를 붙여 메인 벨트에 적재합니다.
-
-### 동작
-- Signal Box 생성
-- 태그 부착:
-  - source
-  - risk
-  - category
-- 우선순위 레인 배정(P1/P2/P3)
-
-### 출력
-`Tagged Box` on Main Conveyor
+- **Algora**: 신호 감지·분류
+- **AO**: 토론·계획·라우팅 결정
+- **Bridge**: 실행·적재·검증
 
 ---
 
-## 2) AO
-### 역할
-메인 벨트에서 온 박스를 토론하고 실행 방향을 결정합니다.
+## 3. 서비스별 역할 및 I/O 정의
 
-### 동작
-- 박스 일시 정지
-- 짧은 멀티 에이전트 토론
-- 분기 벨트 결정:
-  - Immediate Action Lane
-  - Monitor Lane
-  - Defer/Archive Lane
+## 3.1 Algora (Sense & Detect)
 
-### 출력
-`Routed Box` on Branch Conveyor
+### 책임
+- 다중 소스 신호를 받아 이슈 후보를 선별
+- 우선순위와 처리 필요성을 구분
+- AO로 전달 가능한 구조화 입력 생성
 
----
+### Input
+- github / rss / social / chain 등 신호
+- 위험도(risk), 카테고리(category), 우선순위(priority)
 
-## 3) Bridge
-### 역할
-분기된 박스를 실행 차량에 적재하고 결과를 기록합니다.
+### Output
+- 태깅된 이슈(처리 필요 여부 포함)
+- AO 토론 대상 컨텍스트
 
-### 동작
-- 셔틀/트럭 적재
-- 출고(Dispatch)
-- 결과 스탬프 기록:
-  - executed
-  - monitored
-  - deferred
-
-### 출력
-`Outcome Record`
+### 데모 내 에이전트 역할
+- **SCAN**: 신규 박스를 수집해 Algora 대기 구역(P2 좌측 스테이징)으로 이동
+- **FILTER**: 박스 필요 여부 판단
+  - 불필요: 박스를 직접 집어 외부로 폐기(throw out)
+  - 필요: 박스를 유지하고 승인 상태로 전환
+- **LOAD**: 승인된 박스를 순서대로 컨베이어 벨트에 적재해 AO 단계로 송출
 
 ---
 
-## 더미 데이터 스키마
+## 3.2 AO (Debate & Plan)
 
-## Box Entity
-```json
-{
-  "boxId": "BX-20260301-0001",
-  "title": "Unusual governance signal from GitHub",
-  "source": "github",
-  "category": "dev",
-  "risk": "high",
-  "priorityLane": "P1",
-  "algoraTaggedAt": "2026-03-01T21:10:00+09:00",
-  "aoDecision": "Immediate Action Lane",
-  "aoReason": "high risk + repeated pattern",
-  "bridgeStatus": "executed",
-  "bridgeCompletedAt": "2026-03-01T21:13:10+09:00"
-}
-```
+### 책임
+- 멀티 에이전트 토론 기반 의사결정
+- 실행 가능한 계획(plan) 및 라우팅(route) 생성
+- Bridge 실행 대상 작업 단위로 변환
 
-## 레인 배정 규칙 (Dummy)
-- risk = high → P1
-- risk = medium → P2
-- risk = low → P3
+### Input
+- Algora에서 승인된 이슈 박스
+- 우선순위/위험도/출처 컨텍스트
 
-## AO 라우팅 규칙 (Dummy)
-- P1 + high confidence → Immediate Action Lane
-- P2 + uncertain impact → Monitor Lane
-- P3 + low urgency → Defer/Archive Lane
+### Output
+- 라우팅 결정: Immediate Action / Monitor / Defer
+- 실행 계획(Execution Draft)
+- Bridge 위임 대상
+
+### 데모 내 에이전트 역할
+- **DEBATE**: 대안 제시·반박·논점 수렴
+- **PLAN**: 실행 계획 요약 및 작업 형태 명시
+- **ROUTE**: 최종 라우팅 선택 및 다음 벨트 방향 결정
+
+### 토론 UI 원칙
+- 토론 정보는 상단 팝업으로 표시하되, 캐릭터/핵심 오브젝트를 가리지 않도록 위치·깊이(depth) 최적화
+- 라우팅 결정 시 펄스 효과로 결정 지점을 시각적으로 표시
 
 ---
 
-## 더미 데이터 예시
+## 3.3 Bridge (Execute & Verify)
 
-## Example A (Urgent)
-- Box: `BX-0001`
-- Algora: `source=github`, `risk=high`, lane `P1`
-- AO: `Immediate Action Lane`
-- Bridge: `executed`
+### 책임
+- 계획 실행 및 결과 적재
+- 결과 검증(verify/proof)
+- Outcome 기록 생성
 
-## Example B (Monitor)
-- Box: `BX-0002`
-- Algora: `source=rss`, `risk=medium`, lane `P2`
-- AO: `Monitor Lane`
-- Bridge: `monitored`
+### Input
+- AO에서 전달된 위임 작업(Delegated Plan)
 
-## Example C (Defer)
-- Box: `BX-0003`
-- Algora: `source=social`, `risk=low`, lane `P3`
-- AO: `Defer/Archive Lane`
-- Bridge: `deferred`
+### Output
+- 실행 레코드(Execution Record)
+- 검증 결과(Verified Outcome)
+- 신뢰 축적용 결과 이벤트
 
----
-
-## 인터랙션 설계
-
-## 기본 화면 (Simple)
-항상 보이는 정보:
-- 박스 위치(Algora / AO / Bridge)
-- 우선순위 레인(P1 / P2 / P3)
-- 현재 상태(tagged / routed / dispatched)
-
-## 상세 팝업 (클릭 시)
-박스 클릭 시 표시:
-1. Signal summary
-2. Algora tagging result
-3. AO decision reason
-4. Bridge execution outcome
-
-> 기본 화면은 단순하게 유지하고, 디테일은 팝업으로 분리합니다.
+### 데모 내 에이전트 역할
+- **EXECUTE**: 박스를 트럭 적재 슬롯으로 운반 및 적재
+- **VERIFY**: 적재 완료 시 검증 신호/핑(verify ping) 수행
 
 ---
 
-## 가독성 규칙
-- 동시에 움직이는 박스 최대 3개
-- 화면 내 전체 박스 최대 8개
-- 에이전트 수: 서비스당 2~3명
-- 서비스 컬러 고정:
-  - Algora: Mint
-  - AO: Blue
-  - Bridge: Amber
+## 4. 공간 설계 (Space Hub Layout)
+
+## 4.1 섹션 구조
+- 화면 우측 스테이지에 **Algora / AO / Bridge 프레임**을 동일 간격으로 배치
+- 각 섹션은 역할 구분 색상(녹색/황색/청색)으로 식별
+
+## 4.2 컨베이어 설계
+- P1/P2/P3 3개 레인 기반 흐름 유지
+- 박스 이동 속도와 벨트 점선 이동 속도는 동일 기준으로 동기화
+- 시각적 위화감 없이 “박스가 벨트 위에서 실제 이동”하는 감각을 유지
+
+## 4.3 트럭/적재 설계
+- Bridge 측 3개 트럭(Express/Monitor/Defer)
+- 트럭 슬롯은 6박스(3x2) 적재
+- 슬롯 배치는 중앙 정렬을 유지하며 과밀해 보이지 않도록 약간 분산
 
 ---
 
-## 기대 효과
-이 콘셉트는 사용자가 즉시 다음을 이해하도록 설계됩니다.
-- 이 박스는 지금 어느 단계인가?
-- 왜 이 레인에 배치됐는가?
-- 어떤 판단이 내려졌는가?
-- 실행되었는가, 모니터링 중인가, 보류되었는가?
+## 5. 좌측 패널(HUD) 설계
 
-즉, 세 서비스의 역할 분리와 연결 관계를 한 화면에서 직관적으로 전달합니다.
+## 5.1 정보 구조
+좌측 패널은 다음 3영역으로 구성한다.
+
+1. **운영 통계(Stats)**
+2. **서비스 I/O 상태(Service I/O Status)**
+3. **박스 상세(Detail)**
+
+## 5.2 서비스 I/O 표시 방식
+Service I/O Status는 Algora/AO/Bridge를 **독립 카드 형태**로 구분 표시한다.
+
+- ALGORA: Input Signals / Output Tagged Issues
+- AO: Input Queue / Output Plans + Route 분포
+- BRIDGE: Input Delegated / Output Verified
+
+## 5.3 박스 상세 실시간 추적
+- 사용자가 박스를 클릭하면 해당 박스를 선택 상태로 유지
+- 박스가 이동하며 `phase/status/route/current action`이 바뀔 때, 좌측 상세 패널 값도 **실시간 갱신**
+- 클릭 시점 스냅샷이 아닌 **라이브 추적**이 기본 동작
+
+---
+
+## 6. 에이전트-행동 매핑 원칙
+
+데모의 핵심 품질 기준은 다음과 같다.
+
+1. **역할명과 실제 모션이 일치해야 한다.**
+   - 예: FILTER가 실제로 박스를 판정·폐기해야 함
+2. **단계 전이가 박스 상태로 명확해야 한다.**
+   - Algora 승인 → AO 토론 → Bridge 적재/검증
+3. **패널보다 스테이지 동작에서 먼저 이해되어야 한다.**
+   - 모션/배지/펄스만 봐도 현재 처리 상태를 파악 가능해야 함
+
+---
+
+## 7. 상태 전이 모델 (Demo State Flow)
+
+대표 흐름:
+
+1. 박스 생성(inbound)
+2. Algora SCAN 수집
+3. Algora FILTER 판정
+   - reject → 폐기 후 종료
+   - approve → LOAD 대기
+4. Algora LOAD 벨트 적재(on-belt)
+5. AO debate/planning/routing
+6. Bridge loading/executing
+7. verify 후 done
+
+이 상태 전이는 시각적 애니메이션과 패널 데이터가 동일하게 반영되어야 한다.
+
+---
+
+## 8. 문서 품질 및 운영 기준
+
+- 용어는 서비스 책임 중심으로 일관 유지
+  - Algora=Detect, AO=Plan, Bridge=Execute/Verify
+- 설명은 제품 소개가 아니라 **운영 명세** 관점으로 작성
+- UI 수정 시 본 문서의 역할/I/O/상태 전이 정의를 우선 기준으로 준수
+
+---
+
+## 9. 요약
+
+Mossland Space Hub 데모는 단순 애니메이션이 아니라,  
+**Algora → AO → Bridge 거버넌스 실행 루프를 사람 눈으로 즉시 해석 가능하게 만드는 운영 시각화 레이어**다.
+
+특히 본 데모의 차별점은 다음 3가지다.
+
+1. **역할 기반 에이전트 행동 분리**
+2. **서비스별 I/O를 독립적으로 가시화**
+3. **클릭 박스 상태의 실시간 추적**
+
+이 기준을 유지하면, 데모는 설명용·검토용·발표용 자료로 모두 활용 가능하다.
