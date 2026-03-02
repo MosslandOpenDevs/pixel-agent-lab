@@ -135,7 +135,7 @@ class SpaceHubScene extends Phaser.Scene {
       }
 
       b.sprite.setPosition(b.x, b.y)
-      b.tag.setPosition(b.x, b.y - 26)
+      b.tag.setPosition(b.x, this.getTagY(b))
     }
 
     this.drawStats()
@@ -244,17 +244,19 @@ class SpaceHubScene extends Phaser.Scene {
   }
 
   drawLabels() {
-    this.add.text(90, LANE_Y.P1 - 56, 'P1 URGENT', { fontSize: '11px', color: '#fca5a5', fontFamily: 'monospace' }).setDepth(80)
-    this.add.text(90, LANE_Y.P2 - 56, 'P2 NORMAL', { fontSize: '11px', color: '#93c5fd', fontFamily: 'monospace' }).setDepth(80)
-    this.add.text(90, LANE_Y.P3 - 56, 'P3 LOW', { fontSize: '11px', color: '#cbd5e1', fontFamily: 'monospace' }).setDepth(80)
+    const style = { fontFamily: 'monospace', backgroundColor: '#0f172acc' }
 
-    this.add.text(130, 120, 'ALGORA · Inbound Tagging', { fontSize: '14px', color: '#86efac', fontFamily: 'monospace' }).setDepth(80)
-    this.add.text(W / 2 - 110, 120, 'AO · Routing Discussion', { fontSize: '14px', color: '#fcd34d', fontFamily: 'monospace' }).setDepth(80)
-    this.add.text(W - 350, 120, 'BRIDGE · Dispatch Bay', { fontSize: '14px', color: '#93c5fd', fontFamily: 'monospace' }).setDepth(80)
+    this.add.text(92, LANE_Y.P1 - 58, 'P1 URGENT', { ...style, fontSize: '11px', color: '#fca5a5' }).setDepth(120)
+    this.add.text(92, LANE_Y.P2 - 58, 'P2 NORMAL', { ...style, fontSize: '11px', color: '#93c5fd' }).setDepth(120)
+    this.add.text(92, LANE_Y.P3 - 58, 'P3 LOW', { ...style, fontSize: '11px', color: '#cbd5e1' }).setDepth(120)
 
-    this.add.text(990, 176, 'Immediate Action', { color: '#fde68a', fontSize: '11px', fontFamily: 'monospace', backgroundColor: '#0f172acc' }).setDepth(82)
-    this.add.text(990, 336, 'Monitor', { color: '#fde68a', fontSize: '11px', fontFamily: 'monospace', backgroundColor: '#0f172acc' }).setDepth(82)
-    this.add.text(990, 496, 'Defer', { color: '#fde68a', fontSize: '11px', fontFamily: 'monospace', backgroundColor: '#0f172acc' }).setDepth(82)
+    this.add.text(112, 88, 'ALGORA · Inbound Tagging', { ...style, fontSize: '13px', color: '#86efac' }).setDepth(120)
+    this.add.text(W / 2 - 118, 88, 'AO · Routing Discussion', { ...style, fontSize: '13px', color: '#fcd34d' }).setDepth(120)
+    this.add.text(W - 372, 88, 'BRIDGE · Dispatch Bay', { ...style, fontSize: '13px', color: '#93c5fd' }).setDepth(120)
+
+    this.add.text(1120, 176, 'Immediate Action', { ...style, color: '#fde68a', fontSize: '11px' }).setDepth(121)
+    this.add.text(1120, 336, 'Monitor', { ...style, color: '#fde68a', fontSize: '11px' }).setDepth(121)
+    this.add.text(1120, 496, 'Defer', { ...style, color: '#fde68a', fontSize: '11px' }).setDepth(121)
   }
 
   spawnAgents() {
@@ -440,7 +442,7 @@ class SpaceHubScene extends Phaser.Scene {
             b.x = carrier.x
             b.y = carrier.y - 26
             b.sprite.setPosition(b.x, b.y)
-            b.tag.setPosition(b.x, b.y - 26)
+            b.tag.setPosition(b.x, this.getTagY(b))
           },
           onComplete: onDone,
         })
@@ -463,6 +465,12 @@ class SpaceHubScene extends Phaser.Scene {
 
   moveCarrierHome(carrier: Phaser.GameObjects.Sprite, home: Phaser.Math.Vector2, onDone: () => void) {
     this.tweens.add({ targets: carrier, x: home.x, y: home.y, duration: 300, onComplete: onDone })
+  }
+
+  getTagY(b: Box) {
+    const laneBias = b.priority === 'P1' ? -34 : b.priority === 'P2' ? -30 : -28
+    const jitter = Number(b.id.slice(-1)) % 2 === 0 ? -4 : 0
+    return b.y + laneBias + jitter
   }
 
   drawStats() {
