@@ -15,6 +15,7 @@ type Box = {
     route: Route;
     phase: Phase;
     status: BoxStatus;
+    algoraStep: "new" | "at-filter" | "approved" | "rejected";
     x: number;
     y: number;
     beltY: number;
@@ -101,7 +102,9 @@ class SpaceHubScene extends Phaser.Scene {
     aoAgentBadges: Phaser.GameObjects.Text[] = [];
     bridgeAgentBadges: Phaser.GameObjects.Text[] = [];
 
-    activeAlgoraCarrier?: Phaser.GameObjects.Sprite;
+    activeAlgoraScan?: Phaser.GameObjects.Sprite;
+    activeAlgoraFilter?: Phaser.GameObjects.Sprite;
+    activeAlgoraLoad?: Phaser.GameObjects.Sprite;
     activeAOCarrier?: Phaser.GameObjects.Sprite;
     activeBridgeCarrier?: Phaser.GameObjects.Sprite;
 
@@ -113,12 +116,11 @@ class SpaceHubScene extends Phaser.Scene {
     aoRouteFlash?: { route: Route; until: number };
     bridgeVerifyPing?: { x: number; y: number; until: number };
 
-    busyAlgora = false;
+    busyAlgoraScan = false;
+    busyAlgoraFilter = false;
+    busyAlgoraLoad = false;
     busyAO = false;
     busyBridge = false;
-    algoraTurn = 0;
-    aoTurn = 0;
-    bridgeTurn = 0;
 
     cargoSlots: Record<Route, Phaser.Math.Vector2[]> = {
         "Immediate Action": [],
@@ -169,7 +171,9 @@ class SpaceHubScene extends Phaser.Scene {
             this.lastSpawn = this.time.now;
         }
 
-        this.tryAlgoraCarry();
+        this.tryAlgoraScan();
+        this.tryAlgoraFilter();
+        this.tryAlgoraLoad();
         this.tryAODebateAndCarry();
         this.tryBridgeLoad();
 
@@ -378,11 +382,15 @@ class SpaceHubScene extends Phaser.Scene {
                 .setDepth(95)
                 .setShadow(0, 1, "#000000", 2);
 
-        this.algoraAgents = [m("algora-bot", 130, 170), m("algora-bot", 210, 170)];
+        this.algoraAgents = [m("algora-bot", 112, 170), m("algora-bot", 190, 170), m("algora-bot", 268, 170)];
         this.aoAgents = [m("ao-bot", 650, 168), m("ao-bot", 740, 168), m("ao-bot", 830, 168)];
         this.bridgeAgents = [m("bridge-bot", 1160, 168), m("bridge-bot", 1240, 168)];
 
-        this.algoraAgentBadges = [badge(130, 142, "SCAN", "#86efac"), badge(210, 142, "TAG", "#86efac")];
+        this.algoraAgentBadges = [
+            badge(112, 142, "SCAN", "#86efac"),
+            badge(190, 142, "FILTER", "#86efac"),
+            badge(268, 142, "LOAD", "#86efac"),
+        ];
         this.aoAgentBadges = [badge(650, 140, "DEBATE", "#fcd34d"), badge(740, 140, "PLAN", "#fcd34d"), badge(830, 140, "ROUTE", "#fcd34d")];
         this.bridgeAgentBadges = [badge(1160, 140, "EXECUTE", "#93c5fd"), badge(1240, 140, "VERIFY", "#93c5fd")];
     }
@@ -495,6 +503,7 @@ class SpaceHubScene extends Phaser.Scene {
             route: "Monitor",
             phase: "algora",
             status: "inbound",
+            algoraStep: "new",
             x,
             y,
             beltY: LANE_Y[priority],
@@ -504,23 +513,74 @@ class SpaceHubScene extends Phaser.Scene {
         });
     }
 
-    tryAlgoraCarry() {
-        if (this.busyAlgora) return;
-        const b = this.boxes.find((x) => x.status === "inbound");
+    tryAlgoraScan() {
+        if (this.busyAlgoraScan) return;
+        const b = this.boxes.find((x) => x.phase === "algora" && x.algoraStep === "new");
         if (!b) return;
-        this.busyAlgora = true;
+        this.busyAlgoraScan = true;
 
-        const carrier = this.algoraAgents[this.algoraTurn % this.algoraAgents.length];
-        this.activeAlgoraCarrier = carrier;
-        this.algoraTurn += 1;
-        const home = new Phaser.Math.Vector2(carrier.x, carrier.y);
+        const scanner = this.algoraAgents[0];
+        this.activeAlgoraScan = scanner;
+        const home = new Phaser.Math.Vector2(scanner.x, scanner.y);
 
-        this.carrierPickAndCarry(carrier, b, BELT_LEFT + 20, b.beltY, 980, () => {
+        this.carrierPickAndCarry(scanner, b, 206, 236, 860, () => {
+            b.algoraStep = "at-filter";
+            this.moveCarrierHome(scanner, home, () => {
+                this.activeAlgoraScan = undefined;
+                this.busyAlgoraScan = false;
+            });
+        });
+    }
+
+    tryAlgoraFilter() {
+        if (this.busyAlgoraFilter) return;
+        const b = this.boxes.find((x) => x.phase === "algora" && x.algoraStep === "at-filter");
+        if (!b) return;
+        this.busyAlgoraFilter = true;
+        this.activeAlgoraFilter = this.algoraAgents[1];
+
+        const reject = b.risk === "low" && Math.random() > 0.55;
+        this.time.delayedCall(760, () => {
+            if (reject) {
+                b.algoraStep = "rejected";
+                b.phase = "done";
+                b.status = "loaded";
+                this.tweens.add({
+                    targets: [b.sprite, b.tag, b.badge],
+                    x: 40,
+                    y: 660,
+                    alpha: 0,
+                    duration: 520,
+                    onComplete: () => {
+                        b.sprite.setVisible(false);
+                        b.tag.setVisible(false);
+                        b.badge.setVisible(false);
+                    },
+                });
+            } else {
+                b.algoraStep = "approved";
+            }
+            this.activeAlgoraFilter = undefined;
+            this.busyAlgoraFilter = false;
+        });
+    }
+
+    tryAlgoraLoad() {
+        if (this.busyAlgoraLoad) return;
+        const b = this.boxes.find((x) => x.phase === "algora" && x.algoraStep === "approved");
+        if (!b) return;
+        this.busyAlgoraLoad = true;
+
+        const loader = this.algoraAgents[2];
+        this.activeAlgoraLoad = loader;
+        const home = new Phaser.Math.Vector2(loader.x, loader.y);
+
+        this.carrierPickAndCarry(loader, b, BELT_LEFT + 20, b.beltY, 940, () => {
             b.status = "on-belt";
             this.taggedIssues += 1;
-            this.moveCarrierHome(carrier, home, () => {
-                this.activeAlgoraCarrier = undefined;
-                this.busyAlgora = false;
+            this.moveCarrierHome(loader, home, () => {
+                this.activeAlgoraLoad = undefined;
+                this.busyAlgoraLoad = false;
             });
         });
     }
@@ -536,7 +596,7 @@ class SpaceHubScene extends Phaser.Scene {
             .text(
                 1008,
                 150,
-                `AO DISCUSSION  |  ${b.id} ${b.source.toUpperCase()} ${b.risk.toUpperCase()}\nA: Immediate  ·  B: Monitor  ·  C: Defer`,
+                `AO DISCUSSION  |  ${b.id} ${b.source.toUpperCase()} ${b.risk.toUpperCase()}\nDEBATE: propose/challenge · PLAN: execution draft · ROUTE: A/B/C`,
                 {
                     fontFamily: "monospace",
                     fontSize: "10px",
@@ -561,9 +621,8 @@ class SpaceHubScene extends Phaser.Scene {
             .setOrigin(0.5)
             .setDepth(89);
 
-        const carrier = this.aoAgents[this.aoTurn % this.aoAgents.length];
+        const carrier = this.aoAgents[2];
         this.activeAOCarrier = carrier;
-        this.aoTurn += 1;
         const home = new Phaser.Math.Vector2(carrier.x, carrier.y);
 
         this.time.delayedCall(980, () => {
@@ -576,7 +635,7 @@ class SpaceHubScene extends Phaser.Scene {
             this.aoDebateCard?.setText(
                 `AO RESULT  |  ${b.id}\nROUTE: ${b.route}  ·  based on ${b.risk.toUpperCase()} + ${b.priority}`
             );
-            this.aoPlanChip?.setText(`PLAN: ${b.route}`);
+            this.aoPlanChip?.setText(`PLAN: route=${b.route} → execute+verify`);
 
             this.time.delayedCall(850, () => {
                 this.aoDebateCard?.destroy();
@@ -602,9 +661,8 @@ class SpaceHubScene extends Phaser.Scene {
         if (!b) return;
         this.busyBridge = true;
 
-        const carrier = this.bridgeAgents[this.bridgeTurn % this.bridgeAgents.length];
+        const carrier = this.bridgeAgents[0];
         this.activeBridgeCarrier = carrier;
-        this.bridgeTurn += 1;
         const home = new Phaser.Math.Vector2(carrier.x, carrier.y);
 
         const slot = this.findNextSlot(b.route);
@@ -695,25 +753,42 @@ class SpaceHubScene extends Phaser.Scene {
 
     getBoxBadgeText(b: Box) {
         const src = b.source.slice(0, 2).toUpperCase();
-        const phase = b.phase === "algora" ? "SENSE" : b.phase === "ao" ? "PLAN" : b.phase === "bridge" ? "EXEC" : "DONE";
+        const phase =
+            b.phase === "algora"
+                ? b.algoraStep === "at-filter"
+                    ? "FILTER"
+                    : b.algoraStep === "approved"
+                      ? "LOAD"
+                      : "SCAN"
+                : b.phase === "ao"
+                  ? "PLAN"
+                  : b.phase === "bridge"
+                    ? "EXEC"
+                    : "DONE";
         return `${src} · ${b.risk.toUpperCase()} · ${phase}`;
     }
 
     updateAgentBadges() {
         this.algoraAgentBadges.forEach((t, i) => {
-            const active = this.activeAlgoraCarrier === this.algoraAgents[i];
-            t.setText(active ? "TAG+LOAD" : i === 0 ? "SCAN" : "FILTER");
+            const active =
+                (i === 0 && this.activeAlgoraScan === this.algoraAgents[i]) ||
+                (i === 1 && this.activeAlgoraFilter === this.algoraAgents[i]) ||
+                (i === 2 && this.activeAlgoraLoad === this.algoraAgents[i]);
+            const base = i === 0 ? "SCAN" : i === 1 ? "FILTER" : "LOAD";
+            const working = i === 0 ? "PICK" : i === 1 ? "DECIDE" : "BELT-IN";
+            t.setText(active ? working : base);
             t.setPosition(this.algoraAgents[i].x, this.algoraAgents[i].y - 30);
         });
         this.aoAgentBadges.forEach((t, i) => {
             const active = this.activeAOCarrier === this.aoAgents[i];
             const base = i === 0 ? "DEBATE" : i === 1 ? "PLAN" : "ROUTE";
-            t.setText(active ? "CARRY" : base);
+            const duringDebate = this.busyAO ? (i === 0 ? "PROPOSE" : i === 1 ? "SYNTH" : active ? "SEND" : "DECIDE") : base;
+            t.setText(duringDebate);
             t.setPosition(this.aoAgents[i].x, this.aoAgents[i].y - 30);
         });
         this.bridgeAgentBadges.forEach((t, i) => {
             const active = this.activeBridgeCarrier === this.bridgeAgents[i];
-            t.setText(active ? "LOAD" : i === 0 ? "EXECUTE" : "VERIFY");
+            t.setText(active ? "EXECUTE" : i === 0 ? "EXECUTE" : "VERIFY");
             t.setPosition(this.bridgeAgents[i].x, this.bridgeAgents[i].y - 30);
         });
     }
@@ -729,16 +804,17 @@ class SpaceHubScene extends Phaser.Scene {
             this.roleFxG.lineStyle(2, 0x34d399, 0.65).strokeCircle(scan.x + 24, scan.y + 8, r);
         }
 
-        const inbound = this.boxes.find((b) => b.phase === "algora" && b.status === "inbound");
-        if (inbound) {
-            this.roleFxG.lineStyle(2, 0x86efac, 0.9).strokeRoundedRect(inbound.x - 33, inbound.y - 24, 66, 48, 6);
+        const filter = this.algoraAgents[1];
+        if (filter) {
+            this.roleFxG.lineStyle(2, 0x86efac, 0.55).strokeRect(filter.x - 16, filter.y + 2, 32, 12);
         }
 
         const debate = this.aoAgents[0];
-        if (debate) {
-            const w = 18 + Math.sin(t * 0.9) * 4;
-            this.roleFxG.lineStyle(2, 0xf59e0b, 0.55).strokeEllipse(debate.x, debate.y + 10, w, 10);
-        }
+        const planner = this.aoAgents[1];
+        const router = this.aoAgents[2];
+        if (debate) this.roleFxG.lineStyle(2, 0xf59e0b, 0.55).strokeCircle(debate.x, debate.y + 10, 11 + Math.sin(t) * 2);
+        if (planner) this.roleFxG.fillStyle(0xfcd34d, 0.22).fillRoundedRect(planner.x - 18, planner.y + 2, 36, 12, 4);
+        if (router) this.roleFxG.lineStyle(2, 0xfbbf24, 0.6).strokeTriangle(router.x - 8, router.y + 12, router.x + 8, router.y + 12, router.x, router.y + 2);
 
         if (this.aoRouteFlash && this.time.now < this.aoRouteFlash.until) {
             const y = ROUTE_Y[this.aoRouteFlash.route];
@@ -746,16 +822,17 @@ class SpaceHubScene extends Phaser.Scene {
             this.roleFxG.lineStyle(2, 0xfbbf24, 0.9).strokeRoundedRect(1000, y - 34, 130, 68, 10);
         }
 
-        const bridge = this.bridgeAgents[0];
         const loading = this.boxes.find((b) => b.phase === "bridge" && b.status === "loading");
-        if (bridge && loading) {
+        if (loading) {
             const y = ROUTE_Y[loading.route];
-            this.roleFxG.fillStyle(0x60a5fa, 0.18).fillCircle(1188, y + 16, 8 + Math.sin(t) * 2);
+            this.roleFxG.fillStyle(0x60a5fa, 0.2).fillCircle(1188, y + 16, 8 + Math.sin(t) * 2);
         }
 
         if (this.bridgeVerifyPing && this.time.now < this.bridgeVerifyPing.until) {
             const age = (this.bridgeVerifyPing.until - this.time.now) / 500;
             this.roleFxG.lineStyle(2, 0x93c5fd, 0.9 * age).strokeCircle(this.bridgeVerifyPing.x, this.bridgeVerifyPing.y, 8 + (1 - age) * 16);
+            const verifier = this.bridgeAgents[1];
+            if (verifier) this.roleFxG.fillStyle(0x93c5fd, 0.6 * age).fillCircle(verifier.x, verifier.y + 8, 5);
         }
     }
 
