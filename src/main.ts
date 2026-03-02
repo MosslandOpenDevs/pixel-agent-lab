@@ -60,7 +60,6 @@ class SpaceHubScene extends Phaser.Scene {
   loaded = 0
 
   beltG!: Phaser.GameObjects.Graphics
-  decoG!: Phaser.GameObjects.Graphics
   truckG!: Phaser.GameObjects.Graphics
   truckCount!: Phaser.GameObjects.Text
 
@@ -74,14 +73,22 @@ class SpaceHubScene extends Phaser.Scene {
   busyAO = false
   busyBridge = false
 
-  cargoSlots: Phaser.Math.Vector2[] = []
+  cargoSlots: Record<Route, Phaser.Math.Vector2[]> = {
+    'Immediate Action': [],
+    Monitor: [],
+    Defer: [],
+  }
+  loadIndex: Record<Route, number> = {
+    'Immediate Action': 0,
+    Monitor: 0,
+    Defer: 0,
+  }
 
   create() {
     this.makeTextures()
     this.drawBackground()
 
     this.beltG = this.add.graphics().setDepth(10)
-    this.decoG = this.add.graphics().setDepth(14)
     this.truckG = this.add.graphics().setDepth(30)
 
     this.drawBelts()
@@ -140,32 +147,32 @@ class SpaceHubScene extends Phaser.Scene {
       palette: { a: '#ffffff', '.': '#00000000' } as any,
     })
 
-    // more box-like parcel texture
+    // square parcel + tape detail
     this.textures.generate('parcel', {
       pixelWidth: 2,
       data: [
-        '.......aaaaaa.......',
-        '......abbbbbba......',
-        '.....abccccccba.....',
-        '....abccddddccba....',
-        '...abccddddddccba...',
-        '...abccddddddccba...',
-        '...abccddddddccba...',
-        '...abccddddddccba...',
-        '...abccddddddccba...',
-        '....abccddddccba....',
-        '.....abccccccba.....',
-        '......abbbbbba......',
-        '.......aeeffeea.....',
-        '........aaaaaa......',
+        '....................',
+        '..aaaaaaaaaaaaaaaa..',
+        '..abbbbbbbbbbbbbba..',
+        '..abccccccddccccba..',
+        '..abccccccddccccba..',
+        '..abccccccddccccba..',
+        '..abccccccddccccba..',
+        '..abccccccddccccba..',
+        '..abccccccddccccba..',
+        '..abccccccddccccba..',
+        '..abccccccddccccba..',
+        '..abeeeeeeeeeeeeba..',
+        '..abbbbbbbbbbbbbba..',
+        '..aaaaaaaaaaaaaaaa..',
+        '....................',
       ],
       palette: {
         a: '#6b4f2f',
         b: '#b78955',
-        c: '#d5a870',
-        d: '#e8c693',
-        e: '#f1e3be',
-        f: '#8b5cf6',
+        c: '#d4a86f',
+        d: '#f3df9c',
+        e: '#e9c68d',
         '.': '#00000000',
       } as any,
     })
@@ -206,30 +213,32 @@ class SpaceHubScene extends Phaser.Scene {
     const lanes: [Priority, number][] = [['P1', LANE_Y.P1], ['P2', LANE_Y.P2], ['P3', LANE_Y.P3]]
     for (const [p, y] of lanes) {
       const tone = p === 'P1' ? 0x4b1a1a : p === 'P2' ? 0x1e293b : 0x131925
-      this.beltG.fillStyle(tone, 0.9)
-      this.beltG.fillRoundedRect(BELT_LEFT, y - 32, BELT_RIGHT - BELT_LEFT, 64, 14)
-      this.beltG.lineStyle(4, 0x475569, 0.7)
-      this.beltG.strokeRoundedRect(BELT_LEFT, y - 32, BELT_RIGHT - BELT_LEFT, 64, 14)
+      this.beltG.fillStyle(tone, 0.92)
+      this.beltG.fillRoundedRect(BELT_LEFT, y - 32, BELT_RIGHT - BELT_LEFT, 64, 12)
+      this.beltG.lineStyle(4, 0x475569, 0.74)
+      this.beltG.strokeRoundedRect(BELT_LEFT, y - 32, BELT_RIGHT - BELT_LEFT, 64, 12)
 
-      // wheel-like rollers
-      for (let x = BELT_LEFT + 12; x < BELT_RIGHT - 12; x += 30) {
-        this.beltG.fillStyle(0x64748b, 0.55)
-        this.beltG.fillCircle(x, y, 6)
-        this.beltG.fillStyle(0x334155, 0.85)
-        this.beltG.fillCircle(x, y, 2)
+      // conveyor side wheels (tire-like)
+      for (let x = BELT_LEFT + 10; x < BELT_RIGHT - 10; x += 30) {
+        this.beltG.fillStyle(0x64748b, 0.58)
+        this.beltG.fillCircle(x, y - 22, 5)
+        this.beltG.fillCircle(x, y + 22, 5)
+        this.beltG.fillStyle(0x1f2937, 0.9)
+        this.beltG.fillCircle(x, y - 22, 2)
+        this.beltG.fillCircle(x, y + 22, 2)
       }
 
-      // belt tread animation
-      for (let x = BELT_LEFT - 34; x < BELT_RIGHT + 10; x += 54) {
-        const sx = x + (this.beltOffset % 54)
-        this.beltG.fillStyle(0xe2e8f0, 0.18)
-        this.beltG.fillTriangle(sx, y - 10, sx + 22, y, sx, y + 10)
+      // center treads
+      for (let x = BELT_LEFT - 34; x < BELT_RIGHT + 10; x += 50) {
+        const sx = x + (this.beltOffset % 50)
+        this.beltG.fillStyle(0xe2e8f0, 0.2)
+        this.beltG.fillRect(sx, y - 7, 20, 14)
       }
     }
 
-    this.beltG.fillStyle(0x0f172a, 0.85)
-    this.beltG.fillRoundedRect(BELT_LEFT - 14, LANE_Y.P1 - 40, 58, 380, 8)
-    this.beltG.fillRoundedRect(BELT_RIGHT - 45, LANE_Y.P1 - 40, 58, 380, 8)
+    this.beltG.fillStyle(0x0f172a, 0.86)
+    this.beltG.fillRoundedRect(BELT_LEFT - 18, LANE_Y.P1 - 42, 58, 384, 8)
+    this.beltG.fillRoundedRect(BELT_RIGHT - 42, LANE_Y.P1 - 42, 58, 384, 8)
   }
 
   drawLabels() {
@@ -258,32 +267,50 @@ class SpaceHubScene extends Phaser.Scene {
   buildTrucks() {
     this.truckG.clear()
 
-    // 3 trucks for 3 routes
-    const trucks = [
-      { label: 'Express', y: 188 },
-      { label: 'Monitor', y: 348 },
-      { label: 'Defer', y: 508 },
+    const trucks: Array<{ route: Route; y: number; label: string }> = [
+      { route: 'Immediate Action', y: 188, label: 'Express' },
+      { route: 'Monitor', y: 348, label: 'Monitor' },
+      { route: 'Defer', y: 508, label: 'Defer' },
     ]
 
-    this.cargoSlots = []
     for (const t of trucks) {
+      // cargo bed
       this.truckG.fillStyle(0x111827, 0.96)
-      this.truckG.fillRoundedRect(1200, t.y - 54, 200, 100, 12)
+      this.truckG.fillRoundedRect(1220, t.y - 44, 140, 72, 8)
       this.truckG.lineStyle(2, 0x60a5fa, 0.9)
-      this.truckG.strokeRoundedRect(1200, t.y - 54, 200, 100, 12)
-      this.truckG.fillStyle(0x1f2937, 1)
-      this.truckG.fillRoundedRect(1212, t.y - 30, 112, 56, 8)
-      this.add.text(1328, t.y - 40, t.label, { color: '#bfdbfe', fontSize: '11px', fontFamily: 'monospace' }).setDepth(36)
+      this.truckG.strokeRoundedRect(1220, t.y - 44, 140, 72, 8)
 
-      for (let i = 0; i < 2; i++) {
-        const slot = new Phaser.Math.Vector2(1238 + i * 38, t.y - 2)
-        this.cargoSlots.push(slot)
-        this.truckG.lineStyle(1, 0x475569, 0.6)
-        this.truckG.strokeRoundedRect(slot.x - 16, slot.y - 12, 32, 24, 4)
+      // cab
+      this.truckG.fillStyle(0x1e293b, 1)
+      this.truckG.fillRoundedRect(1362, t.y - 30, 36, 56, 6)
+      this.truckG.fillStyle(0x93c5fd, 0.75)
+      this.truckG.fillRect(1368, t.y - 22, 20, 14)
+
+      // wheels
+      this.truckG.fillStyle(0x0b1220, 1)
+      this.truckG.fillCircle(1245, t.y + 30, 10)
+      this.truckG.fillCircle(1338, t.y + 30, 10)
+      this.truckG.fillStyle(0x94a3b8, 0.8)
+      this.truckG.fillCircle(1245, t.y + 30, 4)
+      this.truckG.fillCircle(1338, t.y + 30, 4)
+
+      this.add.text(1228, t.y - 58, t.label, { color: '#bfdbfe', fontSize: '11px', fontFamily: 'monospace' }).setDepth(36)
+
+      // 4 slots (2x2) for stacking feel
+      const slots: Phaser.Math.Vector2[] = []
+      for (let r = 0; r < 2; r++) {
+        for (let c = 0; c < 2; c++) {
+          const sx = 1244 + c * 36
+          const sy = t.y - 10 + r * 24
+          slots.push(new Phaser.Math.Vector2(sx, sy))
+          this.truckG.lineStyle(1, 0x475569, 0.6)
+          this.truckG.strokeRoundedRect(sx - 14, sy - 10, 28, 20, 4)
+        }
       }
+      this.cargoSlots[t.route] = slots
     }
 
-    this.truckCount = this.add.text(1248, 610, 'Loaded: 0', { color: '#93c5fd', fontSize: '11px', fontFamily: 'monospace' }).setDepth(36)
+    this.truckCount = this.add.text(1248, 620, 'Loaded: 0', { color: '#93c5fd', fontSize: '11px', fontFamily: 'monospace' }).setDepth(36)
   }
 
   animateAgents() {
@@ -306,8 +333,8 @@ class SpaceHubScene extends Phaser.Scene {
     const id = `BX-${String(this.nextId++).padStart(4, '0')}`
 
     const x = 120
-    const y = 110
-    const sprite = this.add.image(x, y, 'parcel').setDepth(30).setDisplaySize(56, 40)
+    const y = 108
+    const sprite = this.add.image(x, y, 'parcel').setDepth(30).setDisplaySize(58, 42)
     sprite.setInteractive({ cursor: 'pointer' })
     const tag = this.add
       .text(x, y - 26, id, {
@@ -339,22 +366,9 @@ class SpaceHubScene extends Phaser.Scene {
     if (!b) return
     this.busyAlgora = true
 
-    this.algoraCarrierMoveTo(b.x + 22, b.y, () => {
+    this.carrierPickAndCarry(this.algoraCarrier, b, BELT_LEFT + 20, b.beltY, 640, () => {
       b.status = 'on-belt'
-      // carry motion onto correct lane
-      this.tweens.add({
-        targets: b,
-        x: BELT_LEFT + 20,
-        y: b.beltY,
-        duration: 520,
-        onUpdate: () => {
-          b.sprite.setPosition(b.x, b.y)
-          b.tag.setPosition(b.x, b.y - 26)
-        },
-        onComplete: () => {
-          this.algoraCarrierMoveTo(150, 170, () => (this.busyAlgora = false))
-        },
-      })
+      this.algoraCarrierMoveTo(150, 170, () => (this.busyAlgora = false))
     })
   }
 
@@ -365,31 +379,18 @@ class SpaceHubScene extends Phaser.Scene {
     this.busyAO = true
 
     const bubble = this.add
-      .text(760, 130, '💬 route?', { fontFamily: 'monospace', fontSize: '11px', color: '#0f172a', backgroundColor: '#fde68a', padding: { x: 5, y: 2 } })
+      .text(760, 130, '💬 debate → route', { fontFamily: 'monospace', fontSize: '11px', color: '#0f172a', backgroundColor: '#fde68a', padding: { x: 5, y: 2 } })
       .setOrigin(0.5)
       .setDepth(60)
 
-    this.time.delayedCall(600, () => {
+    this.time.delayedCall(620, () => {
       bubble.destroy()
       b.route = this.decideRoute(b)
       b.status = 'rerouting'
-
-      this.aoCarrierMoveTo(b.x, b.y, () => {
-        this.tweens.add({
-          targets: b,
-          x: 820,
-          y: ROUTE_Y[b.route],
-          duration: 560,
-          onUpdate: () => {
-            b.sprite.setPosition(b.x, b.y)
-            b.tag.setPosition(b.x, b.y - 26)
-          },
-          onComplete: () => {
-            b.status = 'on-belt'
-            b.y = ROUTE_Y[b.route]
-            this.aoCarrierMoveTo(690, 168, () => (this.busyAO = false))
-          },
-        })
+      this.carrierPickAndCarry(this.aoCarrier, b, 820, ROUTE_Y[b.route], 620, () => {
+        b.status = 'on-belt'
+        b.y = ROUTE_Y[b.route]
+        this.aoCarrierMoveTo(690, 168, () => (this.busyAO = false))
       })
     })
   }
@@ -401,34 +402,49 @@ class SpaceHubScene extends Phaser.Scene {
     this.busyBridge = true
 
     const slot = this.findNextSlot(b.route)
-    this.bridgeCarrierMoveTo(b.x, b.y, () => {
-      this.tweens.add({
-        targets: b,
-        x: slot.x,
-        y: slot.y,
-        duration: 680,
-        onUpdate: () => {
-          b.sprite.setPosition(b.x, b.y)
-          b.tag.setPosition(b.x, b.y - 26)
-        },
-        onComplete: () => {
-          b.status = 'loaded'
-          b.phase = 'done'
-          b.sprite.setDepth(34)
-          b.tag.destroy()
-          this.loaded += 1
-          this.truckCount.setText(`Loaded: ${this.loaded}`)
-          this.bridgeCarrierMoveTo(1185, 168, () => (this.busyBridge = false))
-        },
-      })
+    this.carrierPickAndCarry(this.bridgeCarrier, b, slot.x, slot.y, 740, () => {
+      b.status = 'loaded'
+      b.phase = 'done'
+      b.sprite.setDepth(34)
+      b.tag.destroy()
+      this.loaded += 1
+      this.truckCount.setText(`Loaded: ${this.loaded}`)
+      this.bridgeCarrierMoveTo(1185, 168, () => (this.busyBridge = false))
+    })
+  }
+
+  // box follows carrier head while moving
+  carrierPickAndCarry(carrier: Phaser.GameObjects.Sprite, b: Box, targetX: number, targetY: number, duration: number, onDone: () => void) {
+    const startX = b.x
+    const startY = b.y
+    this.tweens.add({
+      targets: carrier,
+      x: startX,
+      y: startY,
+      duration: 260,
+      onComplete: () => {
+        this.tweens.add({
+          targets: carrier,
+          x: targetX,
+          y: targetY,
+          duration,
+          onUpdate: () => {
+            b.x = carrier.x
+            b.y = carrier.y - 26
+            b.sprite.setPosition(b.x, b.y)
+            b.tag.setPosition(b.x, b.y - 26)
+          },
+          onComplete: onDone,
+        })
+      },
     })
   }
 
   findNextSlot(route: Route) {
-    const groupIndex = route === 'Immediate Action' ? 0 : route === 'Monitor' ? 1 : 2
-    const base = groupIndex * 2
-    const idx = base + (this.loaded % 2)
-    return this.cargoSlots[idx]
+    const slots = this.cargoSlots[route]
+    const idx = this.loadIndex[route] % slots.length
+    this.loadIndex[route] += 1
+    return slots[idx]
   }
 
   decideRoute(b: Box): Route {
@@ -438,21 +454,13 @@ class SpaceHubScene extends Phaser.Scene {
   }
 
   algoraCarrierMoveTo(x: number, y: number, onDone: () => void) {
-    this.tweens.add({ targets: this.algoraCarrier, x, y, duration: 300, onComplete: onDone })
+    this.tweens.add({ targets: this.algoraCarrier, x, y, duration: 280, onComplete: onDone })
   }
   aoCarrierMoveTo(x: number, y: number, onDone: () => void) {
-    this.tweens.add({ targets: this.aoCarrier, x, y, duration: 320, onComplete: onDone })
+    this.tweens.add({ targets: this.aoCarrier, x, y, duration: 300, onComplete: onDone })
   }
   bridgeCarrierMoveTo(x: number, y: number, onDone: () => void) {
-    this.tweens.add({ targets: this.bridgeCarrier, x, y, duration: 360, onComplete: onDone })
-  }
-
-  drawFlowFX() {
-    this.decoG.clear()
-    this.decoG.lineStyle(2, 0xf59e0b, 0.24)
-    for (const b of this.boxes) {
-      if (b.phase === 'ao' || b.phase === 'bridge') this.decoG.lineBetween(760, b.beltY, b.x, b.y)
-    }
+    this.tweens.add({ targets: this.bridgeCarrier, x, y, duration: 320, onComplete: onDone })
   }
 
   drawStats() {
@@ -479,7 +487,7 @@ class SpaceHubScene extends Phaser.Scene {
       <div class="drow"><span>risk</span><b>${b.risk}</b></div>
       <div class="drow"><span>priority</span><b>${b.priority}</b></div>
       <div class="drow"><span>AO route</span><b>${b.route}</b></div>
-      <p class="hint">Algora 에이전트가 직접 벨트에 적재 → AO 토론 후 분기 이동 → Bridge 에이전트가 트럭에 직접 적재.</p>
+      <p class="hint">Algora가 박스를 직접 들어 벨트에 올리고, AO가 토론 후 직접 분기 라인으로 옮기고, Bridge가 트럭 칸에 하나씩 적재합니다.</p>
     `
   }
 }
