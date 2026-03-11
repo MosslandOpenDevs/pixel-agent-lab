@@ -3,14 +3,14 @@
 export type AlgoraSignal = {
     id: string;
     original_id: string;
-    source: string; // e.g. "social:mastodon:...", "rss:Hacker News", "github:vercel/next.js"
+    source: string;
     timestamp: string;
-    category: string; // "security", "ai", "dev", "crypto", etc.
+    category: string;
     severity: "critical" | "high" | "medium" | "low";
     value: number;
     unit: string;
     description: string;
-    metadata: string; // JSON string
+    metadata: string;
     created_at: string;
 };
 
@@ -20,10 +20,10 @@ export type AlgoraIssue = {
     description: string;
     category: string;
     priority: "critical" | "high" | "medium" | "low";
-    status: string; // "in_progress", "detected", etc.
+    status: string;
     detected_at: string;
-    signal_ids: string; // JSON array string
-    evidence: string; // JSON array string
+    signal_ids: string;
+    evidence: string;
     created_at: string;
 };
 
@@ -41,7 +41,7 @@ export type AlgoraStats = {
 
 export type AOSignal = {
     id: string;
-    source: string; // "github", "social", "rss"
+    source: string;
     category: string;
     title: string;
     title_ko: string | null;
@@ -84,12 +84,44 @@ export type AOStatus = {
     };
 };
 
+export type AOIdea = {
+    id: string;
+    title: string;
+    title_ko: string | null;
+    summary: string;
+    summary_ko: string | null;
+    score: number;
+    status: string;
+    source_type: string;
+    created_at: string;
+};
+
+export type AOPlan = {
+    id: string;
+    idea_id: string;
+    title: string;
+    title_ko: string | null;
+    final_plan: string;
+    score: number;
+    status: string;
+    created_at: string;
+};
+
+export type AOProject = {
+    id: string;
+    plan_id: string;
+    name: string;
+    tech_stack: string;
+    status: string;
+    created_at: string;
+};
+
 // --- Bridge API response types ---
 
 export type BridgeSignal = {
     id: string;
     originalId: string;
-    source: string; // "api", "telemetry"
+    source: string;
     timestamp: string;
     category: string;
     severity: "critical" | "high" | "medium" | "low";
@@ -120,13 +152,39 @@ export type BridgeStats = {
     };
 };
 
+export type BridgeProposal = {
+    id: string;
+    title: string;
+    status: string;
+    votingStartsAt: string;
+    votingEndsAt: string;
+    created_at: string;
+};
+
+export type BridgeOutcome = {
+    id: string;
+    proposalId: string;
+    status: string;
+    success: boolean;
+    proofHash: string;
+    created_at: string;
+};
+
+export type BridgeTrustEntry = {
+    entityId: string;
+    entityType: string;
+    score: number;
+    totalDecisions: number;
+    successfulDecisions: number;
+};
+
 // --- Unified signal for visualization ---
 
 export type UnifiedSignal = {
     id: string;
     origin: "algora" | "ao" | "bridge";
-    source: string; // normalized: "github", "rss", "social", "chain", "api"
-    category: string; // normalized: "ai", "dev", "security", "crypto", "market", "protocol"
+    source: string;
+    category: string;
     severity: "critical" | "high" | "medium" | "low";
     title: string;
     description: string;
