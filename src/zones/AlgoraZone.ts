@@ -11,18 +11,24 @@ const STAGES = [
     "Issue Detection",
     "Workflow Dispatch",
     "Specialist Work",
-    "Document Production",
-    "Dual-House Review",
-    "Approval Routing",
+    "Doc Production",
+    "Dual-House Vote",
+    "Approval Route",
     "Execution",
     "Outcome Verify",
 ] as const;
 
+// Belt runs vertically along the right side of the pipeline
+const BELT_X = ZONE_X + ZONE_W - 70;
+const BELT_W = 50;
+const BELT_TOP = 196;
+const BELT_BOTTOM = 504;
+
 const STAGE_Y_START = 200;
-const STAGE_H = 28;
-const STAGE_GAP = 6;
-const STAGE_X = ZONE_X + 20;
-const STAGE_W = ZONE_W - 40;
+const STAGE_H = 26;
+const STAGE_GAP = 8;
+const STAGE_X = ZONE_X + 18;
+const STAGE_W = ZONE_W - 100;
 
 const CLUSTERS = [
     { code: "VI", name: "Visionaries", count: 5 },
@@ -43,7 +49,7 @@ type FlowItem = {
     stageIdx: number;
     sprite: Phaser.GameObjects.Image;
     label: Phaser.GameObjects.Text;
-    progress: number; // 0-1 within current stage
+    progress: number;
     title: string;
     severity: string;
 };
@@ -51,15 +57,16 @@ type FlowItem = {
 export class AlgoraZone {
     private scene: Phaser.Scene;
     private g!: Phaser.GameObjects.Graphics;
-    private stageLabels: Phaser.GameObjects.Text[] = [];
+    private beltG!: Phaser.GameObjects.Graphics;
     private clusterDots: Array<{ x: number; y: number; active: boolean }> = [];
     private clusterLabels: Phaser.GameObjects.Text[] = [];
     private items: FlowItem[] = [];
     private spawnTimer = 0;
     private itemIdCounter = 0;
-    private docChips: Phaser.GameObjects.Text[] = [];
+    private beltOffset = 0;
+    private bot!: Phaser.GameObjects.Sprite;
+    private botBusy = false;
 
-    // public stats
     signalsProcessed = 0;
     issuesDetected = 0;
     docsProduced = 0;
@@ -70,12 +77,7 @@ export class AlgoraZone {
 
     create(): void {
         this.g = this.scene.add.graphics().setDepth(5);
-
-        // zone panel
-        this.g.fillStyle(0x0f2d2a, 0.18);
-        this.g.fillRoundedRect(ZONE_X, ZONE_Y, ZONE_W, ZONE_H, 10);
-        this.g.lineStyle(2, 0x34d399, 0.45);
-        this.g.strokeRoundedRect(ZONE_X, ZONE_Y, ZONE_W, ZONE_H, 10);
+        this.beltG = this.scene.add.graphics().setDepth(6);
 
         // title
         this.scene.add.text(ZONE_X + 14, ZONE_Y + 8, "ALGORA — Sense & Detect", {
@@ -83,10 +85,17 @@ export class AlgoraZone {
             backgroundColor: "#0b1226ee", padding: { x: 6, y: 3 },
         }).setDepth(10);
 
-        // subtitle: 38 agents
         this.scene.add.text(ZONE_X + 14, ZONE_Y + 28, "38 agents · 11 clusters · 9-stage pipeline", {
             fontFamily: "monospace", fontSize: "9px", color: "#4ade80aa",
         }).setDepth(10);
+
+        // loader bot near belt top
+        this.bot = this.scene.add.sprite(BELT_X + BELT_W / 2, BELT_TOP - 22, "algora-bot-0")
+            .setDepth(30).setDisplaySize(36, 36);
+        this.scene.add.text(BELT_X + BELT_W / 2, BELT_TOP - 44, "LOADER", {
+            fontFamily: "monospace", fontSize: "8px", color: "#86efac",
+            backgroundColor: "#0b1226cc", padding: { x: 3, y: 1 },
+        }).setOrigin(0.5).setDepth(31);
 
         this.createClusterArc();
         this.createPipelineStages();
@@ -94,10 +103,10 @@ export class AlgoraZone {
     }
 
     private createClusterArc(): void {
-        const cx = ZONE_X + ZONE_W / 2;
-        const cy = ZONE_Y + 88;
-        const rx = 170;
-        const ry = 38;
+        const cx = ZONE_X + ZONE_W / 2 - 20;
+        const cy = ZONE_Y + 85;
+        const rx = 155;
+        const ry = 34;
 
         CLUSTERS.forEach((cl, i) => {
             const angle = Math.PI + (Math.PI * i) / (CLUSTERS.length - 1);
@@ -117,76 +126,88 @@ export class AlgoraZone {
     private createPipelineStages(): void {
         STAGES.forEach((name, i) => {
             const y = STAGE_Y_START + i * (STAGE_H + STAGE_GAP);
-            const label = this.scene.add.text(STAGE_X + 8, y + 6, `${i + 1}. ${name}`, {
+            this.scene.add.text(STAGE_X + 6, y + 5, `${i + 1}. ${name}`, {
                 fontFamily: "monospace", fontSize: "9px", color: "#d1fae5",
             }).setDepth(12);
-            this.stageLabels.push(label);
         });
     }
 
     private createDocDock(): void {
-        const dockY = STAGE_Y_START + STAGES.length * (STAGE_H + STAGE_GAP) + 12;
-        this.scene.add.text(STAGE_X + 4, dockY, "Documents:", {
-            fontFamily: "monospace", fontSize: "9px", color: "#86efac99",
+        const dockY = STAGE_Y_START + STAGES.length * (STAGE_H + STAGE_GAP) + 8;
+        this.scene.add.text(STAGE_X + 2, dockY, "Docs:", {
+            fontFamily: "monospace", fontSize: "8px", color: "#86efac88",
         }).setDepth(12);
 
         const docTypes = ["DP", "GP", "PA", "WGC", "ER", "DR"];
         docTypes.forEach((dt, i) => {
-            const chip = this.scene.add.text(STAGE_X + 75 + i * 36, dockY, dt, {
-                fontFamily: "monospace", fontSize: "8px", color: "#022c22",
-                backgroundColor: "#34d39966", padding: { x: 4, y: 2 },
+            this.scene.add.text(STAGE_X + 40 + i * 32, dockY, dt, {
+                fontFamily: "monospace", fontSize: "7px", color: "#022c22",
+                backgroundColor: "#34d39955", padding: { x: 3, y: 2 },
             }).setDepth(12);
-            this.docChips.push(chip);
         });
     }
 
     update(dt: number, dataBridge: DataBridge): void {
         this.spawnTimer += dt;
+        this.beltOffset += dt * 0.03;
 
-        // spawn new signal items every 2s
-        if (this.spawnTimer > 2000 && this.items.length < 6) {
+        // animate bot
+        const frame = Math.floor(this.scene.time.now / 420) % 2;
+        this.bot.setTexture(`algora-bot-${frame}`);
+
+        // spawn: bot picks up signal and places on belt
+        if (this.spawnTimer > 2200 && this.items.length < 5 && !this.botBusy) {
             const signal = dataBridge.nextSignal();
             if (signal) {
-                this.spawnItem(signal.title.slice(0, 25), signal.severity);
+                this.botBusy = true;
                 this.signalsProcessed++;
+
+                // bot moves up to pick, then drops on belt
+                const title = signal.title.slice(0, 22);
+                const severity = signal.severity;
+                this.scene.tweens.add({
+                    targets: this.bot, y: BELT_TOP - 40, duration: 200,
+                    yoyo: true, onComplete: () => {
+                        this.spawnItem(title, severity);
+                        this.botBusy = false;
+                    },
+                });
             }
             this.spawnTimer = 0;
         }
 
-        // advance items through stages
+        // advance items down the belt
         for (const item of this.items) {
-            item.progress += dt * 0.0004;
+            item.progress += dt * 0.00035;
             if (item.progress >= 1) {
                 item.progress = 0;
                 item.stageIdx++;
 
-                // transform sprite at stage 2 (issue detection)
+                // transform at Issue Detection (stage 1→2)
                 if (item.stageIdx === 2) {
                     item.sprite.setTexture("issue-card");
+                    item.sprite.setDisplaySize(18, 16);
                     this.issuesDetected++;
                 }
-                // doc production
-                if (item.stageIdx === 5) {
-                    this.docsProduced++;
-                }
+                if (item.stageIdx === 5) this.docsProduced++;
             }
 
-            // remove completed items
             if (item.stageIdx >= STAGES.length) {
                 item.sprite.destroy();
                 item.label.destroy();
                 continue;
             }
 
-            const y = STAGE_Y_START + item.stageIdx * (STAGE_H + STAGE_GAP) + STAGE_H / 2;
-            const progressX = STAGE_X + STAGE_W - 40 + item.progress * 30;
-            item.sprite.setPosition(progressX, y);
-            item.label.setPosition(progressX - 30, y - 2);
+            // position on belt
+            const y = STAGE_Y_START + item.stageIdx * (STAGE_H + STAGE_GAP) + STAGE_H / 2
+                + item.progress * (STAGE_H + STAGE_GAP);
+            item.sprite.setPosition(BELT_X + BELT_W / 2, y);
+            item.label.setPosition(BELT_X - 4, y - 3);
         }
 
         this.items = this.items.filter(i => i.stageIdx < STAGES.length);
 
-        // animate cluster activity
+        // cluster pulse
         const now = this.scene.time.now;
         this.clusterDots.forEach((cd, i) => {
             cd.active = Math.sin(now * 0.003 + i * 0.7) > 0.3;
@@ -194,15 +215,17 @@ export class AlgoraZone {
         });
 
         this.drawGraphics();
+        this.drawBelt();
     }
 
     private spawnItem(title: string, severity: string): void {
-        const x = STAGE_X + STAGE_W - 30;
-        const y = STAGE_Y_START + STAGE_H / 2;
+        const x = BELT_X + BELT_W / 2;
+        const y = BELT_TOP + 8;
         const sprite = this.scene.add.image(x, y, "signal-orb")
-            .setDepth(20).setDisplaySize(20, 20);
-        const label = this.scene.add.text(x - 30, y - 2, title, {
-            fontFamily: "monospace", fontSize: "7px", color: "#a5f3fc",
+            .setDepth(20).setDisplaySize(18, 18);
+        const color = severity === "high" || severity === "critical" ? "#fca5a5" : severity === "medium" ? "#fcd34d" : "#94a3b8";
+        const label = this.scene.add.text(BELT_X - 4, y - 3, title, {
+            fontFamily: "monospace", fontSize: "7px", color,
             backgroundColor: "#0f172aee", padding: { x: 2, y: 1 },
         }).setDepth(21).setOrigin(1, 0.5);
 
@@ -211,6 +234,33 @@ export class AlgoraZone {
             stageIdx: 0, sprite, label,
             progress: 0, title, severity,
         });
+    }
+
+    private drawBelt(): void {
+        this.beltG.clear();
+
+        // belt track
+        this.beltG.fillStyle(0x1a2e1a, 0.85);
+        this.beltG.fillRoundedRect(BELT_X, BELT_TOP, BELT_W, BELT_BOTTOM - BELT_TOP, 8);
+        this.beltG.lineStyle(2, 0x34d399, 0.5);
+        this.beltG.strokeRoundedRect(BELT_X, BELT_TOP, BELT_W, BELT_BOTTOM - BELT_TOP, 8);
+
+        // side wheels (rollers)
+        for (let y = BELT_TOP + 12; y < BELT_BOTTOM - 8; y += 24) {
+            this.beltG.fillStyle(0x4ade80, 0.35);
+            this.beltG.fillCircle(BELT_X + 4, y, 4);
+            this.beltG.fillCircle(BELT_X + BELT_W - 4, y, 4);
+            this.beltG.fillStyle(0x0f2d2a, 0.8);
+            this.beltG.fillCircle(BELT_X + 4, y, 1.5);
+            this.beltG.fillCircle(BELT_X + BELT_W - 4, y, 1.5);
+        }
+
+        // moving tread marks
+        const phase = this.beltOffset % 30;
+        for (let y = BELT_TOP + phase; y < BELT_BOTTOM - 8; y += 30) {
+            this.beltG.fillStyle(0x34d399, 0.12);
+            this.beltG.fillRect(BELT_X + 10, y, BELT_W - 20, 10);
+        }
     }
 
     private drawGraphics(): void {
@@ -232,18 +282,24 @@ export class AlgoraZone {
             }
         });
 
-        // pipeline stage bars
+        // pipeline stage bars (left of belt)
         STAGES.forEach((_, i) => {
             const y = STAGE_Y_START + i * (STAGE_H + STAGE_GAP);
             const hasItem = this.items.some(it => it.stageIdx === i);
-            this.g.fillStyle(hasItem ? 0x166534 : 0x0a1e18, hasItem ? 0.6 : 0.4);
-            this.g.fillRoundedRect(STAGE_X, y, STAGE_W, STAGE_H, 6);
-            this.g.lineStyle(1, 0x34d399, hasItem ? 0.7 : 0.2);
-            this.g.strokeRoundedRect(STAGE_X, y, STAGE_W, STAGE_H, 6);
+            this.g.fillStyle(hasItem ? 0x166534 : 0x0a1e18, hasItem ? 0.55 : 0.35);
+            this.g.fillRoundedRect(STAGE_X, y, STAGE_W, STAGE_H, 5);
+            this.g.lineStyle(1, 0x34d399, hasItem ? 0.6 : 0.15);
+            this.g.strokeRoundedRect(STAGE_X, y, STAGE_W, STAGE_H, 5);
 
-            // connector line
+            // connector arrow to belt
+            if (hasItem) {
+                this.g.lineStyle(1, 0x34d399, 0.4);
+                this.g.lineBetween(STAGE_X + STAGE_W, y + STAGE_H / 2, BELT_X, y + STAGE_H / 2);
+            }
+
+            // vertical connector
             if (i < STAGES.length - 1) {
-                this.g.lineStyle(1, 0x34d399, 0.2);
+                this.g.lineStyle(1, 0x34d399, 0.12);
                 this.g.lineBetween(STAGE_X + STAGE_W / 2, y + STAGE_H, STAGE_X + STAGE_W / 2, y + STAGE_H + STAGE_GAP);
             }
         });
