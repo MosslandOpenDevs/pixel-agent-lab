@@ -1,14 +1,14 @@
 import Phaser from "phaser";
 import type { DataBridge } from "../services/data-bridge.ts";
 
-const ZONE_X = 460;
+const ZONE_X = 650;
 const ZONE_Y = 44;
-const ZONE_W = 490;
-const ZONE_H = 580;
+const ZONE_W = 780;
+const ZONE_H = 386;
 
-// Horizontal conveyor belt for ideas flowing left→right through scoring
-const BELT_Y = 340;
-const BELT_H = 44;
+// Horizontal conveyor belt for ideas flowing left->right through scoring
+const BELT_Y = ZONE_Y + 210;
+const BELT_H = 40;
 const BELT_LEFT = ZONE_X + 20;
 const BELT_RIGHT = ZONE_X + ZONE_W - 20;
 
@@ -51,17 +51,17 @@ export class AOZone {
         this.beltG = this.scene.add.graphics().setDepth(6);
 
         // title
-        this.scene.add.text(ZONE_X + 14, ZONE_Y + 8, "AO — Debate & Plan", {
+        this.scene.add.text(ZONE_X + 14, ZONE_Y + 8, "AO \u2014 Debate & Plan", {
             fontFamily: "monospace", fontSize: "12px", color: "#fcd34d",
             backgroundColor: "#0b1226ee", padding: { x: 6, y: 3 },
         }).setDepth(10);
 
-        this.scene.add.text(ZONE_X + 14, ZONE_Y + 28, "34 agents · Signals→Ideas→Plans→Projects", {
+        this.scene.add.text(ZONE_X + 14, ZONE_Y + 26, "Independent Service \u00b7 Port 3001 \u00b7 34 agents \u00b7 Signals\u2192Ideas\u2192Plans\u2192Projects", {
             fontFamily: "monospace", fontSize: "9px", color: "#fbbf2488",
         }).setDepth(10);
 
         // loader bot at belt entrance
-        this.bot = this.scene.add.sprite(BELT_LEFT + 10, BELT_Y - 20, "ao-bot-0")
+        this.bot = this.scene.add.sprite(BELT_LEFT + 10, BELT_Y - 18, "ao-bot-0")
             .setDepth(30).setDisplaySize(32, 32);
 
         this.createAgentRings();
@@ -72,40 +72,40 @@ export class AOZone {
 
     private createAgentRings(): void {
         const cx = ZONE_X + ZONE_W / 2;
-        const cy = ZONE_Y + 92;
+        const cy = ZONE_Y + 76;
 
         for (let i = 0; i < 16; i++) {
             const a = (Math.PI * 2 * i) / 16 - Math.PI / 2;
-            this.divergeRing.push({ x: cx + Math.cos(a) * 68, y: cy + Math.sin(a) * 30 });
+            this.divergeRing.push({ x: cx + Math.cos(a) * 68, y: cy + Math.sin(a) * 25 });
         }
         for (let i = 0; i < 8; i++) {
             const a = (Math.PI * 2 * i) / 8 - Math.PI / 2;
-            this.convergeRing.push({ x: cx + Math.cos(a) * 42, y: cy + Math.sin(a) * 18 });
+            this.convergeRing.push({ x: cx + Math.cos(a) * 42, y: cy + Math.sin(a) * 15 });
         }
         for (let i = 0; i < 10; i++) {
             const a = (Math.PI * 2 * i) / 10 - Math.PI / 2;
-            this.planRing.push({ x: cx + Math.cos(a) * 20, y: cy + Math.sin(a) * 9 });
+            this.planRing.push({ x: cx + Math.cos(a) * 20, y: cy + Math.sin(a) * 8 });
         }
 
-        this.scene.add.text(cx + 72, cy - 36, "Diverge(16)", {
+        this.scene.add.text(cx + 72, cy - 30, "Diverge(16)", {
             fontFamily: "monospace", fontSize: "7px", color: "#f59e0b88",
         }).setDepth(12);
-        this.scene.add.text(cx + 46, cy - 22, "Conv(8)", {
+        this.scene.add.text(cx + 46, cy - 18, "Conv(8)", {
             fontFamily: "monospace", fontSize: "7px", color: "#fbbf2488",
         }).setDepth(12);
-        this.scene.add.text(cx - 8, cy - 12, "Plan(10)", {
+        this.scene.add.text(cx - 8, cy - 10, "Plan(10)", {
             fontFamily: "monospace", fontSize: "7px", color: "#fcd34d88",
         }).setDepth(12).setOrigin(0.5);
     }
 
     private createDebateCard(): void {
-        this.debateCard = this.scene.add.text(ZONE_X + ZONE_W / 2, ZONE_Y + 146, "Awaiting debate data...", {
+        this.debateCard = this.scene.add.text(ZONE_X + ZONE_W / 2, ZONE_Y + 126, "Awaiting debate data...", {
             fontFamily: "monospace", fontSize: "10px", color: "#0b1220",
             backgroundColor: "#fde68a", padding: { x: 8, y: 4 },
             wordWrap: { width: ZONE_W - 60 },
         }).setOrigin(0.5).setDepth(15);
 
-        this.debateSnippet = this.scene.add.text(ZONE_X + ZONE_W / 2, ZONE_Y + 168, "", {
+        this.debateSnippet = this.scene.add.text(ZONE_X + ZONE_W / 2, ZONE_Y + 148, "", {
             fontFamily: "monospace", fontSize: "8px", color: "#92400e",
             backgroundColor: "#fef3c7ee", padding: { x: 6, y: 3 },
             wordWrap: { width: ZONE_W - 80 },
@@ -113,29 +113,27 @@ export class AOZone {
     }
 
     private createBeltLabels(): void {
-        // score threshold markers on belt
         const threshX7 = BELT_LEFT + (BELT_RIGHT - BELT_LEFT) * 0.55;
         const threshX8 = BELT_LEFT + (BELT_RIGHT - BELT_LEFT) * 0.8;
 
-        this.scene.add.text(threshX7, BELT_Y - 12, "score≥7→Plan", {
+        this.scene.add.text(threshX7, BELT_Y - 12, "score\u22657\u2192Plan", {
             fontFamily: "monospace", fontSize: "7px", color: "#fbbf2466",
         }).setDepth(12);
-        this.scene.add.text(threshX8, BELT_Y - 12, "≥8→Project", {
+        this.scene.add.text(threshX8, BELT_Y - 12, "\u22658\u2192Project", {
             fontFamily: "monospace", fontSize: "7px", color: "#22c55e44",
         }).setDepth(12);
 
-        // output labels below belt
-        this.scene.add.text(BELT_LEFT, BELT_Y + BELT_H + 8, "← Ideas enter", {
+        this.scene.add.text(BELT_LEFT, BELT_Y + BELT_H + 8, "\u2190 Ideas enter", {
             fontFamily: "monospace", fontSize: "7px", color: "#f59e0b44",
         }).setDepth(10);
-        this.scene.add.text(BELT_RIGHT - 80, BELT_Y + BELT_H + 8, "Plans/Projects out →", {
+        this.scene.add.text(BELT_RIGHT - 80, BELT_Y + BELT_H + 8, "Plans/Projects out \u2192", {
             fontFamily: "monospace", fontSize: "7px", color: "#22c55e44",
         }).setDepth(10);
     }
 
     private createFunnel(): void {
-        this.funnelText = this.scene.add.text(ZONE_X + ZONE_W / 2, ZONE_Y + ZONE_H - 50,
-            "Ideas: 0 → Plans: 0 → Projects: 0", {
+        this.funnelText = this.scene.add.text(ZONE_X + ZONE_W / 2, ZONE_Y + ZONE_H - 35,
+            "Ideas: 0 \u2192 Plans: 0 \u2192 Projects: 0", {
                 fontFamily: "monospace", fontSize: "10px", color: "#fcd34d",
                 backgroundColor: "#0b1226ee", padding: { x: 8, y: 4 },
             }).setOrigin(0.5).setDepth(12);
@@ -171,14 +169,13 @@ export class AOZone {
             }
             this.spawnTimer = 0;
 
-            // bot loading animation
             this.scene.tweens.add({
-                targets: this.bot, y: BELT_Y - 8, duration: 150,
+                targets: this.bot, y: BELT_Y - 6, duration: 150,
                 yoyo: true,
             });
         }
 
-        // move bubbles along belt (left→right)
+        // move bubbles along belt (left->right)
         const beltLen = BELT_RIGHT - BELT_LEFT;
         const threshX7 = BELT_LEFT + beltLen * 0.55;
         const threshX8 = BELT_LEFT + beltLen * 0.8;
@@ -218,7 +215,6 @@ export class AOZone {
                 b.label.setPosition(b.x, BELT_Y + BELT_H / 2 + 6);
                 if (b.sprite.alpha <= 0) b.phase = "done";
             } else if (b.phase === "promoted") {
-                // float upward briefly then disappear
                 b.sprite.setPosition(b.x, b.sprite.y - dt * 0.03);
                 b.label.setPosition(b.x, b.sprite.y - 14);
                 b.sprite.setAlpha(Math.max(0, b.sprite.alpha - dt * 0.001));
@@ -237,11 +233,11 @@ export class AOZone {
         const ls = dataBridge.liveStats.ao;
         if (ls) {
             this.funnelText?.setText(
-                `Ideas: ${ls.stats.ideas_generated} → Plans: ${ls.stats.plans_created} → Projects: ${this.totalProjects}`
+                `Ideas: ${ls.stats.ideas_generated} \u2192 Plans: ${ls.stats.plans_created} \u2192 Projects: ${this.totalProjects}`
             );
         } else {
             this.funnelText?.setText(
-                `Ideas: ${this.totalIdeas} → Plans: ${this.totalPlans} → Projects: ${this.totalProjects}`
+                `Ideas: ${this.totalIdeas} \u2192 Plans: ${this.totalPlans} \u2192 Projects: ${this.totalProjects}`
             );
         }
 

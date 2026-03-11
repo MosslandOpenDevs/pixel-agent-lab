@@ -1,30 +1,24 @@
 import Phaser from "phaser";
 import type { DataBridge } from "../services/data-bridge.ts";
 
-const ZONE_X = 960;
-const ZONE_Y = 44;
-const ZONE_W = 470;
-const ZONE_H = 370;
+const ZONE_X = 10;
+const ZONE_Y = 488;
+const ZONE_W = 1420;
+const ZONE_H = 262;
 
 const L_STAGES = [
-    "L0 · Signal Collection",
-    "L1 · Deliberation",
-    "L2 · Human Voting",
-    "L3 · Execution",
-    "L4 · Outcome Proof",
+    "L0 \u00b7 Signal Collection",
+    "L1 \u00b7 Deliberation",
+    "L2 \u00b7 Human Voting",
+    "L3 \u00b7 Execution",
+    "L4 \u00b7 Outcome Proof",
 ] as const;
 
-// Vertical belt for Bridge pipeline
-const BELT_X = ZONE_X + ZONE_W - 65;
-const BELT_W = 44;
-const BELT_TOP = 175;
-const BELT_BOTTOM = 370;
-
-const STAGE_Y_START = 178;
-const STAGE_H = 24;
-const STAGE_GAP = 12;
-const STAGE_X = ZONE_X + 18;
-const STAGE_W = ZONE_W - 100;
+// Horizontal belt for Bridge pipeline (left section)
+const BELT_LEFT = ZONE_X + 20;
+const BELT_RIGHT = ZONE_X + 560;
+const BELT_Y = ZONE_Y + 140;
+const BELT_H = 40;
 
 const AGENTS = [
     { name: "Risk", color: 0xef4444 },
@@ -51,6 +45,10 @@ export class BridgeZone {
     private beltOffset = 0;
     private bot!: Phaser.GameObjects.Sprite;
 
+    // trust panel (migrated from FeedbackArc)
+    private trustLabels: Phaser.GameObjects.Text[] = [];
+    private outcomeLog?: Phaser.GameObjects.Text;
+
     proposalCount = 0;
     outcomeCount = 0;
     successRate = 0;
@@ -64,35 +62,36 @@ export class BridgeZone {
         this.beltG = this.scene.add.graphics().setDepth(6);
 
         // title
-        this.scene.add.text(ZONE_X + 14, ZONE_Y + 8, "BRIDGE — Execute & Verify", {
+        this.scene.add.text(ZONE_X + 14, ZONE_Y + 8, "BRIDGE \u2014 Execute & Verify", {
             fontFamily: "monospace", fontSize: "12px", color: "#93c5fd",
             backgroundColor: "#0b1226ee", padding: { x: 6, y: 3 },
         }).setDepth(10);
 
-        this.scene.add.text(ZONE_X + 14, ZONE_Y + 28, "5 agents · L0→L4 · Voting · Trust", {
+        this.scene.add.text(ZONE_X + 14, ZONE_Y + 26, "Independent Service \u00b7 Port 3101 \u00b7 5 agents \u00b7 L0\u2192L4 \u00b7 Voting \u00b7 Trust", {
             fontFamily: "monospace", fontSize: "9px", color: "#60a5fa88",
         }).setDepth(10);
 
-        // loader bot
-        this.bot = this.scene.add.sprite(BELT_X + BELT_W / 2, BELT_TOP - 18, "bridge-bot-0")
+        // loader bot at belt entrance
+        this.bot = this.scene.add.sprite(BELT_LEFT + 10, BELT_Y - 18, "bridge-bot-0")
             .setDepth(30).setDisplaySize(32, 32);
 
         this.createAgentRow();
         this.createPipelineLabels();
+        this.createTrustPanel();
     }
 
     private createAgentRow(): void {
-        const startX = ZONE_X + 45;
-        const y = ZONE_Y + 68;
+        const startX = ZONE_X + 55;
+        const y = ZONE_Y + 62;
         const spacing = 80;
 
         AGENTS.forEach((agent, i) => {
             const x = startX + i * spacing;
             const sprite = this.scene.add.sprite(x, y, "bridge-bot-0")
-                .setDepth(20).setDisplaySize(32, 32);
+                .setDepth(20).setDisplaySize(28, 28);
             this.agentSprites.push(sprite);
 
-            this.scene.add.text(x, y + 22, agent.name, {
+            this.scene.add.text(x, y + 20, agent.name, {
                 fontFamily: "monospace", fontSize: "8px", color: "#93c5fd",
                 backgroundColor: "#0b1226cc", padding: { x: 3, y: 1 },
             }).setOrigin(0.5).setDepth(21);
@@ -100,17 +99,58 @@ export class BridgeZone {
     }
 
     private createPipelineLabels(): void {
+        const stageWidth = (BELT_RIGHT - BELT_LEFT) / L_STAGES.length;
         L_STAGES.forEach((name, i) => {
-            const y = STAGE_Y_START + i * (STAGE_H + STAGE_GAP);
-            this.scene.add.text(STAGE_X + 6, y + 4, name, {
-                fontFamily: "monospace", fontSize: "9px", color: "#bfdbfe",
-            }).setDepth(12);
+            const x = BELT_LEFT + i * stageWidth + stageWidth / 2;
+            this.scene.add.text(x, BELT_Y - 14, name, {
+                fontFamily: "monospace", fontSize: "7px", color: "#bfdbfe",
+            }).setOrigin(0.5).setDepth(12);
         });
+
+        // belt direction labels
+        this.scene.add.text(BELT_LEFT, BELT_Y + BELT_H + 6, "\u2190 Proposals enter", {
+            fontFamily: "monospace", fontSize: "7px", color: "#60a5fa44",
+        }).setDepth(10);
+        this.scene.add.text(BELT_RIGHT - 90, BELT_Y + BELT_H + 6, "Outcomes verified \u2192", {
+            fontFamily: "monospace", fontSize: "7px", color: "#22c55e44",
+        }).setDepth(10);
+    }
+
+    private createTrustPanel(): void {
+        // Trust & Outcomes section (right side of the wide zone)
+        const px = ZONE_X + 600;
+
+        this.scene.add.text(px, ZONE_Y + 8, "TRUST & OUTCOMES", {
+            fontFamily: "monospace", fontSize: "11px", color: "#2dd4bf",
+            backgroundColor: "#0b1226ee", padding: { x: 6, y: 3 },
+        }).setDepth(10);
+
+        this.scene.add.text(px, ZONE_Y + 28, "Bridge internal trust scoring and outcome verification", {
+            fontFamily: "monospace", fontSize: "8px", color: "#2dd4bf44",
+        }).setDepth(10);
+
+        const gaugeNames = ["Agent Trust", "Proposals", "Success Rate"];
+        const gaugeColors = ["#22c55e", "#3b82f6", "#a855f7"];
+        gaugeNames.forEach((name, i) => {
+            const x = px + 30 + i * 230;
+            const label = this.scene.add.text(x, ZONE_Y + 60, `${name}\n--`, {
+                fontFamily: "monospace", fontSize: "10px", color: gaugeColors[i],
+                backgroundColor: "#0a162866", padding: { x: 8, y: 6 },
+                align: "center",
+            }).setDepth(12);
+            this.trustLabels.push(label);
+        });
+
+        this.outcomeLog = this.scene.add.text(px, ZONE_Y + 130, "Outcomes: waiting for data...", {
+            fontFamily: "monospace", fontSize: "8px", color: "#94a3b8",
+            backgroundColor: "#0a162866", padding: { x: 6, y: 3 },
+            wordWrap: { width: 780 },
+        }).setDepth(12);
     }
 
     update(dt: number, dataBridge: DataBridge): void {
         this.spawnTimer += dt;
-        this.beltOffset += dt * 0.025;
+        this.beltOffset += dt * 0.035;
 
         // update stats
         const bs = dataBridge.liveStats.bridge;
@@ -129,13 +169,13 @@ export class BridgeZone {
         if (this.spawnTimer > 3200 && this.items.length < 4) {
             this.spawnItem();
             this.spawnTimer = 0;
-            // bot loading animation
             this.scene.tweens.add({
-                targets: this.bot, y: BELT_TOP - 6, duration: 180, yoyo: true,
+                targets: this.bot, y: BELT_Y - 6, duration: 180, yoyo: true,
             });
         }
 
-        // advance items down belt
+        // advance items along horizontal belt (left->right)
+        const stageWidth = (BELT_RIGHT - BELT_LEFT) / L_STAGES.length;
         for (const item of this.items) {
             item.progress += dt * 0.00025;
             if (item.progress >= 1) {
@@ -152,27 +192,49 @@ export class BridgeZone {
                 continue;
             }
 
-            const y = STAGE_Y_START + item.stageIdx * (STAGE_H + STAGE_GAP) + STAGE_H / 2
-                + item.progress * (STAGE_H + STAGE_GAP);
-            item.sprite.setPosition(BELT_X + BELT_W / 2, y);
-            item.label.setPosition(BELT_X - 4, y - 2);
+            const x = BELT_LEFT + item.stageIdx * stageWidth + item.progress * stageWidth + stageWidth / 2;
+            item.sprite.setPosition(x, BELT_Y + BELT_H / 2);
+            item.label.setPosition(x, BELT_Y + BELT_H / 2 - 16);
         }
 
         this.items = this.items.filter(i => i.stageIdx < L_STAGES.length);
+
+        // update trust data (migrated from FeedbackArc)
+        const trust = dataBridge.trustCache;
+        if (trust.length > 0) {
+            const avgScore = trust.reduce((sum, t) => sum + t.score, 0) / trust.length;
+            this.trustLabels[0]?.setText(`Agent Trust\n${avgScore.toFixed(1)}`);
+        }
+        if (bs) {
+            this.trustLabels[1]?.setText(`Proposals\n${bs.proposals.total}`);
+            this.trustLabels[2]?.setText(`Success Rate\n${bs.outcomes.successRate}%`);
+        }
+
+        // outcome log
+        const outcomes = dataBridge.outcomeCache;
+        if (outcomes.length > 0) {
+            const logText = outcomes.slice(0, 3).map(o =>
+                `[${o.success ? "OK" : "FAIL"}] ${o.id.slice(0, 8)}... ${o.status}`
+            ).join("\n");
+            this.outcomeLog?.setText(`Recent Outcomes:\n${logText}`);
+        } else {
+            const issueCount = bs?.issues.total ?? 0;
+            this.outcomeLog?.setText(`Signals: ${bs?.signals.total.toLocaleString() ?? "?"} | Issues: ${issueCount} | Awaiting proposals...`);
+        }
 
         this.drawGraphics();
         this.drawBelt();
     }
 
     private spawnItem(): void {
-        const x = BELT_X + BELT_W / 2;
-        const y = BELT_TOP + 6;
+        const x = BELT_LEFT + 20;
+        const y = BELT_Y + BELT_H / 2;
         const sprite = this.scene.add.image(x, y, "proposal-seal")
             .setDepth(20).setDisplaySize(16, 16);
-        const label = this.scene.add.text(BELT_X - 4, y - 2, "Proposal", {
+        const label = this.scene.add.text(x, y - 16, "Proposal", {
             fontFamily: "monospace", fontSize: "7px", color: "#93c5fd",
             backgroundColor: "#0f172aee", padding: { x: 2, y: 1 },
-        }).setDepth(21).setOrigin(1, 0.5);
+        }).setDepth(21).setOrigin(0.5);
 
         this.items.push({ sprite, label, stageIdx: 0, progress: 0 });
     }
@@ -180,28 +242,43 @@ export class BridgeZone {
     private drawBelt(): void {
         this.beltG.clear();
 
-        // belt track (vertical)
+        // belt track (horizontal)
         this.beltG.fillStyle(0x0d1b33, 0.85);
-        this.beltG.fillRoundedRect(BELT_X, BELT_TOP, BELT_W, BELT_BOTTOM - BELT_TOP, 7);
+        this.beltG.fillRoundedRect(BELT_LEFT, BELT_Y, BELT_RIGHT - BELT_LEFT, BELT_H, 7);
         this.beltG.lineStyle(2, 0x60a5fa, 0.45);
-        this.beltG.strokeRoundedRect(BELT_X, BELT_TOP, BELT_W, BELT_BOTTOM - BELT_TOP, 7);
+        this.beltG.strokeRoundedRect(BELT_LEFT, BELT_Y, BELT_RIGHT - BELT_LEFT, BELT_H, 7);
 
-        // rollers
-        for (let y = BELT_TOP + 10; y < BELT_BOTTOM - 8; y += 22) {
+        // rollers top & bottom
+        for (let x = BELT_LEFT + 15; x < BELT_RIGHT - 10; x += 22) {
             this.beltG.fillStyle(0x60a5fa, 0.3);
-            this.beltG.fillCircle(BELT_X + 4, y, 3.5);
-            this.beltG.fillCircle(BELT_X + BELT_W - 4, y, 3.5);
+            this.beltG.fillCircle(x, BELT_Y + 4, 3.5);
+            this.beltG.fillCircle(x, BELT_Y + BELT_H - 4, 3.5);
             this.beltG.fillStyle(0x0d1b33, 0.8);
-            this.beltG.fillCircle(BELT_X + 4, y, 1.2);
-            this.beltG.fillCircle(BELT_X + BELT_W - 4, y, 1.2);
+            this.beltG.fillCircle(x, BELT_Y + 4, 1.2);
+            this.beltG.fillCircle(x, BELT_Y + BELT_H - 4, 1.2);
         }
 
         // moving treads
-        const phase = this.beltOffset % 28;
-        for (let y = BELT_TOP + phase; y < BELT_BOTTOM - 8; y += 28) {
+        const phase = this.beltOffset % 40;
+        for (let x = BELT_LEFT + phase; x < BELT_RIGHT - 15; x += 40) {
             this.beltG.fillStyle(0x60a5fa, 0.1);
-            this.beltG.fillRect(BELT_X + 8, y, BELT_W - 16, 10);
+            this.beltG.fillRect(x, BELT_Y + 10, 18, BELT_H - 20);
         }
+
+        // stage divider markers on belt
+        const stageWidth = (BELT_RIGHT - BELT_LEFT) / L_STAGES.length;
+        for (let i = 1; i < L_STAGES.length; i++) {
+            const x = BELT_LEFT + i * stageWidth;
+            this.beltG.lineStyle(1, 0x60a5fa, 0.3);
+            this.beltG.lineBetween(x, BELT_Y + 2, x, BELT_Y + BELT_H - 2);
+        }
+
+        // voting indicator below L2
+        const voteX = BELT_LEFT + 2 * stageWidth;
+        this.beltG.fillStyle(0x22c55e, 0.35);
+        this.beltG.fillRoundedRect(voteX + 5, BELT_Y + BELT_H + 4, 40, 12, 3);
+        this.beltG.fillStyle(0xef4444, 0.25);
+        this.beltG.fillRoundedRect(voteX + 48, BELT_Y + BELT_H + 4, 35, 12, 3);
     }
 
     private drawGraphics(): void {
@@ -213,43 +290,40 @@ export class BridgeZone {
         this.g.lineStyle(2, 0x60a5fa, 0.45);
         this.g.strokeRoundedRect(ZONE_X, ZONE_Y, ZONE_W, ZONE_H, 10);
 
+        // divider between pipeline and trust sections
+        const divX = ZONE_X + 580;
+        this.g.lineStyle(1, 0x60a5fa, 0.15);
+        this.g.lineBetween(divX, ZONE_Y + 10, divX, ZONE_Y + ZONE_H - 10);
+
         // agent accent circles
         const now = this.scene.time.now;
         AGENTS.forEach((agent, i) => {
-            const x = ZONE_X + 45 + i * 80;
-            const y = ZONE_Y + 68;
+            const x = ZONE_X + 55 + i * 80;
+            const y = ZONE_Y + 62;
             const active = Math.sin(now * 0.002 + i * 1.2) > 0;
             this.g.lineStyle(2, agent.color, active ? 0.6 : 0.15);
-            this.g.strokeCircle(x, y, 20);
+            this.g.strokeCircle(x, y, 18);
         });
 
-        // pipeline bars
+        // stage highlight on belt when item is present
+        const stageWidth = (BELT_RIGHT - BELT_LEFT) / L_STAGES.length;
         L_STAGES.forEach((_, i) => {
-            const y = STAGE_Y_START + i * (STAGE_H + STAGE_GAP);
+            const x = BELT_LEFT + i * stageWidth;
             const hasItem = this.items.some(it => it.stageIdx === i);
-            this.g.fillStyle(hasItem ? 0x1e3a5f : 0x0d1b33, hasItem ? 0.55 : 0.35);
-            this.g.fillRoundedRect(STAGE_X, y, STAGE_W, STAGE_H, 5);
-            this.g.lineStyle(1, 0x60a5fa, hasItem ? 0.5 : 0.15);
-            this.g.strokeRoundedRect(STAGE_X, y, STAGE_W, STAGE_H, 5);
-
-            // connector to belt
             if (hasItem) {
-                this.g.lineStyle(1, 0x60a5fa, 0.3);
-                this.g.lineBetween(STAGE_X + STAGE_W, y + STAGE_H / 2, BELT_X, y + STAGE_H / 2);
-            }
-
-            // vertical connector
-            if (i < L_STAGES.length - 1) {
-                this.g.lineStyle(1, 0x60a5fa, 0.1);
-                this.g.lineBetween(STAGE_X + STAGE_W / 2, y + STAGE_H, STAGE_X + STAGE_W / 2, y + STAGE_H + STAGE_GAP);
+                this.g.fillStyle(0x1e3a5f, 0.3);
+                this.g.fillRoundedRect(x + 2, BELT_Y + 2, stageWidth - 4, BELT_H - 4, 4);
             }
         });
 
-        // voting bar at L2
-        const voteY = STAGE_Y_START + 2 * (STAGE_H + STAGE_GAP);
-        this.g.fillStyle(0x22c55e, 0.35);
-        this.g.fillRoundedRect(STAGE_X + STAGE_W - 90, voteY + 3, 40, 18, 3);
-        this.g.fillStyle(0xef4444, 0.25);
-        this.g.fillRoundedRect(STAGE_X + STAGE_W - 48, voteY + 3, 35, 18, 3);
+        // trust gauge circles (right section)
+        const gaugeColors = [0x22c55e, 0x3b82f6, 0xa855f7];
+        const px = ZONE_X + 600;
+        gaugeColors.forEach((color, i) => {
+            const x = px + 30 + i * 230;
+            const y = ZONE_Y + 66;
+            this.g.lineStyle(2, color, 0.3);
+            this.g.strokeCircle(x - 10, y + 8, 16);
+        });
     }
 }

@@ -11,7 +11,7 @@ export function initSidebar(): void {
 <div class="layout">
   <aside class="panel">
     <h1>Mossland Space Hub</h1>
-    <p class="sub">Governance Operations Center · Algora → AO → Bridge</p>
+    <p class="sub">Governance Monitor · 3 Independent Services</p>
     <div id="connStatus" class="conn-status"><span class="dot connecting"></span> Connecting...</div>
     <div id="stats" class="stats"></div>
     <div id="serviceStatus" class="stats"></div>
@@ -49,7 +49,7 @@ export function updateSidebar(
 
     // pipeline summary stats
     statsEl.innerHTML = `
-    <div class="row"><span>Pipeline</span><b>Signals → Issues → Ideas → Plans → Projects → Outcomes</b></div>
+    <div class="row"><span>Monitoring</span><b>Algora (Sense) | AO (Plan) | Bridge (Execute)</b></div>
     <div class="row"><span>Signal Queue</span><b>${dataBridge.queueSize()}</b></div>
     <div class="row"><span>Algora Issues</span><b>${dataBridge.issueCache.length}</b></div>
     <div class="row"><span>AO Debates</span><b>${dataBridge.debateCache.length}</b></div>

@@ -3,8 +3,8 @@ import type { DataBridge } from "../services/data-bridge.ts";
 
 const ZONE_X = 10;
 const ZONE_Y = 44;
-const ZONE_W = 440;
-const ZONE_H = 580;
+const ZONE_W = 620;
+const ZONE_H = 386;
 
 const STAGES = [
     "Signal Intake",
@@ -18,15 +18,15 @@ const STAGES = [
     "Outcome Verify",
 ] as const;
 
-// Belt runs vertically along the right side of the pipeline
+// Vertical belt along right side of pipeline
 const BELT_X = ZONE_X + ZONE_W - 70;
 const BELT_W = 50;
-const BELT_TOP = 196;
-const BELT_BOTTOM = 504;
+const BELT_TOP = ZONE_Y + 108;
+const BELT_BOTTOM = ZONE_Y + 356;
 
-const STAGE_Y_START = 200;
-const STAGE_H = 26;
-const STAGE_GAP = 8;
+const STAGE_Y_START = ZONE_Y + 112;
+const STAGE_H = 22;
+const STAGE_GAP = 5;
 const STAGE_X = ZONE_X + 18;
 const STAGE_W = ZONE_W - 100;
 
@@ -80,12 +80,12 @@ export class AlgoraZone {
         this.beltG = this.scene.add.graphics().setDepth(6);
 
         // title
-        this.scene.add.text(ZONE_X + 14, ZONE_Y + 8, "ALGORA — Sense & Detect", {
+        this.scene.add.text(ZONE_X + 14, ZONE_Y + 8, "ALGORA \u2014 Sense & Detect", {
             fontFamily: "monospace", fontSize: "12px", color: "#86efac",
             backgroundColor: "#0b1226ee", padding: { x: 6, y: 3 },
         }).setDepth(10);
 
-        this.scene.add.text(ZONE_X + 14, ZONE_Y + 28, "38 agents · 11 clusters · 9-stage pipeline", {
+        this.scene.add.text(ZONE_X + 14, ZONE_Y + 26, "Independent Service \u00b7 Port 3201 \u00b7 38 agents \u00b7 11 clusters \u00b7 9-stage pipeline", {
             fontFamily: "monospace", fontSize: "9px", color: "#4ade80aa",
         }).setDepth(10);
 
@@ -103,10 +103,10 @@ export class AlgoraZone {
     }
 
     private createClusterArc(): void {
-        const cx = ZONE_X + ZONE_W / 2 - 20;
-        const cy = ZONE_Y + 85;
-        const rx = 155;
-        const ry = 34;
+        const cx = ZONE_X + ZONE_W / 2 - 40;
+        const cy = ZONE_Y + 68;
+        const rx = 170;
+        const ry = 22;
 
         CLUSTERS.forEach((cl, i) => {
             const angle = Math.PI + (Math.PI * i) / (CLUSTERS.length - 1);
@@ -126,14 +126,14 @@ export class AlgoraZone {
     private createPipelineStages(): void {
         STAGES.forEach((name, i) => {
             const y = STAGE_Y_START + i * (STAGE_H + STAGE_GAP);
-            this.scene.add.text(STAGE_X + 6, y + 5, `${i + 1}. ${name}`, {
+            this.scene.add.text(STAGE_X + 6, y + 3, `${i + 1}. ${name}`, {
                 fontFamily: "monospace", fontSize: "9px", color: "#d1fae5",
             }).setDepth(12);
         });
     }
 
     private createDocDock(): void {
-        const dockY = STAGE_Y_START + STAGES.length * (STAGE_H + STAGE_GAP) + 8;
+        const dockY = STAGE_Y_START + STAGES.length * (STAGE_H + STAGE_GAP) + 4;
         this.scene.add.text(STAGE_X + 2, dockY, "Docs:", {
             fontFamily: "monospace", fontSize: "8px", color: "#86efac88",
         }).setDepth(12);
@@ -162,7 +162,6 @@ export class AlgoraZone {
                 this.botBusy = true;
                 this.signalsProcessed++;
 
-                // bot moves up to pick, then drops on belt
                 const title = signal.title.slice(0, 22);
                 const severity = signal.severity;
                 this.scene.tweens.add({
@@ -183,7 +182,6 @@ export class AlgoraZone {
                 item.progress = 0;
                 item.stageIdx++;
 
-                // transform at Issue Detection (stage 1→2)
                 if (item.stageIdx === 2) {
                     item.sprite.setTexture("issue-card");
                     item.sprite.setDisplaySize(18, 16);
@@ -198,7 +196,6 @@ export class AlgoraZone {
                 continue;
             }
 
-            // position on belt
             const y = STAGE_Y_START + item.stageIdx * (STAGE_H + STAGE_GAP) + STAGE_H / 2
                 + item.progress * (STAGE_H + STAGE_GAP);
             item.sprite.setPosition(BELT_X + BELT_W / 2, y);
@@ -282,7 +279,7 @@ export class AlgoraZone {
             }
         });
 
-        // pipeline stage bars (left of belt)
+        // pipeline stage bars
         STAGES.forEach((_, i) => {
             const y = STAGE_Y_START + i * (STAGE_H + STAGE_GAP);
             const hasItem = this.items.some(it => it.stageIdx === i);
@@ -291,7 +288,7 @@ export class AlgoraZone {
             this.g.lineStyle(1, 0x34d399, hasItem ? 0.6 : 0.15);
             this.g.strokeRoundedRect(STAGE_X, y, STAGE_W, STAGE_H, 5);
 
-            // connector arrow to belt
+            // connector to belt
             if (hasItem) {
                 this.g.lineStyle(1, 0x34d399, 0.4);
                 this.g.lineBetween(STAGE_X + STAGE_W, y + STAGE_H / 2, BELT_X, y + STAGE_H / 2);
