@@ -1,5 +1,7 @@
 import "./style.css";
 import Phaser from "phaser";
+import { DataBridge } from "./services/data-bridge.ts";
+import type { UnifiedSignal } from "./services/types.ts";
 
 type Priority = "P1" | "P2" | "P3";
 type Route = "Immediate Action" | "Monitor" | "Defer";
@@ -22,6 +24,12 @@ type Box = {
     sprite: Phaser.GameObjects.Image;
     tag: Phaser.GameObjects.Text;
     badge: Phaser.GameObjects.Text;
+    // real data fields
+    signal?: UnifiedSignal;
+    title?: string;
+    description?: string;
+    url?: string;
+    origin?: "algora" | "ao" | "bridge";
 };
 
 const W = 1440;
@@ -37,6 +45,7 @@ app.innerHTML = `
   <aside class="panel">
     <h1>Mossland Space Hub</h1>
     <p class="sub">우주 물류 센터 · Algora → AO → Bridge</p>
+    <div id="connStatus" class="conn-status"><span class="dot connecting"></span> 서비스 연결 중...</div>
     <div id="stats" class="stats"></div>
     <div id="serviceStatus" class="stats"></div>
     <div id="detail" class="detail"><h2>상세 정보</h2><p>박스를 클릭하면 상세 정보가 표시됩니다.</p></div>
@@ -71,6 +80,20 @@ const statsEl = document.querySelector<HTMLDivElement>("#stats")!;
 const detailEl = document.querySelector<HTMLDivElement>("#detail")!;
 const loadedHudEl = document.querySelector<HTMLDivElement>("#loadedHud")!;
 const serviceStatusEl = document.querySelector<HTMLDivElement>("#serviceStatus")!;
+const connStatusEl = document.querySelector<HTMLDivElement>("#connStatus")!;
+
+// --- Initialize DataBridge ---
+const dataBridge = new DataBridge();
+let liveMode = false;
+
+dataBridge.init().then((ok) => {
+    liveMode = ok;
+    if (ok) {
+        connStatusEl.innerHTML = `<span class="dot live"></span> LIVE — 실제 데이터 연동 중 (queue: ${dataBridge.queueSize()})`;
+    } else {
+        connStatusEl.innerHTML = `<span class="dot offline"></span> OFFLINE — 목업 데이터 사용 중`;
+    }
+});
 
 class SpaceHubScene extends Phaser.Scene {
     boxes: Box[] = [];
@@ -475,11 +498,38 @@ class SpaceHubScene extends Phaser.Scene {
     }
 
     spawnInboundBox() {
-        const riskPool: Array<Box["risk"]> = ["high", "medium", "low"];
-        const sourcePool = ["github", "rss", "social", "chain"];
-        const categoryPool = ["ai", "dev", "security", "crypto"];
+        // Try real data first, fall back to mock
+        const signal = liveMode ? dataBridge.nextSignal() : null;
 
-        const risk = riskPool[Phaser.Math.Between(0, 2)];
+        let source: string;
+        let category: string;
+        let risk: Box["risk"];
+        let title: string | undefined;
+        let description: string | undefined;
+        let url: string | undefined;
+        let origin: UnifiedSignal["origin"] | undefined;
+
+        if (signal) {
+            source = signal.source;
+            category = signal.category;
+            risk =
+                signal.severity === "critical"
+                    ? "high"
+                    : (signal.severity as Box["risk"]);
+            title = signal.title;
+            description = signal.description;
+            url = signal.url;
+            origin = signal.origin;
+        } else {
+            // mock fallback
+            const riskPool: Array<Box["risk"]> = ["high", "medium", "low"];
+            const sourcePool = ["github", "rss", "social", "chain"];
+            const categoryPool = ["ai", "dev", "security", "crypto"];
+            source = sourcePool[Phaser.Math.Between(0, 3)];
+            category = categoryPool[Phaser.Math.Between(0, 3)];
+            risk = riskPool[Phaser.Math.Between(0, 2)];
+        }
+
         const priority: Priority = risk === "high" ? "P1" : risk === "medium" ? "P2" : "P3";
         const id = `BX-${String(this.nextId++).padStart(4, "0")}`;
 
@@ -500,10 +550,10 @@ class SpaceHubScene extends Phaser.Scene {
 
         this.totalSignals += 1;
 
-        const source = sourcePool[Phaser.Math.Between(0, 3)];
-        const category = categoryPool[Phaser.Math.Between(0, 3)];
+        // Origin indicator: color badge differently for each service
+        const originTag = origin ? ` [${origin.toUpperCase()}]` : "";
         const badge = this.add
-            .text(x, y - 40, `${source.toUpperCase()} · ${risk.toUpperCase()}`, {
+            .text(x, y - 40, `${source.toUpperCase()} · ${risk.toUpperCase()}${originTag}`, {
                 color: "#e2e8f0",
                 fontFamily: "monospace",
                 fontSize: "9px",
@@ -530,6 +580,11 @@ class SpaceHubScene extends Phaser.Scene {
             sprite,
             tag,
             badge,
+            signal: signal ?? undefined,
+            title,
+            description,
+            url,
+            origin,
         });
     }
 
@@ -564,7 +619,10 @@ class SpaceHubScene extends Phaser.Scene {
         this.activeAlgoraFilter = filter;
         const home = new Phaser.Math.Vector2(filter.x, filter.y);
 
-        const reject = b.risk === "low";
+        const reject =
+            liveMode && b.signal
+                ? !dataBridge.shouldApprove(b.signal)
+                : b.risk === "low";
         this.time.delayedCall(560, () => {
             if (reject) {
                 this.carrierPickAndCarry(filter, b, 42, 650, 740, () => {
@@ -620,12 +678,21 @@ class SpaceHubScene extends Phaser.Scene {
         if (!b) return;
         this.busyAO = true;
 
+        // Use real debate context if available
+        const debate = liveMode ? dataBridge.getDebateContext() : null;
+        const debateLine1 = debate
+            ? `AO DISCUSSION  |  ${b.id} — ${debate.topic.slice(0, 50)}`
+            : `AO DISCUSSION  |  ${b.id} ${b.source.toUpperCase()} ${b.risk.toUpperCase()}`;
+        const debateLine2 = debate
+            ? debate.snippet.slice(0, 100)
+            : `DEBATE: propose/challenge · PLAN: execution draft · ROUTE: A/B/C`;
+
         this.aoDebateCard?.destroy();
         this.aoDebateCard = this.add
             .text(
                 840,
                 112,
-                `AO DISCUSSION  |  ${b.id} ${b.source.toUpperCase()} ${b.risk.toUpperCase()}\nDEBATE: propose/challenge · PLAN: execution draft · ROUTE: A/B/C`,
+                `${debateLine1}\n${debateLine2}`,
                 {
                     fontFamily: "monospace",
                     fontSize: "12px",
@@ -633,14 +700,16 @@ class SpaceHubScene extends Phaser.Scene {
                     backgroundColor: "#fde68a",
                     padding: { x: 10, y: 6 },
                     lineSpacing: 2,
+                    wordWrap: { width: 560 },
                 }
             )
             .setOrigin(0.5)
             .setDepth(110);
 
+        const planText = b.title ? `PLAN: ${b.title.slice(0, 40)}` : `PLAN: ${b.id} review`;
         this.aoPlanChip?.destroy();
         this.aoPlanChip = this.add
-            .text(760, 206, `PLAN: ${b.id} review`, {
+            .text(760, 206, planText, {
                 fontFamily: "monospace",
                 fontSize: "9px",
                 color: "#111827",
@@ -766,6 +835,9 @@ class SpaceHubScene extends Phaser.Scene {
     }
 
     decideRoute(b: Box): Route {
+        if (liveMode && b.signal) {
+            return dataBridge.decideRoute(b.signal.severity);
+        }
         if (b.priority === "P1") return "Immediate Action";
         if (b.priority === "P2") return Math.random() > 0.5 ? "Monitor" : "Immediate Action";
         return Math.random() > 0.55 ? "Defer" : "Monitor";
@@ -948,25 +1020,49 @@ class SpaceHubScene extends Phaser.Scene {
       <div class="row"><span>활성 박스</span><b>${active}</b></div>
     `;
 
+        const ls = dataBridge.liveStats;
+        const algoraIn = liveMode && ls.algora ? `Signals/today ${ls.algora.signalsToday}` : `Signals ${this.totalSignals}`;
+        const algoraOut = liveMode && ls.algora ? `Open Issues ${ls.algora.openIssues}` : `Tagged Issues ${this.taggedIssues}`;
+        const algoraHint = liveMode && ls.algora
+            ? `sessions:${ls.algora.activeSessions} · agents:${ls.algora.activeAgents}`
+            : `github:${sourceCount.github} · rss:${sourceCount.rss} · social:${sourceCount.social} · chain:${sourceCount.chain}`;
+
+        const aoIn = liveMode && ls.ao ? `Signals/today ${ls.ao.stats.signals_today}` : `Issue Queue ${ao}`;
+        const aoOut = liveMode && ls.ao ? `Plans ${ls.ao.stats.plans_created} · Ideas ${ls.ao.stats.ideas_generated}` : `Plans ${this.plansCreated}`;
+        const aoHint = liveMode && ls.ao
+            ? `debates:${ls.ao.stats.debates_today} · agents:${ls.ao.stats.agents_active}`
+            : `debates:${this.debatesRun} · immediate:${routeCount.immediate} · monitor:${routeCount.monitor} · defer:${routeCount.defer}`;
+
+        const bridgeIn = liveMode && ls.bridge ? `Signals ${ls.bridge.signals.total.toLocaleString()}` : `Delegated ${this.delegatedToBridge}`;
+        const bridgeOut = liveMode && ls.bridge ? `Issues ${ls.bridge.issues.total} · Proofs ${ls.bridge.outcomes.totalProofs}` : `Verified ${this.verifiedOutcomes}`;
+        const bridgeHint = liveMode && ls.bridge
+            ? `adapters:${ls.bridge.signals.adapterCount} · proposals:${ls.bridge.proposals.total}`
+            : `execution record · proof · trust score`;
+
+        // Update connection status
+        if (liveMode) {
+            connStatusEl.innerHTML = `<span class="dot live"></span> LIVE — queue: ${dataBridge.queueSize()}`;
+        }
+
         serviceStatusEl.innerHTML = `
       <h2>서비스 I/O 상태</h2>
       <div class="svc algora">
-        <div class="svc-title">ALGORA</div>
-        <div class="drow"><span>Input</span><b>Signals ${this.totalSignals}</b></div>
-        <div class="drow"><span>Output</span><b>Tagged Issues ${this.taggedIssues}</b></div>
-        <div class="hint">github:${sourceCount.github} · rss:${sourceCount.rss} · social:${sourceCount.social} · chain:${sourceCount.chain}</div>
+        <div class="svc-title">ALGORA${liveMode ? ' <span class="live-badge">LIVE</span>' : ''}</div>
+        <div class="drow"><span>Input</span><b>${algoraIn}</b></div>
+        <div class="drow"><span>Output</span><b>${algoraOut}</b></div>
+        <div class="hint">${algoraHint}</div>
       </div>
       <div class="svc ao">
-        <div class="svc-title">AO</div>
-        <div class="drow"><span>Input</span><b>Issue Queue ${ao}</b></div>
-        <div class="drow"><span>Output</span><b>Plans ${this.plansCreated}</b></div>
-        <div class="hint">debates:${this.debatesRun} · immediate:${routeCount.immediate} · monitor:${routeCount.monitor} · defer:${routeCount.defer}</div>
+        <div class="svc-title">AO${liveMode ? ' <span class="live-badge">LIVE</span>' : ''}</div>
+        <div class="drow"><span>Input</span><b>${aoIn}</b></div>
+        <div class="drow"><span>Output</span><b>${aoOut}</b></div>
+        <div class="hint">${aoHint}</div>
       </div>
       <div class="svc bridge">
-        <div class="svc-title">BRIDGE</div>
-        <div class="drow"><span>Input</span><b>Delegated ${this.delegatedToBridge}</b></div>
-        <div class="drow"><span>Output</span><b>Verified ${this.verifiedOutcomes}</b></div>
-        <div class="hint">execution record · proof · trust score</div>
+        <div class="svc-title">BRIDGE${liveMode ? ' <span class="live-badge">LIVE</span>' : ''}</div>
+        <div class="drow"><span>Input</span><b>${bridgeIn}</b></div>
+        <div class="drow"><span>Output</span><b>${bridgeOut}</b></div>
+        <div class="hint">${bridgeHint}</div>
       </div>
     `;
     }
@@ -990,8 +1086,25 @@ class SpaceHubScene extends Phaser.Scene {
                     ? `Input: delegated plan / Output: execution record`
                     : `Input: execution result / Output: feedback event`;
 
+        const titleRow = b.title
+            ? `<div class="drow"><span>제목</span><b class="detail-title">${b.title.slice(0, 60)}</b></div>`
+            : "";
+        const descRow = b.description
+            ? `<div class="detail-desc">${b.description.slice(0, 150)}</div>`
+            : "";
+        const urlRow = b.url
+            ? `<div class="drow"><span>URL</span><a href="${b.url}" target="_blank" class="detail-link">${b.url.slice(0, 40)}…</a></div>`
+            : "";
+        const originRow = b.origin
+            ? `<div class="drow"><span>수집 서비스</span><b class="origin-${b.origin}">${b.origin.toUpperCase()}</b></div>`
+            : "";
+        const modeTag = b.signal
+            ? `<span class="live-tag">LIVE</span>`
+            : `<span class="mock-tag">MOCK</span>`;
+
         detailEl.innerHTML = `
-      <h2>${b.id}</h2>
+      <h2>${b.id} ${modeTag}</h2>
+      ${titleRow}
       <div class="drow"><span>단계</span><b>${b.phase.toUpperCase()}</b></div>
       <div class="drow"><span>상태</span><b>${b.status}</b></div>
       <div class="drow"><span>현재 작업</span><b>${phaseAction}</b></div>
@@ -1000,6 +1113,9 @@ class SpaceHubScene extends Phaser.Scene {
       <div class="drow"><span>risk</span><b>${b.risk}</b></div>
       <div class="drow"><span>priority</span><b>${b.priority}</b></div>
       <div class="drow"><span>AO route</span><b>${b.route}</b></div>
+      ${originRow}
+      ${urlRow}
+      ${descRow}
       <p class="hint">${ioSummary}</p>
     `;
     }

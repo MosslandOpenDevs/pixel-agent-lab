@@ -220,6 +220,113 @@ input[type="range"] {
     font-size: 12px;
 }
 
+/* Connection status indicator */
+.conn-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #94a3b8;
+    padding: 6px 8px;
+    border: 1px solid #1e3a5f;
+    border-radius: 8px;
+    background: #0a1628;
+    margin-bottom: 10px;
+}
+
+.dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.dot.live {
+    background: #22c55e;
+    box-shadow: 0 0 6px #22c55e88;
+    animation: pulse-dot 2s infinite;
+}
+
+.dot.offline {
+    background: #ef4444;
+}
+
+.dot.connecting {
+    background: #f59e0b;
+    animation: pulse-dot 1s infinite;
+}
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* Live badge in service titles */
+.live-badge {
+    font-size: 9px;
+    color: #22c55e;
+    border: 1px solid #22c55e55;
+    border-radius: 3px;
+    padding: 0 4px;
+    margin-left: 4px;
+}
+
+/* Detail panel live/mock tags */
+.live-tag {
+    font-size: 9px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #22c55e;
+    background: #22c55e22;
+    border: 1px solid #22c55e55;
+    border-radius: 3px;
+    padding: 1px 5px;
+    margin-left: 6px;
+}
+
+.mock-tag {
+    font-size: 9px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #94a3b8;
+    background: #94a3b822;
+    border: 1px solid #94a3b855;
+    border-radius: 3px;
+    padding: 1px 5px;
+    margin-left: 6px;
+}
+
+/* Detail panel enhancements */
+.detail-title {
+    font-size: 0.8rem;
+    word-break: break-all;
+}
+
+.detail-desc {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    line-height: 1.45;
+    margin: 6px 0;
+    padding: 6px;
+    background: #0a1628;
+    border-radius: 6px;
+    border: 1px solid #1e3a5f;
+}
+
+.detail-link {
+    color: #60a5fa;
+    text-decoration: none;
+    font-size: 0.75rem;
+    word-break: break-all;
+}
+
+.detail-link:hover {
+    text-decoration: underline;
+}
+
+.origin-algora { color: #86efac; }
+.origin-ao { color: #fcd34d; }
+.origin-bridge { color: #93c5fd; }
+
 @media (max-width: 1100px) {
     .layout {
         grid-template-columns: 1fr;
