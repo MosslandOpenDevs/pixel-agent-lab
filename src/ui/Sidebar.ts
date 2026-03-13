@@ -9,6 +9,7 @@ export function initSidebar(): void {
     const app = document.querySelector<HTMLDivElement>("#app")!;
     app.innerHTML = `
 <div class="layout">
+  <button id="panelToggle" class="panel-toggle" aria-label="Toggle panel">☰</button>
   <aside class="panel">
     <h1>Mossland Space Hub</h1>
     <p class="sub">Governance Monitor · 3 Independent Services</p>
@@ -17,15 +18,46 @@ export function initSidebar(): void {
     <div id="serviceStatus" class="stats"></div>
     <div id="detail" class="detail"><h2>Detail</h2><p>Click an element for details.</p></div>
   </aside>
+  <div class="panel-backdrop"></div>
   <main class="stage-wrap">
     <div id="stage"></div>
   </main>
+  <nav class="zone-tabs">
+    <button class="zone-tab active" data-zone="algora">Algora</button>
+    <button class="zone-tab" data-zone="ao">AO</button>
+    <button class="zone-tab" data-zone="bridge">Bridge</button>
+  </nav>
 </div>
 `;
     statsEl = document.querySelector<HTMLDivElement>("#stats")!;
     serviceEl = document.querySelector<HTMLDivElement>("#serviceStatus")!;
     detailEl = document.querySelector<HTMLDivElement>("#detail")!;
     connEl = document.querySelector<HTMLDivElement>("#connStatus")!;
+
+    // mobile panel toggle
+    const toggle = document.getElementById("panelToggle")!;
+    const panel = document.querySelector<HTMLElement>(".panel")!;
+    const backdrop = document.querySelector<HTMLElement>(".panel-backdrop")!;
+    const closePanel = () => {
+        panel.classList.remove("open");
+        backdrop.classList.remove("open");
+    };
+    toggle.addEventListener("click", () => {
+        const open = panel.classList.toggle("open");
+        backdrop.classList.toggle("open", open);
+    });
+    backdrop.addEventListener("click", closePanel);
+
+    // zone tabs for mobile
+    document.querySelectorAll<HTMLButtonElement>(".zone-tab").forEach(btn => {
+        btn.addEventListener("click", () => {
+            document.querySelectorAll(".zone-tab").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            document.dispatchEvent(new CustomEvent("zone-switch", {
+                detail: { zone: btn.dataset.zone },
+            }));
+        });
+    });
 }
 
 export function setConnectionStatus(live: boolean): void {

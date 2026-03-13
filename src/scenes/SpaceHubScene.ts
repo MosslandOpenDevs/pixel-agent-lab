@@ -10,6 +10,14 @@ import { setConnectionStatus, updateSidebar } from "../ui/Sidebar.ts";
 const W = 1440;
 const H = 760;
 
+type ZoneKey = "algora" | "ao" | "bridge";
+
+const ZONE_VIEWS: Record<ZoneKey, { x: number; y: number; w: number; h: number }> = {
+    algora:  { x: 0,   y: 30,  w: 640, h: 410 },
+    ao:      { x: 640,  y: 30,  w: 800, h: 410 },
+    bridge:  { x: 0,   y: 430, w: 600, h: 330 },
+};
+
 export class SpaceHubScene extends Phaser.Scene {
     private algoraZone!: AlgoraZone;
     private aoZone!: AOZone;
@@ -17,6 +25,7 @@ export class SpaceHubScene extends Phaser.Scene {
     private centralMonitor!: CentralMonitor;
     private dataBridge!: DataBridge;
     private sidebarTimer = 0;
+    private currentZone: ZoneKey = "algora";
 
     constructor() {
         super("SpaceHubScene");
@@ -48,6 +57,34 @@ export class SpaceHubScene extends Phaser.Scene {
         this.dataBridge.init().then(ok => {
             setConnectionStatus(ok);
         });
+
+        // mobile: zoom into one zone at a time
+        if (this.scale.width < 768) {
+            this.switchZone("algora", false);
+            document.addEventListener("zone-switch", ((e: CustomEvent) => {
+                this.switchZone(e.detail.zone as ZoneKey, true);
+            }) as EventListener);
+            this.scale.on("resize", () => {
+                this.switchZone(this.currentZone, false);
+            });
+        }
+    }
+
+    private switchZone(zone: ZoneKey, animate: boolean): void {
+        this.currentZone = zone;
+        const v = ZONE_VIEWS[zone];
+        const cam = this.cameras.main;
+        const zoom = Math.min(cam.width / v.w, cam.height / v.h) * 0.88;
+        const cx = v.x + v.w / 2;
+        const cy = v.y + v.h / 2;
+
+        if (animate) {
+            cam.pan(cx, cy, 300, "Sine.easeInOut");
+            cam.zoomTo(zoom, 300, "Sine.easeInOut");
+        } else {
+            cam.centerOn(cx, cy);
+            cam.setZoom(zoom);
+        }
     }
 
     update(_time: number, dt: number): void {
