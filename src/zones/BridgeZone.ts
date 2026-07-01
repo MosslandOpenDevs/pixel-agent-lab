@@ -44,6 +44,7 @@ export class BridgeZone {
     private spawnTimer = 0;
     private beltOffset = 0;
     private bot!: Phaser.GameObjects.Sprite;
+    private mobile = false;
 
     // trust panel (migrated from FeedbackArc)
     private trustLabels: Phaser.GameObjects.Text[] = [];
@@ -58,6 +59,7 @@ export class BridgeZone {
     }
 
     create(): void {
+        this.mobile = window.innerWidth < 768;
         this.g = this.scene.add.graphics().setDepth(5);
         this.beltG = this.scene.add.graphics().setDepth(6);
 
@@ -68,7 +70,7 @@ export class BridgeZone {
         }).setDepth(10);
 
         this.scene.add.text(ZONE_X + 14, ZONE_Y + 26, "Independent Service \u00b7 Port 3101 \u00b7 5 agents \u00b7 L0\u2192L4 \u00b7 Voting \u00b7 Trust", {
-            fontFamily: "monospace", fontSize: "9px", color: "#60a5fa88",
+            fontFamily: "monospace", fontSize: "10px", color: "#93c5fd",
         }).setDepth(10);
 
         // loader bot at belt entrance
@@ -107,44 +109,62 @@ export class BridgeZone {
             }).setOrigin(0.5).setDepth(12);
         });
 
-        // belt direction labels
-        this.scene.add.text(BELT_LEFT, BELT_Y + BELT_H + 6, "\u2190 Proposals enter", {
-            fontFamily: "monospace", fontSize: "7px", color: "#60a5fa44",
-        }).setDepth(10);
-        this.scene.add.text(BELT_RIGHT - 90, BELT_Y + BELT_H + 6, "Outcomes verified \u2192", {
-            fontFamily: "monospace", fontSize: "7px", color: "#22c55e44",
-        }).setDepth(10);
+        // belt direction labels (skipped on mobile: the trust panel stacks
+        // directly below the belt there and would collide with them)
+        if (!this.mobile) {
+            this.scene.add.text(BELT_LEFT, BELT_Y + BELT_H + 6, "\u2190 Proposals enter", {
+                fontFamily: "monospace", fontSize: "7px", color: "#60a5fa44",
+            }).setDepth(10);
+            this.scene.add.text(BELT_RIGHT - 90, BELT_Y + BELT_H + 6, "Outcomes verified \u2192", {
+                fontFamily: "monospace", fontSize: "7px", color: "#22c55e44",
+            }).setDepth(10);
+        }
     }
 
     private createTrustPanel(): void {
-        // Trust & Outcomes section (right side of the wide zone)
-        const px = ZONE_X + 600;
+        // Desktop: Trust & Outcomes sits to the RIGHT of the belt.
+        // Mobile: the zone-tab camera frames only the left ~600px column, so the
+        // panel is stacked BELOW the belt to stay on-screen and reachable.
+        const mobile = this.mobile;
+        const px = mobile ? ZONE_X + 16 : ZONE_X + 600;
 
-        this.scene.add.text(px, ZONE_Y + 8, "TRUST & OUTCOMES", {
-            fontFamily: "monospace", fontSize: "11px", color: "#2dd4bf",
-            backgroundColor: "#0b1226ee", padding: { x: 6, y: 3 },
-        }).setDepth(10);
+        if (!mobile) {
+            this.scene.add.text(px, ZONE_Y + 8, "TRUST & OUTCOMES", {
+                fontFamily: "monospace", fontSize: "11px", color: "#2dd4bf",
+                backgroundColor: "#0b1226ee", padding: { x: 6, y: 3 },
+            }).setDepth(10);
 
-        this.scene.add.text(px, ZONE_Y + 28, "Bridge internal trust scoring and outcome verification", {
-            fontFamily: "monospace", fontSize: "8px", color: "#2dd4bf44",
-        }).setDepth(10);
+            this.scene.add.text(px, ZONE_Y + 28, "Bridge internal trust scoring and outcome verification", {
+                fontFamily: "monospace", fontSize: "8px", color: "#2dd4bf44",
+            }).setDepth(10);
+        } else {
+            // Compact section marker (belt sits just above at y+180)
+            this.scene.add.text(px, ZONE_Y + 182, "TRUST & OUTCOMES", {
+                fontFamily: "monospace", fontSize: "8px", color: "#2dd4bf",
+                backgroundColor: "#0b1226ee", padding: { x: 4, y: 1 },
+            }).setDepth(10);
+        }
 
         const gaugeNames = ["Agent Trust", "Proposals", "Success Rate"];
         const gaugeColors = ["#22c55e", "#3b82f6", "#a855f7"];
+        const gaugeX0 = mobile ? px + 4 : px + 30;
+        const gaugeGap = mobile ? 188 : 230;
+        const gaugeY = mobile ? ZONE_Y + 195 : ZONE_Y + 60;
+        const gaugePad = mobile ? { x: 6, y: 3 } : { x: 8, y: 6 };
         gaugeNames.forEach((name, i) => {
-            const x = px + 30 + i * 230;
-            const label = this.scene.add.text(x, ZONE_Y + 60, `${name}\n--`, {
+            const x = gaugeX0 + i * gaugeGap;
+            const label = this.scene.add.text(x, gaugeY, `${name}\n--`, {
                 fontFamily: "monospace", fontSize: "10px", color: gaugeColors[i],
-                backgroundColor: "#0a162866", padding: { x: 8, y: 6 },
+                backgroundColor: "#0a162866", padding: gaugePad,
                 align: "center",
             }).setDepth(12);
             this.trustLabels.push(label);
         });
 
-        this.outcomeLog = this.scene.add.text(px, ZONE_Y + 130, "Outcomes: waiting for data...", {
+        this.outcomeLog = this.scene.add.text(px, mobile ? ZONE_Y + 228 : ZONE_Y + 130, "Outcomes: waiting for data...", {
             fontFamily: "monospace", fontSize: "8px", color: "#94a3b8",
             backgroundColor: "#0a162866", padding: { x: 6, y: 3 },
-            wordWrap: { width: 780 },
+            wordWrap: { width: mobile ? 558 : 780 },
         }).setDepth(12);
     }
 
@@ -155,9 +175,9 @@ export class BridgeZone {
         // update stats
         const bs = dataBridge.liveStats.bridge;
         if (bs) {
-            this.proposalCount = bs.proposals.total;
-            this.outcomeCount = bs.outcomes.totalProofs;
-            this.successRate = bs.outcomes.successRate;
+            this.proposalCount = bs.proposals?.total ?? 0;
+            this.outcomeCount = bs.outcomes?.totalProofs ?? 0;
+            this.successRate = bs.outcomes?.successRate ?? 0;
         }
 
         // animate bots
@@ -200,26 +220,28 @@ export class BridgeZone {
         this.items = this.items.filter(i => i.stageIdx < L_STAGES.length);
 
         // update trust data (migrated from FeedbackArc)
-        const trust = dataBridge.trustCache;
-        if (trust.length > 0) {
-            const avgScore = trust.reduce((sum, t) => sum + t.score, 0) / trust.length;
+        const scores = dataBridge.trustCache
+            .map(t => t.score)
+            .filter(n => typeof n === "number" && isFinite(n));
+        if (scores.length > 0) {
+            const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
             this.trustLabels[0]?.setText(`Agent Trust\n${avgScore.toFixed(1)}`);
         }
         if (bs) {
-            this.trustLabels[1]?.setText(`Proposals\n${bs.proposals.total}`);
-            this.trustLabels[2]?.setText(`Success Rate\n${bs.outcomes.successRate}%`);
+            this.trustLabels[1]?.setText(`Proposals\n${bs.proposals?.total ?? 0}`);
+            this.trustLabels[2]?.setText(`Success Rate\n${bs.outcomes?.successRate ?? 0}%`);
         }
 
         // outcome log
         const outcomes = dataBridge.outcomeCache;
         if (outcomes.length > 0) {
-            const logText = outcomes.slice(0, 3).map(o =>
-                `[${o.success ? "OK" : "FAIL"}] ${o.id.slice(0, 8)}... ${o.status}`
+            const logText = outcomes.slice(0, this.mobile ? 2 : 3).map(o =>
+                `[${o.success ? "OK" : "FAIL"}] ${(o.id ?? "").slice(0, 8)}... ${o.status ?? ""}`
             ).join("\n");
             this.outcomeLog?.setText(`Recent Outcomes:\n${logText}`);
         } else {
-            const issueCount = bs?.issues.total ?? 0;
-            this.outcomeLog?.setText(`Signals: ${bs?.signals.total.toLocaleString() ?? "?"} | Issues: ${issueCount} | Awaiting proposals...`);
+            const issueCount = bs?.issues?.total ?? 0;
+            this.outcomeLog?.setText(`Signals: ${(bs?.signals?.total ?? 0).toLocaleString()} | Issues: ${issueCount} | Awaiting proposals...`);
         }
 
         this.drawGraphics();
@@ -290,10 +312,12 @@ export class BridgeZone {
         this.g.lineStyle(2, 0x60a5fa, 0.45);
         this.g.strokeRoundedRect(ZONE_X, ZONE_Y, ZONE_W, ZONE_H, 10);
 
-        // divider between pipeline and trust sections
-        const divX = ZONE_X + 580;
-        this.g.lineStyle(1, 0x60a5fa, 0.15);
-        this.g.lineBetween(divX, ZONE_Y + 10, divX, ZONE_Y + ZONE_H - 10);
+        // divider between pipeline and trust sections (desktop side-by-side only)
+        if (!this.mobile) {
+            const divX = ZONE_X + 580;
+            this.g.lineStyle(1, 0x60a5fa, 0.15);
+            this.g.lineBetween(divX, ZONE_Y + 10, divX, ZONE_Y + ZONE_H - 10);
+        }
 
         // agent accent circles
         const now = this.scene.time.now;
@@ -316,14 +340,17 @@ export class BridgeZone {
             }
         });
 
-        // trust gauge circles (right section)
-        const gaugeColors = [0x22c55e, 0x3b82f6, 0xa855f7];
-        const px = ZONE_X + 600;
-        gaugeColors.forEach((color, i) => {
-            const x = px + 30 + i * 230;
-            const y = ZONE_Y + 66;
-            this.g.lineStyle(2, color, 0.3);
-            this.g.strokeCircle(x - 10, y + 8, 16);
-        });
+        // trust gauge circles (desktop right section only; the mobile panel
+        // uses compact chips stacked below the belt without accent rings)
+        if (!this.mobile) {
+            const gaugeColors = [0x22c55e, 0x3b82f6, 0xa855f7];
+            const px = ZONE_X + 600;
+            gaugeColors.forEach((color, i) => {
+                const x = px + 30 + i * 230;
+                const y = ZONE_Y + 66;
+                this.g.lineStyle(2, color, 0.3);
+                this.g.strokeCircle(x - 10, y + 8, 16);
+            });
+        }
     }
 }

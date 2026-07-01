@@ -86,7 +86,7 @@ export class AlgoraZone {
         }).setDepth(10);
 
         this.scene.add.text(ZONE_X + 14, ZONE_Y + 26, "Independent Service \u00b7 Port 3201 \u00b7 38 agents \u00b7 11 clusters \u00b7 9-stage pipeline", {
-            fontFamily: "monospace", fontSize: "9px", color: "#4ade80aa",
+            fontFamily: "monospace", fontSize: "10px", color: "#6ee7b7",
         }).setDepth(10);
 
         // loader bot near belt top

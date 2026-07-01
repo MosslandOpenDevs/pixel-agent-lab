@@ -57,7 +57,7 @@ export class AOZone {
         }).setDepth(10);
 
         this.scene.add.text(ZONE_X + 14, ZONE_Y + 26, "Independent Service \u00b7 Port 3001 \u00b7 34 agents \u00b7 Signals\u2192Ideas\u2192Plans\u2192Projects", {
-            fontFamily: "monospace", fontSize: "9px", color: "#fbbf2488",
+            fontFamily: "monospace", fontSize: "10px", color: "#fcd34d",
         }).setDepth(10);
 
         // loader bot at belt entrance
@@ -116,11 +116,11 @@ export class AOZone {
         const threshX7 = BELT_LEFT + (BELT_RIGHT - BELT_LEFT) * 0.55;
         const threshX8 = BELT_LEFT + (BELT_RIGHT - BELT_LEFT) * 0.8;
 
-        this.scene.add.text(threshX7, BELT_Y - 12, "score\u22657\u2192Plan", {
-            fontFamily: "monospace", fontSize: "7px", color: "#fbbf2466",
+        this.scene.add.text(threshX7, BELT_Y - 13, "score\u22657\u2192Plan", {
+            fontFamily: "monospace", fontSize: "8px", color: "#fcd34dcc",
         }).setDepth(12);
-        this.scene.add.text(threshX8, BELT_Y - 12, "\u22658\u2192Project", {
-            fontFamily: "monospace", fontSize: "7px", color: "#22c55e44",
+        this.scene.add.text(threshX8, BELT_Y - 13, "\u22658\u2192Project", {
+            fontFamily: "monospace", fontSize: "8px", color: "#4ade80cc",
         }).setDepth(12);
 
         this.scene.add.text(BELT_LEFT, BELT_Y + BELT_H + 8, "\u2190 Ideas enter", {
@@ -149,9 +149,19 @@ export class AOZone {
 
         // update debate card
         const debate = dataBridge.getRandomDebate();
-        if (debate && this.scene.time.now % 5000 < 50) {
-            this.debateCard?.setText(`DEBATE: ${debate.topic}`);
-            this.debateSnippet?.setText(debate.snippet);
+        if (debate) {
+            if (this.scene.time.now % 5000 < 50) {
+                this.debateCard?.setText(`DEBATE: ${debate.topic}`);
+                this.debateSnippet?.setText(debate.snippet);
+            }
+        } else {
+            // Distinguish "AO is erroring" from "still loading" instead of
+            // leaving the placeholder up forever.
+            const msg = dataBridge.debatesErrored ? "AO debates unavailable" : "Awaiting debate data...";
+            if (this.debateCard && this.debateCard.text !== msg) {
+                this.debateCard.setText(msg);
+                this.debateSnippet?.setText("");
+            }
         }
 
         // counts from real data
@@ -163,7 +173,8 @@ export class AOZone {
         if (this.spawnTimer > 2800 && this.bubbles.filter(b => b.phase !== "done").length < 8) {
             const idea = dataBridge.ideaCache[Math.floor(Math.random() * Math.max(1, dataBridge.ideaCache.length))];
             if (idea) {
-                this.spawnBubble(idea.title_ko ?? idea.title ?? "Idea", idea.score);
+                const score = typeof idea.score === "number" && isFinite(idea.score) ? idea.score : 0;
+                this.spawnBubble(idea.title_ko ?? idea.title ?? "Idea", score);
             } else {
                 this.spawnBubble("Generating...", Math.random() * 10);
             }
@@ -250,14 +261,15 @@ export class AOZone {
         const y = BELT_Y + BELT_H / 2;
         const sprite = this.scene.add.image(x, y, "idea-bubble")
             .setDepth(20).setDisplaySize(16, 16);
-        const scoreStr = score.toFixed(1);
-        const color = score >= 8 ? "#22c55e" : score >= 7 ? "#fbbf24" : "#94a3b8";
+        const safeScore = Number.isFinite(score) ? score : 0;
+        const scoreStr = safeScore.toFixed(1);
+        const color = safeScore >= 8 ? "#22c55e" : safeScore >= 7 ? "#fbbf24" : "#94a3b8";
         const label = this.scene.add.text(x, y - 16, `${scoreStr} ${title.slice(0, 15)}`, {
             fontFamily: "monospace", fontSize: "7px", color,
             backgroundColor: "#0f172aee", padding: { x: 2, y: 1 },
         }).setOrigin(0.5).setDepth(21);
 
-        this.bubbles.push({ sprite, label, score, x, phase: "belt", title });
+        this.bubbles.push({ sprite, label, score: safeScore, x, phase: "belt", title });
     }
 
     private drawBelt(): void {

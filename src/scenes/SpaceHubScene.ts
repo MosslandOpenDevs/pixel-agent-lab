@@ -26,6 +26,8 @@ export class SpaceHubScene extends Phaser.Scene {
     private dataBridge!: DataBridge;
     private sidebarTimer = 0;
     private currentZone: ZoneKey = "algora";
+    private zoneSwitchHandler?: EventListener;
+    private resizeHandler?: () => void;
 
     constructor() {
         super("SpaceHubScene");
@@ -58,16 +60,32 @@ export class SpaceHubScene extends Phaser.Scene {
             setConnectionStatus(ok);
         });
 
-        // mobile: zoom into one zone at a time
-        if (this.scale.width < 768) {
-            this.switchZone("algora", false);
-            document.addEventListener("zone-switch", ((e: CustomEvent) => {
-                this.switchZone(e.detail.zone as ZoneKey, true);
-            }) as EventListener);
-            this.scale.on("resize", () => {
-                this.switchZone(this.currentZone, false);
-            });
-        }
+        // mobile: zoom into one zone at a time (zone tabs drive the camera).
+        // Register the tab listener unconditionally so it is never a dead
+        // control; the handler no-ops on desktop widths.
+        this.zoneSwitchHandler = ((e: Event) => {
+            if (window.innerWidth >= 768) return;
+            const zone = (e as CustomEvent).detail?.zone as ZoneKey;
+            if (zone) this.switchZone(zone, true);
+        }) as EventListener;
+        document.addEventListener("zone-switch", this.zoneSwitchHandler);
+
+        this.resizeHandler = () => {
+            if (window.innerWidth < 768) this.switchZone(this.currentZone, false);
+        };
+        this.scale.on("resize", this.resizeHandler);
+
+        if (window.innerWidth < 768) this.switchZone("algora", false);
+
+        // Tear down listeners + polling when the scene stops (HMR / restart).
+        this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.teardown());
+        this.events.once(Phaser.Scenes.Events.DESTROY, () => this.teardown());
+    }
+
+    private teardown(): void {
+        if (this.zoneSwitchHandler) document.removeEventListener("zone-switch", this.zoneSwitchHandler);
+        if (this.resizeHandler) this.scale.off("resize", this.resizeHandler);
+        this.dataBridge?.destroy();
     }
 
     private switchZone(zone: ZoneKey, animate: boolean): void {
@@ -77,6 +95,11 @@ export class SpaceHubScene extends Phaser.Scene {
         const zoom = Math.min(cam.width / v.w, cam.height / v.h) * 0.88;
         const cx = v.x + v.w / 2;
         const cy = v.y + v.h / 2;
+
+        // Honor reduced-motion: jump the camera instead of animating the pan/zoom.
+        if (animate && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+            animate = false;
+        }
 
         if (animate) {
             cam.pan(cx, cy, 300, "Sine.easeInOut");
