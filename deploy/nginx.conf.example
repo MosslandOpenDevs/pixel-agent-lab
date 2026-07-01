@@ -4,6 +4,30 @@
 # prefixes at runtime. The Vite dev proxy only exists during `npm run dev`, so
 # production MUST provide these three proxies itself. Path rewrites below mirror
 # vite.config.ts. Adjust upstream host:port to match your deployment.
+#
+# CORS (GitHub issue #1): monitor is ALSO consumed cross-origin — e.g. the
+# moss.land homepage governance widget fetches these endpoints from a different
+# origin. Hardcoding a single `Access-Control-Allow-Origin: https://moss.land`
+# blocks www.moss.land / preview / localhost callers, so the widget shows
+# Offline (0/3). Reflect an allow-list of origins and answer OPTIONS preflight
+# instead, and hide any fixed ACAO the upstream may already send.
+
+# --- http{} context ---------------------------------------------------------
+# Reflect the request Origin only when it is allow-listed; empty otherwise
+# (an empty ACAO is treated as "not allowed" by the browser).
+map $http_origin $cors_origin {
+    default                      "";
+    "~^https://moss\.land$"      $http_origin;
+    "~^https://www\.moss\.land$" $http_origin;
+    "~^http://localhost:5173$"   $http_origin;   # local dev
+}
+
+# Optional but recommended: collapse www -> apex so there is a single origin.
+# server {
+#     listen 80;
+#     server_name www.moss.land;
+#     return 301 https://moss.land$request_uri;
+# }
 
 server {
     listen 80;
@@ -20,6 +44,17 @@ server {
 
     # Algora:  /algora-api/*  ->  http://127.0.0.1:3201/api/*
     location /algora-api/ {
+        if ($request_method = OPTIONS) {
+            add_header Access-Control-Allow-Origin  $cors_origin always;
+            add_header Access-Control-Allow-Methods "GET, OPTIONS" always;
+            add_header Access-Control-Allow-Headers "Content-Type" always;
+            add_header Access-Control-Max-Age       86400 always;
+            add_header Content-Length 0;
+            return 204;
+        }
+        proxy_hide_header Access-Control-Allow-Origin;
+        add_header Access-Control-Allow-Origin $cors_origin always;
+        add_header Vary Origin always;
         proxy_pass http://127.0.0.1:3201/api/;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -28,6 +63,17 @@ server {
 
     # AO:      /ao-api/*      ->  http://127.0.0.1:3001/*
     location /ao-api/ {
+        if ($request_method = OPTIONS) {
+            add_header Access-Control-Allow-Origin  $cors_origin always;
+            add_header Access-Control-Allow-Methods "GET, OPTIONS" always;
+            add_header Access-Control-Allow-Headers "Content-Type" always;
+            add_header Access-Control-Max-Age       86400 always;
+            add_header Content-Length 0;
+            return 204;
+        }
+        proxy_hide_header Access-Control-Allow-Origin;
+        add_header Access-Control-Allow-Origin $cors_origin always;
+        add_header Vary Origin always;
         proxy_pass http://127.0.0.1:3001/;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -36,6 +82,17 @@ server {
 
     # Bridge:  /bridge-api/*  ->  http://127.0.0.1:3101/api/*
     location /bridge-api/ {
+        if ($request_method = OPTIONS) {
+            add_header Access-Control-Allow-Origin  $cors_origin always;
+            add_header Access-Control-Allow-Methods "GET, OPTIONS" always;
+            add_header Access-Control-Allow-Headers "Content-Type" always;
+            add_header Access-Control-Max-Age       86400 always;
+            add_header Content-Length 0;
+            return 204;
+        }
+        proxy_hide_header Access-Control-Allow-Origin;
+        add_header Access-Control-Allow-Origin $cors_origin always;
+        add_header Vary Origin always;
         proxy_pass http://127.0.0.1:3101/api/;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

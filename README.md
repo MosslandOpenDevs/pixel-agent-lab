@@ -161,3 +161,11 @@ pm2 start ecosystem.config.cjs
 
 예시 nginx 구성은 [`deploy/nginx.conf.example`](deploy/nginx.conf.example) 참고.
 현재 배포: `https://monitor.moss.land` (정적 `dist` + nginx 리버스 프록시).
+
+### CORS (교차 오리진 소비자)
+
+monitor는 자기 자신(same-origin)뿐 아니라 **다른 오리진**(예: moss.land 홈페이지의 거버넌스
+위젯)에서도 위 API 경로를 호출한다. 따라서 리버스 프록시는 `Access-Control-Allow-Origin`을
+단일 apex로 **고정하지 말고**, 허용 오리진 목록(`moss.land`, `www.moss.land`, dev `localhost:5173`)을
+**반사(reflect)**하고 `OPTIONS` 프리플라이트에 응답해야 한다. 예시 설정의 `map $http_origin`
+블록과 각 `/…-api/` location의 CORS 헤더 참고. (GitHub issue #1)
