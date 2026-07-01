@@ -1,19 +1,23 @@
 {
     "name": "pixel-agent-lab",
     "private": true,
-    "version": "0.0.0",
+    "version": "1.0.0",
     "type": "module",
+    "engines": {
+        "node": ">=20.19"
+    },
     "scripts": {
         "dev": "vite",
         "build": "tsc && vite build",
-        "preview": "vite preview"
+        "preview": "vite preview",
+        "serve": "serve dist -l 6300 -s"
     },
     "devDependencies": {
-        "serve": "^14.2.6",
         "typescript": "~5.9.3",
         "vite": "^7.3.1"
     },
     "dependencies": {
-        "phaser": "^3.90.0"
+        "phaser": "^3.90.0",
+        "serve": "^14.2.6"
     }
 }

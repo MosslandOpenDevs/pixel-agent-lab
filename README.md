@@ -89,18 +89,24 @@ https://github.com/user-attachments/assets/1e3ab6cb-41f0-4bff-a227-a6b4505b2c3e
 ## 3) UI 구성
 
 ### 좌측 패널
-- 운영 통계(Stats)
-- 서비스 I/O 상태 (Algora / AO / Bridge 분리 표시)
-- 박스 상세 정보(Detail)
+- 연결 상태(LIVE / OFFLINE) — 서비스별 도달 가능 여부를 개별 반영
+- 운영 통계(Stats): 신호 큐, Algora 이슈, AO 토론 수
+- 서비스 I/O 상태 (Algora / AO / Bridge 분리 표시, 서비스별 LIVE 배지)
+- About: 시각화 범례
 
 ### 우측 스테이지
-- Algora, AO, Bridge 섹션
-- P1/P2/P3 컨베이어 레인
-- Bridge 트럭(Express / Monitor / Defer)
+- **Algora**: 세로 컨베이어 벨트 + 9단계 파이프라인 + 11개 에이전트 클러스터 아크
+- **AO**: 가로 컨베이어 벨트(아이디어 → score 임계값에 따라 Plan/Project로 전환) + 토론(Debate) 카드 + 에이전트 링(Diverge/Converge/Plan)
+- **Bridge**: 가로 컨베이어 벨트(L0→L4) + 5개 전문 에이전트 + Trust & Outcomes 패널
+- 하단 스트립: DataBridge 집계 상태(연결/큐/폴링 주기)
 
-### 실시간 상세 추적
-- 박스를 클릭하면 해당 박스를 선택 상태로 유지
-- 박스 이동 중 phase/status/route/action이 바뀌면 상세 패널 값도 실시간 갱신
+### 모바일
+- 화면 하단 탭(Algora / AO / Bridge)으로 한 번에 한 서비스 구역을 확대해서 표시
+- 좌상단 ☰ 버튼으로 좌측 패널을 오버레이로 토글
+
+### 실시간 데이터
+- 세 서비스(Algora/AO/Bridge)를 각각 15초 주기로 폴링
+- 벨트 위의 박스는 실제 신호/아이디어/제안 데이터를 시각화한 것
 
 ---
 
@@ -130,3 +136,28 @@ npm run dev
 ```bash
 npm run build
 ```
+
+정적 서빙(빌드 결과물):
+
+```bash
+npm run serve          # serve dist -l 6300 -s
+# 또는 PM2
+pm2 start ecosystem.config.cjs
+```
+
+## 6) 배포 (Deployment)
+
+프런트엔드는 정적 SPA이며 `dist/`를 아무 정적 호스트로 서빙하면 된다.
+
+단, 앱은 런타임에 세 서비스 API를 **같은 오리진**의 경로로 호출한다.
+
+- `/algora-api` → Algora signals/issues/stats
+- `/ao-api` → AO signals/debates/status/ideas/plans/projects
+- `/bridge-api` → Bridge signals/stats/proposals/outcomes/trust
+
+이 경로들은 개발 시 `vite.config.ts`의 dev 프록시가 `localhost:3201 / 3001 / 3101`로 연결한다.
+**프로덕션에서는 dev 프록시가 동작하지 않으므로**, 정적 파일 앞단의 리버스 프록시(nginx 등)가
+위 세 경로를 각 서비스 업스트림으로 프록시하도록 반드시 구성해야 한다.
+
+예시 nginx 구성은 [`deploy/nginx.conf.example`](deploy/nginx.conf.example) 참고.
+현재 배포: `https://monitor.moss.land` (정적 `dist` + nginx 리버스 프록시).
