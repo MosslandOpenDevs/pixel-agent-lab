@@ -19,7 +19,7 @@ export class CentralMonitor {
         this.g = this.scene.add.graphics().setDepth(5);
 
         // title
-        this.scene.add.text(STRIP_X + 14, STRIP_Y + 12, "PIXEL-AGENT-LAB  \u00b7  DataBridge", {
+        this.scene.add.text(STRIP_X + 14, STRIP_Y + 12, "MOSSLAND HUB  \u00b7  DataBridge", {
             fontFamily: "monospace", fontSize: "10px", color: "#2dd4bf",
             backgroundColor: "#0b1226ee", padding: { x: 6, y: 3 },
         }).setDepth(10);

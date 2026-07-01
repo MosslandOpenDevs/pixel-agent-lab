@@ -7,6 +7,13 @@ initSidebar();
 
 const mobile = window.innerWidth < 768;
 
+// The game is configured for mobile vs desktop at load (scale mode + canvas
+// size). Crossing the 768px breakpoint (rotate / window resize) needs the
+// opposite configuration, so the cleanest correct response is a fresh boot.
+window.matchMedia("(max-width: 767px)").addEventListener("change", () => {
+    window.location.reload();
+});
+
 new Phaser.Game({
     type: Phaser.AUTO,
     parent: "stage",

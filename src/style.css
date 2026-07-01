@@ -149,6 +149,28 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
     border: 1px solid #1e3a5f;
 }
 
+/* Visible keyboard focus for the interactive controls */
+.zone-tab:focus-visible,
+.panel-toggle:focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: -2px;
+    color: #eaf2ff;
+}
+
+/* Respect users who ask for less motion (the perpetual canvas stays, but the
+   pulsing status dot and sliding panels calm down) */
+@media (prefers-reduced-motion: reduce) {
+    .dot.live,
+    .dot.connecting {
+        animation: none;
+    }
+    .panel,
+    .panel-backdrop,
+    .zone-tab {
+        transition: none;
+    }
+}
+
 /* --- Mobile toggle & overlay (hidden on desktop) --- */
 .zone-tabs {
     display: none;
@@ -193,8 +215,33 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
     }
 }
 
-/* Mobile: sidebar as overlay */
-@media (max-width: 768px) {
+/* Tablet only: lay the panel blocks in a row so the Service I/O cards and
+   Detail don't get buried in a tiny inner scroll region. */
+@media (min-width: 768px) and (max-width: 1100px) {
+    .panel {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: 8px;
+        max-height: none;
+        overflow: visible;
+    }
+    .panel h1,
+    .panel .sub,
+    .conn-status {
+        flex-basis: 100%;
+        margin: 0;
+    }
+    #stats,
+    #serviceStatus,
+    .detail {
+        flex: 1 1 240px;
+        margin: 0;
+    }
+}
+
+/* Mobile: sidebar as overlay (below the 768px game-config breakpoint used in main.ts) */
+@media (max-width: 767px) {
     .layout {
         display: block;
         position: relative;

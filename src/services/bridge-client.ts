@@ -33,5 +33,6 @@ export async function fetchBridgeTrustLeaderboard(type = "agent"): Promise<Bridg
     const res = await fetch(`${BASE}/trust/leaderboard/${type}`);
     if (!res.ok) throw new Error(`Bridge trust: ${res.status}`);
     const data = await res.json();
-    return data.leaderboard ?? data ?? [];
+    const list = data.leaderboard ?? data;
+    return Array.isArray(list) ? list : [];
 }
