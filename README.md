@@ -1,88 +1,68 @@
-# Mossland Space Hub Demo
+# Mossland Space Hub — Governance Monitor
 
-`pixel-agent-lab`은 Mossland 핵심 서비스(Algora, AO, Bridge)의 운영 흐름을 **우주 물류 센터 시각화**로 구현한 데모입니다.  
-본 README는 데모의 목적, 서비스 역할, 에이전트 행동, UI 구성, 상태 전이 모델을 공식 문서 형태로 정리합니다.
+`pixel-agent-lab`은 Mossland 핵심 서비스(**Algora**, **AO**, **Bridge**)의 운영 상태를
+**우주 물류 센터 시각화**(컨베이어 벨트 · 픽셀 에이전트)로 보여주는 라이브 대시보드입니다.
+세 서비스는 각각 **독립적으로** 자신의 파이프라인을 돌리며, 이 화면은 세 서비스의 실시간
+데이터를 한 곳에 모아 보여줍니다.
+
+- 🔴 라이브: **https://monitor.moss.land**
+- 스택: Vite · TypeScript · Phaser 3 (정적 SPA, 프레임워크 없음)
 
 https://github.com/user-attachments/assets/1e3ab6cb-41f0-4bff-a227-a6b4505b2c3e
 
 ## 1) 데모 목적
 
-이 데모의 목표는 다음과 같습니다.
+- 세 서비스의 책임 분리를 한 화면에서 직관적으로 이해
+- 각 서비스가 실제로 어떤 작업 단계를 거치는지 벨트 위 박스 이동으로 추적
+- 입력(Input)부터 결과(Output)까지의 처리 흐름을 시각화
 
-- 서비스 간 책임 분리를 한 화면에서 직관적으로 이해
-- 역할 기반 에이전트가 실제로 어떤 작업을 수행하는지 시각적으로 확인
-- 입력(Input)부터 결과(Output)까지의 처리 흐름을 박스 이동으로 추적
-
-핵심 파이프라인:
+각 서비스가 담당하는 거버넌스 루프의 개념적 파이프라인:
 
 `Signals → Issues → Debates/Plans → Execution/Delegation → Outcomes/Proof → Feedback`
 
----
-
-## 2) 서비스 구조
-
-### Algora (Sense & Detect)
-
-**책임**
-- 다중 소스 신호 수집
-- 이슈 후보 선별 및 우선순위화
-- AO 전달용 컨텍스트 생성
-
-**Input**
-- github / rss / social / chain 신호
-- risk, category, priority
-
-**Output**
-- tagged issue
-- AO 토론 대상 컨텍스트
-
-**에이전트 역할**
-- **SCAN**: 박스를 수집해 Algora 스테이징 구역으로 이동
-- **FILTER**: 필요 여부 판정 (불필요 시 폐기, 필요 시 승인)
-- **LOAD**: 승인된 박스를 컨베이어 벨트에 순차 적재
+> 참고: 화면은 세 서비스를 **연결선 없이 독립 구역**으로 렌더링합니다(사이드바 "3 Independent
+> Services"). 서비스 간 실제 데이터 핸드오프 계약은 [`docs/mossland-services-overview.md`](docs/mossland-services-overview.md) 참고.
 
 ---
 
-### AO (Debate & Plan)
+## 2) 서비스 구조 (화면 구성)
 
-**책임**
-- 멀티 에이전트 토론
-- 실행 계획 수립
-- 라우팅 및 Bridge 위임
+### Algora — Sense & Detect · `:3201`
 
-**Input**
-- Algora 승인 박스
-- 우선순위/위험도/출처 컨텍스트
+- **책임**: 다중 소스 신호 수집, 이슈 감지·우선순위화, 거버넌스 안건화
+- **Input**: github / rss / social / chain 신호 (severity · category · priority)
+- **Output**: 구조화된 signal, 우선순위화된 issue
+- **화면**:
+    - `LOADER` 봇이 신호를 집어 세로 컨베이어 벨트에 적재
+    - 11개 에이전트 클러스터(총 38 agents): Visionaries · Builders · Investors · Guardians ·
+      Operatives · Moderators · Advisors · Orchestrators · Archivists · Red Team · Scouts
+    - 9단계 파이프라인: Signal Intake → Issue Detection → Workflow Dispatch → Specialist Work →
+      Doc Production → Dual-House Vote → Approval Route → Execution → Outcome Verify
+      (2단계에서 신호가 이슈 카드로 전환, 5단계에서 문서 산출)
+    - 산출 문서 유형: DP · GP · PA · WGC · ER · DR
 
-**Output**
-- route 결정 (Immediate Action / Monitor / Defer)
-- execution draft
-- delegated work item
+### AO — Debate & Plan · `:3001`
 
-**에이전트 역할**
-- **DEBATE**: 대안 제시·반박·수렴
-- **PLAN**: 실행 계획 구조화
-- **ROUTE**: 최종 라우팅 결정 및 전달
+- **책임**: 멀티 에이전트 토론, 아이디어/계획/프로젝트 생성
+- **Input**: 신호/이슈 컨텍스트
+- **Output**: Ideas → Plans → Projects
+- **화면**:
+    - 로더 봇이 아이디어를 가로 컨베이어 벨트에 투입
+    - 에이전트 링: Diverge(16) → Converge(8) → Plan(10)
+    - 벨트 위 score 임계값 전환: **score ≥ 7 → Plan 문서**, **≥ 8 → Project 박스**, 그 미만은 소멸
+    - 실시간 Debate 카드(실제 토론 topic·스니펫; AO 미응답 시 "AO debates unavailable")
+    - 하단 퍼널: Ideas / Plans / Projects 누계
 
----
+### Bridge — Execute & Verify · `:3101`
 
-### Bridge (Execute & Verify)
-
-**책임**
-- 실행 처리
-- 트럭 적재
-- 결과 검증 및 기록
-
-**Input**
-- AO에서 전달된 delegated plan
-
-**Output**
-- execution record
-- verified outcome
-
-**에이전트 역할**
-- **EXECUTE**: 박스를 트럭 슬롯에 적재
-- **VERIFY**: 적재 완료 검증 신호 처리
+- **책임**: 실행/위임, 인간 투표, 결과 검증(Outcome/Proof), 신뢰 지표
+- **Input**: 확정된 제안/태스크
+- **Output**: execution record, verified outcome, trust score
+- **화면**:
+    - 5개 전문 에이전트: Risk · Treasury · Community · Product · Moderator
+    - L0→L4 파이프라인: L0 Signal Collection → L1 Deliberation → L2 Human Voting →
+      L3 Execution → L4 Outcome Proof (L4에서 결과 증명(outcome-proof)으로 전환)
+    - Trust & Outcomes 패널: Agent Trust · Proposals · Success Rate + 최근 outcome 로그
 
 ---
 
@@ -100,27 +80,31 @@ https://github.com/user-attachments/assets/1e3ab6cb-41f0-4bff-a227-a6b4505b2c3e
 - **Bridge**: 가로 컨베이어 벨트(L0→L4) + 5개 전문 에이전트 + Trust & Outcomes 패널
 - 하단 스트립: DataBridge 집계 상태(연결/큐/폴링 주기)
 
-### 모바일
-- 화면 하단 탭(Algora / AO / Bridge)으로 한 번에 한 서비스 구역을 확대해서 표시
-- 좌상단 ☰ 버튼으로 좌측 패널을 오버레이로 토글
+### 모바일 / 반응형
+- `< 768px`: 화면 하단 탭(Algora / AO / Bridge)으로 한 번에 한 서비스 구역을 확대해서 표시,
+  좌상단 ☰ 버튼으로 좌측 패널을 오버레이로 토글
+- `768–1100px`: 좌측 패널을 상단에 가로 배치
+- 브레이크포인트를 넘나들면(회전/리사이즈) 올바른 스케일 설정으로 재초기화
+- `prefers-reduced-motion` 존중(펄스/전환/카메라 팬 완화)
 
 ### 실시간 데이터
-- 세 서비스(Algora/AO/Bridge)를 각각 15초 주기로 폴링
+- 세 서비스(Algora/AO/Bridge)를 각각 **15초 주기로 폴링**
 - 벨트 위의 박스는 실제 신호/아이디어/제안 데이터를 시각화한 것
+- 부분 응답·필드 누락·서비스 장애에도 크래시 없이 mock/placeholder로 유지되며,
+  사이드바가 해당 서비스만 OFFLINE으로 표시
 
 ---
 
-## 4) 상태 전이 모델
+## 4) 데이터 흐름 (구역별 · 독립)
 
-1. 박스 생성 (inbound)
-2. Algora SCAN 수집
-3. Algora FILTER 판정
-   - reject: 폐기 후 종료
-   - approve: LOAD 대기
-4. Algora LOAD 벨트 적재 (on-belt)
-5. AO 토론/계획/라우팅
-6. Bridge 실행/적재/검증
-7. done
+세 서비스는 서로 연결선 없이 **각자의 파이프라인**을 독립적으로 돌립니다.
+
+- **Algora**: 신호 유입 → `LOADER` 적재 → 9단계 통과(2단계 이슈화, 5단계 문서화) → Outcome Verify 후 배출
+- **AO**: 아이디어 유입 → score 기반 Plan(≥7)/Project(≥8) 승격 또는 소멸 → 퍼널 누계
+- **Bridge**: 제안 유입 → L0~L4 통과 → L4 Outcome Proof로 전환 → 배출
+
+데이터가 비어 있거나 서비스가 offline이면 각 구역은 placeholder 상태를 유지하고,
+사이드바의 연결 상태가 서비스별로 LIVE/OFFLINE을 정직하게 반영합니다.
 
 ---
 
@@ -144,6 +128,8 @@ npm run serve          # serve dist -l 6300 -s
 # 또는 PM2
 pm2 start ecosystem.config.cjs
 ```
+
+요구 사항: Node `>= 20.19` (Vite 7).
 
 ## 6) 배포 (Deployment)
 
