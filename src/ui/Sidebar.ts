@@ -17,7 +17,7 @@ export function initSidebar(): void {
     <div id="serviceStatus" class="stats"></div>
     <div class="detail">
       <h2>About</h2>
-      <div class="detail-desc">Three independent Mossland services, each polled live every 15 seconds. Boxes moving along the belts are real signals, ideas, and proposals flowing through each service's pipeline.</div>
+      <div class="detail-desc">Three independent Mossland services, each polled live every 15 seconds. Boxes on the Algora and AO belts are real signals and ideas; Bridge's live proposal and outcome data drives its stats and Trust panel.</div>
     </div>
   </aside>
   <div class="panel-backdrop"></div>
