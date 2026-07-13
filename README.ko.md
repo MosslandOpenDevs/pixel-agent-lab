@@ -146,6 +146,10 @@ pm2 start ecosystem.config.cjs
 
 monitor의 API 경로는 same-origin뿐 아니라 **다른 오리진**(예: moss.land 홈페이지의 거버넌스 위젯)에서도 호출됩니다. 따라서 리버스 프록시는 `Access-Control-Allow-Origin`을 단일 apex로 **고정하지 말고**, 허용 오리진 목록(`moss.land`, `www.moss.land`, dev `localhost:5173`)을 **반사(reflect)**하고 `OPTIONS` 프리플라이트에 응답해야 합니다. 예시 설정의 `map $http_origin` 블록과 각 `/…-api/` location의 CORS 헤더 참고. (GitHub issue #1)
 
+## 관련 프로젝트 (Related Projects)
+
+- [`mossland-pixelops`](https://github.com/MosslandOpenDevs/mossland-pixelops) — 같은 거버넌스 시각화 아이디어를 이벤트 소싱 구조로 다시 설계하는 초기 단계 자매 프로젝트(현재 pre-alpha 스캐폴드).
+
 ## 라이선스 (License)
 
 MIT — 자세한 내용은 [LICENSE](LICENSE) 참고.
