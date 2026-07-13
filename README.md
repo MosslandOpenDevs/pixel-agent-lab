@@ -146,6 +146,10 @@ See [`deploy/nginx.conf.example`](deploy/nginx.conf.example) for a sample config
 
 The monitor's API paths are called not only same-origin but also from **other origins** (e.g. the governance widget on the moss.land homepage). So the reverse proxy must **not hardcode** `Access-Control-Allow-Origin` to a single apex — it should **reflect** an allow-list of origins (`moss.land`, `www.moss.land`, dev `localhost:5173`) and answer `OPTIONS` preflight requests. See the `map $http_origin` block and the per-`/…-api/` CORS headers in the example config. (GitHub issue #1)
 
+## Related Projects
+
+- [`mossland-pixelops`](https://github.com/MosslandOpenDevs/mossland-pixelops) — a sibling, earlier-stage re-architecture of the same governance-visualization idea (an event-sourced pixel-art operations map), currently a pre-alpha scaffold.
+
 ## License
 
 MIT — see [LICENSE](LICENSE) for details.
