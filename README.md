@@ -1,5 +1,7 @@
 # Mossland Space Hub — Governance Monitor
 
+> **Status of this repository:** **`Lifecycle: Lab`** (실험, best-effort) — per [MIP-1](https://agora.moss.land/proposals/6a85129f8be190cf5d2ebcc1), ratified 2026-09-02, and the [links.moss.land registry](https://links.moss.land/ecosystem-registry.json) entry `monitor`. May change or stop without notice.
+
 **English** · [한국어](README.ko.md)
 
 Mossland Space Hub is a live **space-logistics visualization** of Mossland's three core governance services — **Algora**, **AO**, and **Bridge** — rendering their real-time operations as conveyor belts and pixel agents on a single screen.
