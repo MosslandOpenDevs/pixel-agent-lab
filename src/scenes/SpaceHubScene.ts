@@ -17,16 +17,23 @@ type ZoneKey = "hub" | "algora" | "ao" | "bridge";
 // The map lives below the three service zones so the existing belts keep their
 // coordinates. It is the default view: the ecosystem is the subject, and a belt
 // is the detail you open for the two services that actually stream.
-const MAP_Y = H + 40;   // just below the three service zones
-// Matches the camera's aspect so the fitted view fills it, instead of leaving
-// the map shrunk to a fraction of the screen with everything illegible.
+// Separation only — the hub's own depth band (see HubMap) is what actually
+// keeps the belt zones from painting over it, since Phaser depth is global
+// and the hub overscans this rectangle by far more than any gap could cover.
+const MAP_Y = H + 120;
 const MAP_H = 760;
+// Outer orbit (376) + label and margin. The hub is fitted by this rather than by
+// the map rectangle, so it fills a portrait screen instead of shrinking to fit
+// the rectangle's unused width.
+const HUB_DIAMETER = 880;
 
 const ZONE_VIEWS: Record<ZoneKey, { x: number; y: number; w: number; h: number }> = {
     hub:     { x: 0,   y: MAP_Y, w: W,   h: MAP_H },
     algora:  { x: 0,   y: 30,  w: 640, h: 410 },
     ao:      { x: 640,  y: 30,  w: 800, h: 410 },
-    bridge:  { x: 0,   y: 430, w: 600, h: 330 },
+    // Was 600x330, which framed under half the zone and cut off the desktop
+    // Trust & Outcomes panel entirely.
+    bridge:  { x: 0,   y: 425, w: 1340, h: 340 },
 };
 
 export class SpaceHubScene extends Phaser.Scene {
@@ -126,7 +133,15 @@ export class SpaceHubScene extends Phaser.Scene {
         });
         const v = ZONE_VIEWS[zone];
         const cam = this.cameras.main;
-        const zoom = Math.min(cam.width / v.w, cam.height / v.h) * 0.88;
+        // Fitting a landscape region into a portrait camera by its *limiting*
+        // axis shrinks it to a fraction of the screen — on a phone the whole
+        // world collapsed into roughly a fifth of the viewport, which is the
+        // "circles in the middle and nothing else" report. The hub is radial, so
+        // fit its diameter to the camera's smaller axis and let the wide, empty
+        // sides crop instead.
+        const zoom = zone === "hub"
+            ? (Math.min(cam.width, cam.height) / HUB_DIAMETER) * 0.96
+            : Math.min(cam.width / v.w, cam.height / v.h) * 0.9;
         const cx = v.x + v.w / 2;
         const cy = v.y + v.h / 2;
 
@@ -140,8 +155,11 @@ export class SpaceHubScene extends Phaser.Scene {
         this.hubMap?.setHudVisible(zone === "hub");
 
         if (animate) {
-            cam.pan(cx, cy, 300, "Sine.easeInOut");
-            cam.zoomTo(zoom, 300, "Sine.easeInOut");
+            // force = true: without it a click landing inside the previous 300ms
+            // animation is dropped, while the tab bar still switches — so the
+            // control reports success and the view stays put.
+            cam.pan(cx, cy, 300, "Sine.easeInOut", true);
+            cam.zoomTo(zoom, 300, "Sine.easeInOut", true);
         } else {
             cam.centerOn(cx, cy);
             cam.setZoom(zoom);
