@@ -24,10 +24,6 @@ import type { EcosystemNode, Instrumentation } from "../services/ecosystem-feed.
  *   refresh). Each corresponds to something that happened.
  */
 
-/** Explicit stack: bare "monospace" resolves to Courier on Safari/macOS, whose
- *  thin strokes are the worst possible face to downscale with nearest-neighbour. */
-const MONO = 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace';
-
 const RING_LABELS: Record<string, string> = {
     official: "OFFICIAL",
     participation: "PARTICIPATION",
@@ -125,6 +121,8 @@ export class HubMap {
 
     private tipEl?: HTMLDivElement;
     private labelLayer?: HTMLDivElement;
+    /** World-anchored DOM text that is not attached to a body (rings, core). */
+    private pinned: { el: HTMLDivElement; wx: number; wy: number }[] = [];
     private hudEl?: HTMLDivElement;
     private countsEl?: HTMLElement;
     private activityEl?: HTMLElement;
@@ -176,6 +174,14 @@ export class HubMap {
     create(): void {
         this.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+        // Must exist before anything calls makePinned(): the ring and core labels
+        // are built further down, and appending into a layer that did not exist
+        // yet silently dropped them through the optional chain.
+        this.labelLayer = document.createElement("div");
+        this.labelLayer.className = "hub-labels";
+        document.body.appendChild(this.labelLayer);
+
+
         // Own backdrop, so the service zones above cannot bleed into this view.
         // Oversized on purpose: the camera fits the hub by its circle, so it
         // overscans this rectangle and the belt zones above used to show through
@@ -206,16 +212,22 @@ export class HubMap {
         this.scene.add.circle(this.cx, this.cy, 34, 0x0b1226, 0.9).setStrokeStyle(2, COLOR.hub, 0.85).setDepth(D + 6);
         this.scene.add.circle(this.cx, this.cy, 22, COLOR.hub, 0.10).setDepth(D + 6);
         this.scene.add.circle(this.cx, this.cy, 9, COLOR.hub).setDepth(D + 7);
-        this.crisp(this.scene.add.text(this.cx, this.cy + 44, "MOSSLAND", {
-            fontFamily: MONO, fontSize: "14px", color: "#7dd3fc",
-        }).setOrigin(0.5).setDepth(D + 7));
+        // The last canvas text goes too. `pixelArt: true` filters NEAREST, and the
+        // canvas is downscaled twice on top of that, so even large fixed labels
+        // lose their strokes. Everything readable on this map is now DOM.
+        this.pinned.push(this.makePinned("MOSSLAND", "hub-pin hub-pin-core", this.cx, this.cy + 44));
 
         // Ring names: the orbits were pure geometry before, carrying none of the
         // grouping they actually encode.
         for (const [section, r] of Object.entries(RING_RADII)) {
-            this.crisp(this.scene.add.text(this.cx, this.cy - r - 9, RING_LABELS[section] ?? section, {
-                fontFamily: MONO, fontSize: "10px", color: "#3f5b80",
-            }).setOrigin(0.5, 1).setDepth(D + 5));
+            // Upper-left diagonal. Twelve o'clock put them in the same column as
+            // the planet names (bodies start there); nine o'clock put all five on
+            // one row, where names up to 13 characters overlapped each other. On
+            // the diagonal each ring's radius separates them in both axes.
+            const k = Math.SQRT1_2;   // cos/sin of 135deg
+            this.pinned.push(this.makePinned(
+                RING_LABELS[section] ?? section, "hub-pin hub-pin-ring",
+                this.cx - r * k, this.cy - r * k - 8));
         }
 
         // The HUD lives in the DOM for the same reason as the tooltip: these are
@@ -233,10 +245,6 @@ export class HubMap {
         // exactly the mush that made this unreadable. A DOM node is rendered by
         // the browser at native resolution and stays crisp, without giving up the
         // pixel-art look of the scene itself.
-        this.labelLayer = document.createElement("div");
-        this.labelLayer.className = "hub-labels";
-        document.body.appendChild(this.labelLayer);
-
         this.tipEl = document.createElement("div");
         this.tipEl.className = "hub-tip";
         this.tipEl.hidden = true;
@@ -269,6 +277,15 @@ export class HubMap {
         };
     }
 
+    private makePinned(text: string, cls: string, wx: number, wy: number): { el: HTMLDivElement; wx: number; wy: number } {
+        const el = document.createElement("div");
+        el.className = cls;
+        el.textContent = text;
+        this.labelLayer?.appendChild(el);
+        return { el, wx, wy };
+    }
+
+
     /** World point -> page pixels, using this frame's projection. */
     private placeLabel(b: Body, wx: number, wy: number, p: NonNullable<ReturnType<HubMap["projection"]>>): void {
         const sx = p.left + (wx - p.vx) * p.s;
@@ -277,15 +294,6 @@ export class HubMap {
         const inside = sx > p.left - 60 && sx < p.right + 60 && sy > p.top - 20 && sy < p.bottom + 20;
         b.label.style.transform = `translate(-50%, 0) translate(${Math.round(sx)}px, ${Math.round(sy)}px)`;
         b.label.style.visibility = inside ? "visible" : "hidden";
-    }
-
-    private crisp(t: Phaser.GameObjects.Text): Phaser.GameObjects.Text {
-        // Resolution only. Text rebuilds its texture on every setText, which
-        // discards any filter set here — so calling setFilter(LINEAR) looks like
-        // it helps and silently reverts the moment the label updates. Rendering
-        // the glyphs at 3x is what actually survives the downscale.
-        t.setResolution(3);
-        return t;
     }
 
     private buildHud(): void {
@@ -552,7 +560,14 @@ export class HubMap {
 
         if (this.tipEl && !this.tipEl.hidden) this.placeTooltip();
 
-        const proj = this.bodies.length > 0 ? this.projection() : null;
+        const proj = this.projection();
+        if (proj) {
+            for (const q of this.pinned) {
+                const sx = proj.left + (q.wx - proj.vx) * proj.s;
+                const sy = proj.top + (q.wy - proj.vy) * proj.s;
+                q.el.style.transform = `translate(-50%, -50%) translate(${Math.round(sx)}px, ${Math.round(sy)}px)`;
+            }
+        }
 
         for (const b of this.bodies) {
             const a = b.a + b.spin * spinT;
@@ -626,6 +641,8 @@ export class HubMap {
         this.sweep?.destroy();
         this.hudEl?.remove();
         this.tipEl?.remove();
+        this.pinned.forEach(q => q.el.remove());
+        this.pinned = [];
         this.labelLayer?.remove();
         this.byId.clear();
         this.bodies.forEach(b => { b.dot.destroy(); b.glow?.destroy(); b.halo?.destroy(); b.label.remove(); });
