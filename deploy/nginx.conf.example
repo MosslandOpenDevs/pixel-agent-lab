@@ -112,6 +112,22 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # Monitor's own health endpoint. `health.json` is emitted into the build by
+    # vite.config.ts, so a 200 here proves nginx is up, the origin behind it is
+    # up, and which build is actually deployed. Exact-match so it wins over the
+    # SPA fallback, which would otherwise answer with index.html.
+    location = /api/health {
+        proxy_hide_header Access-Control-Allow-Origin;
+        proxy_hide_header Vary;
+        add_header Access-Control-Allow-Origin $cors_origin always;
+        add_header Vary "Accept-Encoding, Origin" always;
+        add_header Cache-Control "no-cache" always;
+        proxy_pass http://monitor_web/health.json;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     # --- API proxies --------------------------------------------------------
     # Rewrites mirror vite.config.ts exactly:
     #   /algora-api/x -> :3201/api/x     (trailing slash on proxy_pass strips the prefix)
