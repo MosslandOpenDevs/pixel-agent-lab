@@ -37,6 +37,20 @@ const COLOR = {
     hub: 0x38bdf8,
 };
 
+/** One real signal travelling from the service that produced it to the hub. */
+type Mote = {
+    dot: Phaser.GameObjects.Arc;
+    fromX: number;
+    fromY: number;
+    t: number;
+    speed: number;
+};
+
+// Bounds on the motes, so a large first poll cannot turn into a firework and a
+// busy service cannot drown the view. Excess ingest is counted, just not drawn.
+const MAX_MOTES = 48;
+const MAX_SPAWN_PER_TICK = 6;
+
 type Body = {
     node: EcosystemNode;
     dot: Phaser.GameObjects.Arc;
@@ -62,6 +76,16 @@ export class HubMap {
     private signature = "";
     private elapsed = 0;
     private reducedMotion = false;
+
+    // --- live activity ---
+    private motes: Mote[] = [];
+    private byId = new Map<string, Body>();
+    private lastIngested: Record<string, number> | null = null;
+    private lastHealthAt: string | null = null;
+    private sweep?: Phaser.GameObjects.Arc;
+    private sweepT = 1;          // >=1 means finished
+    private activityText?: Phaser.GameObjects.Text;
+    private signalsSeen = 0;
 
     constructor(scene: Phaser.Scene, cx: number, cy: number) {
         this.scene = scene;
@@ -95,6 +119,52 @@ export class HubMap {
         }).setOrigin(0.5).setDepth(8);
 
         this.container = this.scene.add.container(0, 0).setDepth(9);
+
+        // Expanding ring, drawn once per real health refresh.
+        this.sweep = this.scene.add.circle(this.cx, this.cy, 1)
+            .setStrokeStyle(1, COLOR.hub, 0.5).setDepth(5).setVisible(false);
+
+        this.activityText = this.scene.add.text(this.cx, this.cy + RING_RADII.ecosystem + 40, "", {
+            fontFamily: "monospace", fontSize: "8px", color: "#475569",
+        }).setOrigin(0.5).setDepth(8);
+    }
+
+    /**
+     * Feeds the map real events. Motes are emitted one per signal this monitor
+     * actually ingested, and the sweep fires when the health aggregator really
+     * refreshed — so everything moving on screen corresponds to something that
+     * happened. Nothing here invents activity when the services are quiet.
+     */
+    setActivity(ingested: Record<string, number>, healthCheckedAt: string | null): void {
+        if (this.lastIngested) {
+            for (const [origin, total] of Object.entries(ingested)) {
+                const delta = total - (this.lastIngested[origin] ?? 0);
+                if (delta > 0) {
+                    this.signalsSeen += delta;
+                    if (!this.reducedMotion) {
+                        for (let i = 0; i < Math.min(delta, MAX_SPAWN_PER_TICK); i++) this.emitMote(origin);
+                    }
+                }
+            }
+        }
+        this.lastIngested = { ...ingested };
+
+        if (healthCheckedAt && healthCheckedAt !== this.lastHealthAt) {
+            this.lastHealthAt = healthCheckedAt;
+            if (!this.reducedMotion) this.sweepT = 0;
+        }
+
+        this.activityText?.setText(
+            this.signalsSeen > 0 ? `${this.signalsSeen} signals ingested this session` : "",
+        );
+    }
+
+    private emitMote(originId: string): void {
+        const body = this.byId.get(originId);
+        if (!body || this.motes.length >= MAX_MOTES) return;
+        const { x, y } = body.dot;
+        const dot = this.scene.add.circle(x, y, 1.6, COLOR.hub).setDepth(11).setAlpha(0.9);
+        this.motes.push({ dot, fromX: x, fromY: y, t: 0, speed: 0.55 + Math.random() * 0.35 });
     }
 
     /** Rebuilds the orbit when the registry snapshot changes. */
@@ -107,6 +177,7 @@ export class HubMap {
 
         this.bodies.forEach(b => { b.dot.destroy(); b.halo?.destroy(); b.label.destroy(); });
         this.bodies = [];
+        this.byId.clear();
 
         // Group by ring, preserving registry order within each.
         const groups = new Map<string, EcosystemNode[]>();
@@ -121,7 +192,9 @@ export class HubMap {
             list.forEach((node, i) => {
                 // Start each ring at 12 o'clock and space evenly.
                 const angle = -Math.PI / 2 + (i / list.length) * Math.PI * 2;
-                this.bodies.push(this.makeBody(node, this.cx + Math.cos(angle) * radius, this.cy + Math.sin(angle) * radius, i));
+                const body = this.makeBody(node, this.cx + Math.cos(angle) * radius, this.cy + Math.sin(angle) * radius, i);
+                this.bodies.push(body);
+                this.byId.set(node.service.id, body);
             });
         }
 
@@ -174,6 +247,29 @@ export class HubMap {
         this.elapsed += dt;
         const t = this.elapsed / 1000;
 
+        // Motes travel their service -> hub, easing in as they are drawn in.
+        for (let i = this.motes.length - 1; i >= 0; i--) {
+            const m = this.motes[i];
+            m.t += (dt / 1000) * m.speed;
+            if (m.t >= 1) {
+                m.dot.destroy();
+                this.motes.splice(i, 1);
+                continue;
+            }
+            const e = m.t * m.t;                    // accelerate toward the hub
+            m.dot.setPosition(m.fromX + (this.cx - m.fromX) * e, m.fromY + (this.cy - m.fromY) * e);
+            m.dot.setAlpha(0.9 * (1 - m.t * 0.65));
+        }
+
+        // Health sweep: one expanding ring per real aggregator refresh.
+        if (this.sweepT < 1) {
+            this.sweepT = Math.min(1, this.sweepT + dt / 1100);
+            const r = 14 + this.sweepT * (RING_RADII.ecosystem + 10);
+            this.sweep?.setVisible(true).setRadius(r).setStrokeStyle(1, COLOR.hub, 0.5 * (1 - this.sweepT));
+        } else {
+            this.sweep?.setVisible(false);
+        }
+
         for (const b of this.bodies) {
             // Only bodies we can actually observe are allowed to move. A listed
             // service sitting perfectly still is the honest rendering.
@@ -185,6 +281,11 @@ export class HubMap {
     }
 
     destroy(): void {
+        this.motes.forEach(m => m.dot.destroy());
+        this.motes = [];
+        this.sweep?.destroy();
+        this.activityText?.destroy();
+        this.byId.clear();
         this.bodies.forEach(b => { b.dot.destroy(); b.halo?.destroy(); b.label.destroy(); });
         this.bodies = [];
         this.rings?.destroy();

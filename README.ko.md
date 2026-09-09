@@ -4,9 +4,9 @@
 
 [English](README.md) · **한국어**
 
-Mossland Space Hub는 Mossland 3대 핵심 거버넌스 서비스 — **Algora**, **AO**, **Bridge** — 의 운영 상태를 **우주 물류 센터 시각화**(컨베이어 벨트 · 픽셀 에이전트)로 한 화면에 실시간 렌더링하는 라이브 대시보드입니다.
+Mossland Space Hub는 **Mossland 서비스 생태계 지도**를 궤도 정거장 형태로 렌더링하는 라이브 대시보드입니다. [links.moss.land 레지스트리](https://links.moss.land/ecosystem-registry.json)에 등록된 모든 서비스가 궤도 위의 천체로 표시되고, 그중 실제로 데이터를 스트리밍하는 소수만 자기 컨베이어 벨트 구역을 갖습니다.
 
-세 서비스는 각각 **독립적으로** 자신의 파이프라인을 돌리며, 이 화면은 세 서비스의 실시간 스트림을 한 곳에 모아 하나의 운영 지도로 보여줍니다.
+중심 원칙은 **천체는 그 뒤에 있는 데이터만큼만 살아 보일 수 있다**는 것입니다. 생태계 대부분은 레지스트리 항목 외에는 아무것도 노출하지 않으며, 지도는 그 사실을 숨기지 않습니다 — 아무것도 나르지 않는 벨트 28개를 돌리는 대신에요.
 
 ![Status](https://img.shields.io/badge/status-live-brightgreen)
 [![Live](https://img.shields.io/badge/live-monitor.moss.land-brightgreen)](https://monitor.moss.land)
@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/1e3ab6cb-41f0-4bff-a227-a6b4505b2c3e
 
 ## 왜 (Why)
 
-- **책임 분리를 한눈에** — 하나의 거버넌스 루프를 세 서비스가 어떻게 나눠 맡는지 한 화면에서 파악.
+- **생태계 전체를 한눈에** — 등록된 모든 서비스와 MIP-1 라이프사이클, 그리고 각 서비스가 실제로 얼마나 관측 가능한지.
 - **실제 작업 추적** — 각 서비스의 실제 처리 단계를 벨트 위 박스 이동으로 추적.
 - **입력에서 결과까지** — 신호 유입부터 검증된 결과까지 전체 흐름을 시각화.
 

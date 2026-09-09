@@ -49,7 +49,7 @@ export class SpaceHubScene extends Phaser.Scene {
         this.drawSpaceBackground();
 
         // header bar
-        this.add.text(W / 2, 16, "MOSSLAND GOVERNANCE MONITOR  |  Algora (Sense)  \u00b7  AO (Plan)  \u00b7  Bridge (Execute)", {
+        this.add.text(W / 2, 16, "MOSSLAND SPACE HUB  |  ecosystem map  \u00b7  live belts for the services that stream", {
             fontFamily: "monospace", fontSize: "10px", color: "#94a3b8",
             backgroundColor: "#0b1226cc", padding: { x: 10, y: 4 },
         }).setOrigin(0.5).setDepth(100);
@@ -80,6 +80,7 @@ export class SpaceHubScene extends Phaser.Scene {
         this.ecosystem.init().then(() => {
             updateEcosystem(this.ecosystem);
             this.hubMap.setNodes(this.ecosystem.nodes());
+            this.hubMap.setActivity(this.dataBridge.ingested, this.ecosystem.healthCheckedAt);
         });
 
         // mobile: zoom into one zone at a time (zone tabs drive the camera).

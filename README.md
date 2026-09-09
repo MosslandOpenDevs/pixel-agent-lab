@@ -4,9 +4,9 @@
 
 **English** · [한국어](README.ko.md)
 
-Mossland Space Hub is a live **space-logistics visualization** of Mossland's three core governance services — **Algora**, **AO**, and **Bridge** — rendering their real-time operations as conveyor belts and pixel agents on a single screen.
+Mossland Space Hub is a live **map of the Mossland service ecosystem**, rendered as an orbital station: every service in the [links.moss.land registry](https://links.moss.land/ecosystem-registry.json) is a body in orbit, and the few that actually stream data get their own conveyor-belt zone.
 
-Each service runs its own pipeline **independently**; this dashboard gathers all three live streams into one operations map.
+The organizing rule is that **a body may only look as alive as the data behind it**. Most of the ecosystem exposes nothing but a registry entry, and the map says so rather than animating 28 belts that carry nothing.
 
 ![Status](https://img.shields.io/badge/status-live-brightgreen)
 [![Live](https://img.shields.io/badge/live-monitor.moss.land-brightgreen)](https://monitor.moss.land)
@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/1e3ab6cb-41f0-4bff-a227-a6b4505b2c3e
 
 ## Why
 
-- **Separation of responsibility at a glance** — see how three services split one governance loop across a single screen.
+- **The whole ecosystem at a glance** — every registered service, its MIP-1 lifecycle, and how much of it is actually observable.
 - **Trace the actual work** — follow each service's real processing stages as boxes move along its belt.
 - **Input to outcome** — visualize the full flow from incoming signals to verified outcomes.
 

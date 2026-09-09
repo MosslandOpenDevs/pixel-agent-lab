@@ -8,8 +8,11 @@ import { fetchRegistry, fetchEcosystemHealth } from "./ecosystem-client.ts";
  */
 export type Instrumentation = "stream" | "health" | "listed";
 
-/** Services whose data this monitor actually polls (see DataBridge). */
-const STREAMING_IDS = new Set(["ao", "bridge"]);
+/** Services whose data this monitor actually polls (see DataBridge). DataBridge
+ *  fetches signals/issues/stats from algora as well, so it belongs here even
+ *  though the registry marks it archived — the archived styling is applied
+ *  independently, and claiming we do not read it would be the inaccurate half. */
+const STREAMING_IDS = new Set(["algora", "ao", "bridge"]);
 
 /** The service that publishes the health aggregate (city.moss.land). */
 const AGGREGATOR_ID = "city";
