@@ -4,6 +4,10 @@ import { execSync } from "node:child_process";
 /**
  * Emits `health.json` into the build, which nginx serves as `/api/health`.
  *
+ * Shape follows the ecosystem health contract (HEALTH_CONTRACT.md in the links
+ * repo): `status`, `service` and `timestamp` are the three fields every Mossland
+ * service publishes; everything below them is monitor's own.
+ *
  * Monitor is a static viewer: it runs no pipeline, so it has no "last processed"
  * time to report and deliberately omits `lastProcessedAt` while declaring
  * `pipeline: "none"` — consumers are told not to look for freshness here.
@@ -29,6 +33,11 @@ function healthEndpoint(): Plugin {
                 // Building outside a git checkout (e.g. from a tarball) is fine;
                 // report null rather than inventing a value.
             }
+            // One instant, two names. `timestamp` is what the ecosystem health
+            // contract calls it; `buildTime` is what it actually is. They cannot
+            // drift because there is only one value, and `pipeline: "none"` above
+            // still tells a consumer not to read data freshness out of either.
+            const buildTime = new Date().toISOString();
             this.emitFile({
                 type: "asset",
                 fileName: "health.json",
@@ -37,7 +46,8 @@ function healthEndpoint(): Plugin {
                     service: "monitor",
                     role: "viewer",
                     pipeline: "none",
-                    buildTime: new Date().toISOString(),
+                    timestamp: buildTime,
+                    buildTime,
                     commit,
                 }, null, 2) + "\n",
             });
