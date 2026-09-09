@@ -171,12 +171,16 @@ export class AOZone {
 
         // spawn idea bubbles on belt
         if (this.spawnTimer > 2800 && this.bubbles.filter(b => b.phase !== "done").length < 8) {
-            const idea = dataBridge.ideaCache[Math.floor(Math.random() * Math.max(1, dataBridge.ideaCache.length))];
+            // Only ever spawn a bubble for an idea that actually came back from
+            // the API. The belt previously invented a "Generating..." bubble with
+            // a `Math.random() * 10` score whenever the cache was empty — which is
+            // exactly when AO is down — and rendered it identically to real ideas.
+            // With no data the belt simply stays quiet.
+            const ideas = dataBridge.ideaCache;
+            const idea = ideas.length > 0 ? ideas[Math.floor(Math.random() * ideas.length)] : undefined;
             if (idea) {
                 const score = typeof idea.score === "number" && isFinite(idea.score) ? idea.score : 0;
                 this.spawnBubble(idea.title_ko ?? idea.title ?? "Idea", score);
-            } else {
-                this.spawnBubble("Generating...", Math.random() * 10);
             }
             this.spawnTimer = 0;
 

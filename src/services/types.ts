@@ -29,12 +29,15 @@ export type AlgoraIssue = {
 
 export type AlgoraStats = {
     activeAgents: number;
+    totalAgents?: number;
     activeSessions: number;
     signalsToday: number;
     openIssues: number;
-    agentsTrend: number;
-    sessionsTrend: number;
-    signalsTrend: number;
+    // Trend fields are optional: /algora-api/stats currently returns only
+    // signalsTrend, so requiring the other two would misdescribe the payload.
+    agentsTrend?: number;
+    sessionsTrend?: number;
+    signalsTrend?: number;
 };
 
 // --- AO API response types ---

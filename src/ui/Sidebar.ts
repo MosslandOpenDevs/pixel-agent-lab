@@ -17,7 +17,7 @@ export function initSidebar(): void {
     <div id="serviceStatus" class="stats"></div>
     <div class="detail">
       <h2>About</h2>
-      <div class="detail-desc">Three independent Mossland services, each polled live every 15 seconds. Boxes on the Algora and AO belts are real signals and ideas; Bridge's live proposal and outcome data drives its stats and Trust panel.</div>
+      <div class="detail-desc">Three independent Mossland services, each polled live every 15 seconds. The Algora belt carries the merged live signal stream from all three services; AO belt bubbles are real AO ideas, and the belt stays empty when none are available. Bridge's live outcome and trust data drives its stats and Trust panel. A service that does not respond shows \u2014 rather than a substituted figure.</div>
     </div>
   </aside>
   <div class="panel-backdrop"></div>
@@ -74,46 +74,47 @@ function connMarkup(state: ConnState, liveSuffix: string): string {
     return `<span class="dot connecting"></span> Connecting...`;
 }
 
-export function updateSidebar(
-    dataBridge: DataBridge,
-    zoneStats: {
-        algora: { signals: number; issues: number; docs: number };
-        ao: { ideas: number; plans: number; projects: number };
-        bridge: { proposals: number; outcomes: number; successRate: number };
-    },
-): void {
+export function updateSidebar(dataBridge: DataBridge): void {
     const ls = dataBridge.liveStats;
     const up = dataBridge.serviceUp;
     const conn = dataBridge.connectionState();
 
-    // pipeline summary stats
+    // Placeholder for a figure this poll could not obtain. A service that did not
+    // respond has no numbers, and putting something in their place — as this panel
+    // used to, by falling back to the zones' internal animation counters — reads as
+    // live service data when it is nothing of the sort.
+    const NA = "\u2014";
+
+    const a = up.algora ? ls.algora : null;
+    const ao = up.ao ? ls.ao : null;
+    const b = up.bridge ? ls.bridge : null;
+
+    // Pipeline summary. These are the services' own totals, not the sizes of our
+    // fetch caches — `issueCache.length` only ever reported the 30-item fetch cap,
+    // and `debateCache.length` the 10-item one.
     statsEl.innerHTML = `
     <div class="row"><span>Monitoring</span><b>Algora (Sense) | AO (Plan) | Bridge (Execute)</b></div>
     <div class="row"><span>Signal Queue</span><b>${dataBridge.queueSize()}</b></div>
-    <div class="row"><span>Algora Issues</span><b>${dataBridge.issueCache.length}</b></div>
-    <div class="row"><span>AO Debates</span><b>${dataBridge.debateCache.length}</b></div>
+    <div class="row"><span>Open Issues</span><b>${a ? a.openIssues ?? 0 : NA}</b></div>
+    <div class="row"><span>Debates Today</span><b>${ao?.stats ? ao.stats.debates_today : NA}</b></div>
     `;
 
-    // service I/O status — only show live figures for services that responded
-    // this poll; a down service (e.g. AO 500) falls back to the mock counts and
-    // drops its LIVE badge instead of the whole board claiming LIVE.
-    const a = up.algora ? ls.algora : null;
-    const aIn = a ? `${a.signalsToday ?? 0}/today` : `${zoneStats.algora.signals}`;
-    const aOut = a ? `${a.openIssues ?? 0} open` : `${zoneStats.algora.issues}`;
-    const aHint = a ? `sessions:${a.activeSessions ?? 0}` : "9-stage pipeline";
+    // Service I/O — live figures for the services that responded this poll. The
+    // rest show NA and lose their LIVE badge, instead of borrowing another number.
+    const aIn = a ? `${a.signalsToday ?? 0}/today` : NA;
+    const aOut = a ? `${a.openIssues ?? 0} open` : NA;
+    const aHint = a ? `sessions:${a.activeSessions ?? 0} · agents:${a.totalAgents ?? NA}` : "9-stage pipeline";
 
-    const ao = up.ao ? ls.ao : null;
-    const aoIn = ao ? `${ao.stats?.signals_today ?? 0}/today` : `${zoneStats.ao.ideas}`;
-    const aoOut = ao
-        ? `Ideas ${ao.stats?.ideas_generated ?? 0} · Plans ${ao.stats?.plans_created ?? 0}`
-        : `Plans ${zoneStats.ao.plans}`;
-    const aoHint = ao ? `debates:${ao.stats?.debates_today ?? 0} · agents:${ao.stats?.agents_active ?? 0}` : "3-phase debate";
+    const aoIn = ao?.stats ? `${ao.stats.signals_today}/today` : NA;
+    const aoOut = ao?.stats
+        ? `Ideas ${ao.stats.ideas_generated} · Plans ${ao.stats.plans_created}`
+        : NA;
+    const aoHint = ao?.stats ? `debates:${ao.stats.debates_today} · agents:${ao.stats.agents_active}` : "3-phase debate";
 
-    const b = up.bridge ? ls.bridge : null;
-    const bIn = b ? `${(b.signals?.total ?? 0).toLocaleString()} signals` : `${zoneStats.bridge.proposals}`;
+    const bIn = b ? `${(b.signals?.total ?? 0).toLocaleString()} signals` : NA;
     const bOut = b
         ? `Issues ${b.issues?.total ?? 0} · Proofs ${b.outcomes?.totalProofs ?? 0}`
-        : `Outcomes ${zoneStats.bridge.outcomes}`;
+        : NA;
     const bHint = b ? `proposals:${b.proposals?.total ?? 0} · success:${b.outcomes?.successRate ?? 0}%` : "L0-L4 pipeline";
 
     const badge = (ok: boolean) => ok ? ' <span class="live-badge">LIVE</span>' : '';
@@ -124,13 +125,13 @@ export function updateSidebar(
       <div class="svc-title">ALGORA${badge(up.algora)}</div>
       <div class="drow"><span>Input</span><b>Signals ${aIn}</b></div>
       <div class="drow"><span>Output</span><b>Issues ${aOut}</b></div>
-      <div class="hint">${aHint} · 38 agents · docs:${zoneStats.algora.docs}</div>
+      <div class="hint">${aHint}</div>
     </div>
     <div class="svc ao">
       <div class="svc-title">AO${badge(up.ao)}</div>
       <div class="drow"><span>Input</span><b>Signals ${aoIn}</b></div>
       <div class="drow"><span>Output</span><b>${aoOut}</b></div>
-      <div class="hint">${aoHint} · projects:${zoneStats.ao.projects}</div>
+      <div class="hint">${aoHint}</div>
     </div>
     <div class="svc bridge">
       <div class="svc-title">BRIDGE${badge(up.bridge)}</div>

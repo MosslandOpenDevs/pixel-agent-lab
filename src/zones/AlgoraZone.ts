@@ -67,9 +67,6 @@ export class AlgoraZone {
     private bot!: Phaser.GameObjects.Sprite;
     private botBusy = false;
 
-    signalsProcessed = 0;
-    issuesDetected = 0;
-    docsProduced = 0;
 
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
@@ -160,7 +157,6 @@ export class AlgoraZone {
             const signal = dataBridge.nextSignal();
             if (signal) {
                 this.botBusy = true;
-                this.signalsProcessed++;
 
                 const title = signal.title.slice(0, 22);
                 const severity = signal.severity;
@@ -185,9 +181,7 @@ export class AlgoraZone {
                 if (item.stageIdx === 2) {
                     item.sprite.setTexture("issue-card");
                     item.sprite.setDisplaySize(18, 16);
-                    this.issuesDetected++;
                 }
-                if (item.stageIdx === 5) this.docsProduced++;
             }
 
             if (item.stageIdx >= STAGES.length) {
