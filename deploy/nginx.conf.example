@@ -52,11 +52,18 @@ server {
     listen 80;
     server_name monitor.moss.land;
 
+    # The redirect MUST live inside `location /`, not at server level: a
+    # server-level `return` runs in the rewrite phase, before nginx selects a
+    # location, so it would swallow the ACME challenge below and webroot
+    # issuance/renewal would 301 instead of serving the token.
     location ^~ /.well-known/acme-challenge/ {
         default_type "text/plain";
         root /var/www/monitor.moss.land;
     }
-    return 301 https://$server_name$request_uri;
+
+    location / {
+        return 301 https://$server_name$request_uri;
+    }
 }
 
 # --- HTTPS ------------------------------------------------------------------
