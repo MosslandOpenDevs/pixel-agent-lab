@@ -173,8 +173,43 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 
 /* --- Mobile toggle & overlay (hidden on desktop) --- */
 .zone-tabs {
-    display: none;
+    /* The ecosystem map is the default view, so the belts must stay reachable on
+       desktop too — these used to be display:none outside the mobile breakpoint.
+       Fixed positioning keeps them out of the .layout grid flow. */
+    display: flex;
+    position: fixed;
+    left: 50%;
+    bottom: 14px;
+    transform: translateX(-50%);
+    z-index: 900;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    background: #0c1428ee;
+    border: 1px solid #334155;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
 }
+
+.zone-tab {
+    background: none;
+    border: none;
+    border-radius: 999px;
+    color: #64748b;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 5px 14px;
+    cursor: pointer;
+    transition: color 0.2s, background-color 0.2s;
+}
+.zone-tab:hover { color: #cbd5e1; }
+.zone-tab:focus-visible { outline: 1px solid #38bdf8; outline-offset: 2px; }
+.zone-tab.active { background: #1e293b; }
+.zone-tab.active[data-zone="hub"]     { color: #7dd3fc; }
+.zone-tab.active[data-zone="algora"]  { color: #34d399; }
+.zone-tab.active[data-zone="ao"]      { color: #fcd34d; }
+.zone-tab.active[data-zone="bridge"]  { color: #60a5fa; }
 
 .panel-toggle {
     display: none;
@@ -306,6 +341,11 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
         bottom: 0;
         left: 0;
         right: 0;
+        transform: none;
+        gap: 0;
+        padding: 0;
+        border: none;
+        border-radius: 0;
         z-index: 900;
         background: #0c1428ee;
         border-top: 1px solid #334155;
@@ -316,6 +356,7 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
         flex: 1;
         background: none;
         border: none;
+        border-radius: 0;
         color: #64748b;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 13px;
@@ -326,6 +367,8 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
         transition: color 0.2s, border-color 0.2s;
     }
     .zone-tab:active { background: #1e293b; }
+    .zone-tab.active { background: none; }
+    .zone-tab.active[data-zone="hub"]     { color: #7dd3fc; border-top-color: #7dd3fc; }
     .zone-tab.active[data-zone="algora"]  { color: #34d399; border-top-color: #34d399; }
     .zone-tab.active[data-zone="ao"]      { color: #fcd34d; border-top-color: #fcd34d; }
     .zone-tab.active[data-zone="bridge"]  { color: #60a5fa; border-top-color: #60a5fa; }

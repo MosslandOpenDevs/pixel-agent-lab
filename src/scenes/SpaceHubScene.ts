@@ -6,14 +6,22 @@ import { BridgeZone } from "../zones/BridgeZone.ts";
 import { CentralMonitor } from "../zones/CentralMonitor.ts";
 import { DataBridge } from "../services/data-bridge.ts";
 import { EcosystemFeed } from "../services/ecosystem-feed.ts";
+import { HubMap } from "../zones/HubMap.ts";
 import { setConnectionStatus, updateSidebar, updateEcosystem } from "../ui/Sidebar.ts";
 
 const W = 1440;
 const H = 760;
 
-type ZoneKey = "algora" | "ao" | "bridge";
+type ZoneKey = "hub" | "algora" | "ao" | "bridge";
+
+// The map lives below the three service zones so the existing belts keep their
+// coordinates. It is the default view: the ecosystem is the subject, and a belt
+// is the detail you open for the two services that actually stream.
+const MAP_Y = H + 40;   // just below the three service zones
+const MAP_H = 600;
 
 const ZONE_VIEWS: Record<ZoneKey, { x: number; y: number; w: number; h: number }> = {
+    hub:     { x: 0,   y: MAP_Y, w: W,   h: MAP_H },
     algora:  { x: 0,   y: 30,  w: 640, h: 410 },
     ao:      { x: 640,  y: 30,  w: 800, h: 410 },
     bridge:  { x: 0,   y: 430, w: 600, h: 330 },
@@ -27,7 +35,8 @@ export class SpaceHubScene extends Phaser.Scene {
     private dataBridge!: DataBridge;
     private ecosystem!: EcosystemFeed;
     private sidebarTimer = 0;
-    private currentZone: ZoneKey = "algora";
+    private hubMap!: HubMap;
+    private currentZone: ZoneKey = "hub";
     private zoneSwitchHandler?: EventListener;
     private resizeHandler?: () => void;
 
@@ -50,11 +59,13 @@ export class SpaceHubScene extends Phaser.Scene {
         this.aoZone = new AOZone(this);
         this.bridgeZone = new BridgeZone(this);
         this.centralMonitor = new CentralMonitor(this);
+        this.hubMap = new HubMap(this, W / 2, MAP_Y + MAP_H / 2);
 
         this.algoraZone.create();
         this.aoZone.create();
         this.bridgeZone.create();
         this.centralMonitor.create();
+        this.hubMap.create();
 
         // data bridge
         this.dataBridge = new DataBridge();
@@ -66,7 +77,10 @@ export class SpaceHubScene extends Phaser.Scene {
         // runs on its own far slower cadence (see EcosystemFeed) and is not part
         // of the LIVE/OFFLINE verdict for the three visualized services.
         this.ecosystem = new EcosystemFeed();
-        this.ecosystem.init().then(() => updateEcosystem(this.ecosystem));
+        this.ecosystem.init().then(() => {
+            updateEcosystem(this.ecosystem);
+            this.hubMap.setNodes(this.ecosystem.nodes());
+        });
 
         // mobile: zoom into one zone at a time (zone tabs drive the camera).
         // Register the tab listener unconditionally so it is never a dead
@@ -83,7 +97,7 @@ export class SpaceHubScene extends Phaser.Scene {
         };
         this.scale.on("resize", this.resizeHandler);
 
-        if (window.innerWidth < 768) this.switchZone("algora", false);
+        this.switchZone("hub", false);
 
         // Tear down listeners + polling when the scene stops (HMR / restart).
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.teardown());
@@ -95,6 +109,7 @@ export class SpaceHubScene extends Phaser.Scene {
         if (this.resizeHandler) this.scale.off("resize", this.resizeHandler);
         this.dataBridge?.destroy();
         this.ecosystem?.destroy();
+        this.hubMap?.destroy();
     }
 
     private switchZone(zone: ZoneKey, animate: boolean): void {
@@ -126,6 +141,7 @@ export class SpaceHubScene extends Phaser.Scene {
         this.aoZone.update(dt, this.dataBridge);
         this.bridgeZone.update(dt, this.dataBridge);
         this.centralMonitor.update(dt, this.dataBridge);
+        this.hubMap.update(dt);
 
         // update sidebar every 500ms
         this.sidebarTimer += dt;
@@ -133,15 +149,19 @@ export class SpaceHubScene extends Phaser.Scene {
             this.sidebarTimer = 0;
             updateSidebar(this.dataBridge);
             updateEcosystem(this.ecosystem);
+            // Cheap: HubMap ignores this unless the registry snapshot changed.
+            this.hubMap.setNodes(this.ecosystem.nodes());
         }
     }
 
     private drawSpaceBackground(): void {
-        this.add.rectangle(W / 2, H / 2, W, H, 0x060b1b);
-        for (let i = 0; i < 100; i++) {
+        // Covers the service zones and the map region below them.
+        const worldH = MAP_Y + MAP_H;
+        this.add.rectangle(W / 2, worldH / 2, W, worldH, 0x060b1b);
+        for (let i = 0; i < 220; i++) {
             const s = this.add.image(
                 Phaser.Math.Between(0, W),
-                Phaser.Math.Between(0, H),
+                Phaser.Math.Between(0, worldH),
                 "star",
             ).setDepth(1);
             s.setScale(Phaser.Math.FloatBetween(0.15, 0.5));
