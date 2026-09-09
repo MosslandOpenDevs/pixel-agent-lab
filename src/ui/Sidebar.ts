@@ -1,8 +1,10 @@
 import type { ConnState, DataBridge } from "../services/data-bridge.ts";
+import type { EcosystemFeed, EcosystemNode } from "../services/ecosystem-feed.ts";
 
 let statsEl: HTMLDivElement;
 let serviceEl: HTMLDivElement;
 let connEl: HTMLDivElement;
+let ecoEl: HTMLDivElement;
 
 export function initSidebar(): void {
     const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -15,6 +17,7 @@ export function initSidebar(): void {
     <div id="connStatus" class="conn-status"><span class="dot connecting"></span> Connecting...</div>
     <div id="stats" class="stats"></div>
     <div id="serviceStatus" class="stats"></div>
+    <div id="ecosystem" class="stats eco"></div>
     <div class="detail">
       <h2>About</h2>
       <div class="detail-desc">Three independent Mossland services, each polled live every 15 seconds. The Algora belt carries the merged live signal stream from all three services; AO belt bubbles are real AO ideas, and the belt stays empty when none are available. Bridge's proposal counts are live; its Trust &amp; Outcomes figures show \u2014 because the outcome and trust endpoints are still empty. A service that does not respond shows \u2014 rather than a substituted figure.</div>
@@ -33,6 +36,7 @@ export function initSidebar(): void {
 `;
     statsEl = document.querySelector<HTMLDivElement>("#stats")!;
     serviceEl = document.querySelector<HTMLDivElement>("#serviceStatus")!;
+    ecoEl = document.querySelector<HTMLDivElement>("#ecosystem")!;
     connEl = document.querySelector<HTMLDivElement>("#connStatus")!;
 
     // mobile panel toggle
@@ -72,6 +76,75 @@ function connMarkup(state: ConnState, liveSuffix: string): string {
     if (state === "live") return `<span class="dot live"></span> LIVE — ${liveSuffix}`;
     if (state === "offline") return `<span class="dot offline"></span> OFFLINE — no service reachable`;
     return `<span class="dot connecting"></span> Connecting...`;
+}
+
+const SECTION_LABELS: Record<string, string> = {
+    official: "Official",
+    ecosystem: "Ecosystem",
+    markets: "Markets",
+    developers: "Developers",
+    participation: "Participation",
+};
+
+const esc = (v: unknown) => String(v ?? "").replace(/[&<>"]/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
+
+/**
+ * Ecosystem panel, driven by the links.moss.land registry.
+ *
+ * The rule: a row may only look as alive as the data behind it. `stream`
+ * services are ones this monitor actually polls, `health` ones are covered by
+ * the city.moss.land aggregator, and `listed` ones we know nothing about beyond
+ * their registry entry — so those get a neutral dot, never a reassuring green.
+ */
+export function updateEcosystem(feed: EcosystemFeed): void {
+    if (!ecoEl) return;
+    if (!feed.isLoaded()) {
+        ecoEl.innerHTML = `<h2>Ecosystem</h2><div class="row"><span>Registry</span><b>loading\u2026</b></div>`;
+        return;
+    }
+
+    const nodes = feed.nodes();
+    if (nodes.length === 0) {
+        ecoEl.innerHTML = `<h2>Ecosystem</h2><div class="row"><span>Registry</span><b>unavailable</b></div>`;
+        return;
+    }
+
+    const streaming = nodes.filter(n => n.instrumentation === "stream").length;
+    const checked = nodes.filter(n => n.health).length;
+
+    const groups = new Map<string, EcosystemNode[]>();
+    for (const n of nodes) {
+        const key = n.service.section || "other";
+        const list = groups.get(key);
+        if (list) list.push(n); else groups.set(key, [n]);
+    }
+
+    const row = (n: EcosystemNode) => {
+        const { service: sv, health, instrumentation } = n;
+        const archived = sv.lifecycle === "archive" || sv.status === "deprecated";
+        const dot = health
+            ? `<span class="eco-dot ${esc(health.status)}" title="${esc(health.status)}${health.latencyMs != null ? " \u00b7 " + health.latencyMs + "ms" : ""}"></span>`
+            : `<span class="eco-dot unknown" title="not health-checked"></span>`;
+        const life = sv.lifecycle
+            ? `<span class="eco-life ${esc(sv.lifecycle)}">${esc(sv.lifecycle)}</span>`
+            : `<span class="eco-life none" title="no MIP-1 lifecycle recorded">\u2014</span>`;
+        return `<a class="eco-row${archived ? " archived" : ""}${instrumentation === "stream" ? " streaming" : ""}" href="${esc(sv.url)}" target="_blank" rel="noopener noreferrer">${dot}<span class="eco-name">${esc(sv.name)}</span>${life}</a>`;
+    };
+
+    const sections = [...groups.entries()].map(([key, list]) => `
+    <div class="eco-group">
+      <div class="eco-group-title">${esc(SECTION_LABELS[key] ?? key)}</div>
+      ${list.map(row).join("")}
+    </div>`).join("");
+
+    ecoEl.innerHTML = `
+    <h2>Ecosystem</h2>
+    <div class="row"><span>Registered</span><b>${nodes.length}</b></div>
+    <div class="row"><span>Health-checked</span><b>${checked}</b></div>
+    <div class="row"><span>Streaming here</span><b>${streaming}</b></div>
+    ${sections}
+    `;
 }
 
 export function updateSidebar(dataBridge: DataBridge): void {

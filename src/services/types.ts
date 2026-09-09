@@ -207,3 +207,50 @@ export type UnifiedSignal = {
     url?: string;
     timestamp: string;
 };
+
+// --- links.moss.land ecosystem registry (MIP-1 source of truth) ---
+
+/** One entry of https://links.moss.land/ecosystem-registry.json `services[]`.
+ *  Only the fields this app uses are declared; the payload carries more. */
+export type RegistryService = {
+    id: string;
+    name: string;
+    domain: string;
+    url: string;
+    /** Editorial grouping, e.g. "official" | "labs" | "developer" | "third_party". */
+    tier: string;
+    /** Layout grouping: official | ecosystem | markets | developers | participation. */
+    section: string;
+    /** Operational state: operational | degraded | beta | paused | offline | deprecated. */
+    status: string;
+    /** MIP-1 lifecycle. Absent on 13 of 30 entries, so it is genuinely optional —
+     *  render "unspecified", never a default like "lab". */
+    lifecycle?: "beta" | "lab" | "archive" | string;
+    /** Health endpoint. Only 7 of 30 entries have one. */
+    statusUrl?: string;
+    maintainer?: string;
+    hidden?: boolean;
+};
+
+export type EcosystemRegistry = {
+    version: string;
+    generatedAt: string;
+    lifecycleReviewedAt?: string;
+    services: RegistryService[];
+};
+
+// --- city.moss.land cross-service health aggregator ---
+
+export type HealthEntry = {
+    service: string;
+    status: string;      // "ok" | "degraded" | "down"
+    httpCode?: number;
+    latencyMs?: number;
+    checkedAt?: string;
+};
+
+export type EcosystemHealth = {
+    checkedAt: string;
+    summary: { ok: number; degraded: number; down: number; total: number };
+    services: HealthEntry[];
+};
