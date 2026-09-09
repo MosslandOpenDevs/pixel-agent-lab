@@ -86,13 +86,13 @@ export class SpaceHubScene extends Phaser.Scene {
             this.hubMap.setActivity(this.dataBridge.ingested, this.ecosystem.healthCheckedAt);
         });
 
-        // mobile: zoom into one zone at a time (zone tabs drive the camera).
-        // Register the tab listener unconditionally so it is never a dead
-        // control; the handler no-ops on desktop widths.
+        // The tab bar drives the camera at every width. This used to no-op above
+        // 768px, from when the tabs were hidden outside the mobile breakpoint —
+        // once they became visible on desktop, that guard silently made every
+        // click dead: the tab highlighted, the event fired, nothing moved.
         this.zoneSwitchHandler = ((e: Event) => {
-            if (window.innerWidth >= 768) return;
             const zone = (e as CustomEvent).detail?.zone as ZoneKey;
-            if (zone) this.switchZone(zone, true);
+            if (zone && ZONE_VIEWS[zone]) this.switchZone(zone, true);
         }) as EventListener;
         document.addEventListener("zone-switch", this.zoneSwitchHandler);
 

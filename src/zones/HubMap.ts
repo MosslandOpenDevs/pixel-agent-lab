@@ -37,8 +37,11 @@ const COLOR = {
     ok: 0x22c55e,
     degraded: 0xf59e0b,
     down: 0xef4444,
-    unknown: 0x64748b,
-    archived: 0xb08968,
+    /** Not measured — a calm blue-white star, NOT a dead one. Most of these are
+     *  perfectly healthy sites we simply do not probe, and rendering them as
+     *  unlit husks implied an outage: dishonest in the opposite direction. */
+    unmeasured: 0xa9c4e8,
+    archived: 0xc08a5e,
     hub: 0x38bdf8,
 };
 
@@ -91,7 +94,7 @@ export class HubMap {
     private stars: Star[] = [];
 
     private summary?: Phaser.GameObjects.Text;
-    private tooltip?: Phaser.GameObjects.Text;
+    private tipEl?: HTMLDivElement;
     private activityText?: Phaser.GameObjects.Text;
     private hint?: Phaser.GameObjects.Text;
     private bodies: Body[] = [];
@@ -164,10 +167,17 @@ export class HubMap {
         this.sweep = this.scene.add.circle(this.cx, this.cy, 1)
             .setStrokeStyle(2, COLOR.hub, 0.5).setDepth(5).setVisible(false);
 
-        this.tooltip = this.scene.add.text(0, 0, "", {
-            fontFamily: "monospace", fontSize: "12px", color: "#e2e8f0",
-            backgroundColor: "#0b1226f2", padding: { x: 9, y: 6 }, align: "left",
-        }).setOrigin(0.5, 1).setDepth(30).setVisible(false);
+        // The tooltip is a DOM element, not a Phaser Text. The game runs with
+        // `pixelArt: true`, which forces NEAREST filtering, and the whole 1440px
+        // canvas is then downscaled to the stage (~0.68) and again by the camera
+        // zoom. Small glyphs resampled at a non-integer factor with NEAREST are
+        // exactly the mush that made this unreadable. A DOM node is rendered by
+        // the browser at native resolution and stays crisp, without giving up the
+        // pixel-art look of the scene itself.
+        this.tipEl = document.createElement("div");
+        this.tipEl.className = "hub-tip";
+        this.tipEl.hidden = true;
+        document.body.appendChild(this.tipEl);
 
         this.drawField(0, this.cx, this.cy, false);
     }
@@ -241,9 +251,12 @@ export class HubMap {
     private makeBody(node: EcosystemNode, r: number, a: number, index: number): Body {
         const { service, health, instrumentation } = node;
         const archived = service.lifecycle === "archive" || service.status === "deprecated";
+        // Colour carries the health claim, and only a real verdict earns a
+        // verdict colour. No measurement means the neutral star — present, lit,
+        // and making no claim either way.
         const statusColor = health
-            ? (COLOR[health.status as keyof typeof COLOR] as number) ?? COLOR.unknown
-            : COLOR.unknown;
+            ? (COLOR[health.status as keyof typeof COLOR] as number) ?? COLOR.unmeasured
+            : COLOR.unmeasured;
         const color = archived ? COLOR.archived : statusColor;
 
         const baseR = instrumentation === "stream" ? 10 : instrumentation === "health" ? 7.5 : 5;
@@ -254,22 +267,21 @@ export class HubMap {
         let glow: Phaser.GameObjects.Arc | undefined;
         let halo: Phaser.GameObjects.Arc | undefined;
 
-        if (instrumentation === "listed") {
-            // Hollow: no observation to report, and a filled dot would imply one.
-            dot = this.scene.add.circle(x, y, baseR).setStrokeStyle(1.5, color, 0.75);
-        } else {
-            glow = this.scene.add.circle(x, y, baseR * 2.6, color, 0.13).setDepth(8);
-            dot = this.scene.add.circle(x, y, baseR, color);
-            if (instrumentation === "stream") {
-                halo = this.scene.add.circle(x, y, baseR + 9).setStrokeStyle(1.5, color, 0.5).setDepth(9);
-            }
+        // Every registered service is a lit star. What instrumentation changes is
+        // the *character* of the light, never whether there is any: unmeasured
+        // ones shine steadily, measured ones breathe, streaming ones carry a halo.
+        glow = this.scene.add.circle(x, y, baseR * (instrumentation === "listed" ? 2.0 : 2.6),
+            color, instrumentation === "listed" ? 0.09 : 0.13).setDepth(8);
+        dot = this.scene.add.circle(x, y, baseR, color);
+        if (instrumentation === "stream") {
+            halo = this.scene.add.circle(x, y, baseR + 9).setStrokeStyle(1.5, color, 0.5).setDepth(9);
         }
-        dot.setDepth(10).setAlpha(archived ? 0.5 : 1);
+        dot.setDepth(10).setAlpha(archived ? 0.55 : instrumentation === "listed" ? 0.85 : 1);
 
         const label = this.scene.add.text(x, y + baseR + 5, service.name, {
             fontFamily: "monospace",
             fontSize: instrumentation === "stream" ? "13px" : "11px",
-            color: archived ? "#b08968" : instrumentation === "listed" ? "#7c8ba1" : "#e2e8f0",
+            color: archived ? "#c08a5e" : instrumentation === "listed" ? "#a9c4e8" : "#e2e8f0",
         }).setOrigin(0.5, 0).setDepth(10);
         if (archived) label.setAlpha(0.8);
 
@@ -283,20 +295,41 @@ export class HubMap {
         };
 
         dot.on("pointerover", () => { body.hovered = true; this.showTooltip(body); this.scene.input.setDefaultCursor("pointer"); });
-        dot.on("pointerout", () => { body.hovered = false; this.tooltip?.setVisible(false); this.scene.input.setDefaultCursor("default"); });
+        dot.on("pointerout", () => { body.hovered = false; if (this.tipEl) this.tipEl.hidden = true; this.scene.input.setDefaultCursor("default"); });
         dot.on("pointerup", () => this.activate(body));
         return body;
     }
 
     private showTooltip(b: Body): void {
+        const el = this.tipEl;
+        if (!el) return;
         const { service: sv, health, instrumentation } = b.node;
-        const lines = [sv.name, `${sv.lifecycle ?? "lifecycle unspecified"} · ${instrumentation}`];
-        lines.push(health
-            ? `health: ${health.status}${health.latencyMs != null ? ` · ${health.latencyMs}ms` : ""}`
-            : "not health-checked");
-        if (b.archived) lines.push("archived — preserved read-only");
-        lines.push(instrumentation === "stream" ? "click: open its belt" : "click: open the service");
-        this.tooltip?.setText(lines.join("\n")).setPosition(b.dot.x, b.dot.y - b.baseR - 12).setVisible(true);
+        const esc = (v: string) => v.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string));
+        const measured = health
+            ? `<b class="ok">health ${esc(health.status)}</b>${health.latencyMs != null ? ` · ${health.latencyMs}ms` : ""}`
+            : `<span class="dim">not measured by this monitor</span>`;
+        el.innerHTML = `<div class="t">${esc(sv.name)}</div>`
+            + `<div class="m">${esc(sv.lifecycle ?? "lifecycle unspecified")} · ${esc(instrumentation)}</div>`
+            + `<div class="m">${measured}</div>`
+            + (b.archived ? `<div class="m dim">archived — preserved read-only</div>` : "")
+            + `<div class="a">${instrumentation === "stream" ? "click to open its belt" : "click to open the service"}</div>`;
+        el.hidden = false;
+        this.placeTooltip();
+    }
+
+    /** Follows the real cursor, in page coordinates. */
+    private placeTooltip(): void {
+        const el = this.tipEl;
+        const p = this.scene.input.activePointer;
+        if (!el || el.hidden) return;
+        const pad = 14;
+        const r = el.getBoundingClientRect();
+        let x = p.event ? (p.event as MouseEvent).clientX + pad : 0;
+        let y = p.event ? (p.event as MouseEvent).clientY + pad : 0;
+        if (x + r.width > window.innerWidth - 8) x = window.innerWidth - r.width - 8;
+        if (y + r.height > window.innerHeight - 8) y -= r.height + pad * 2;
+        el.style.left = `${Math.max(8, x)}px`;
+        el.style.top = `${Math.max(8, y)}px`;
     }
 
     private activate(b: Body): void {
@@ -351,6 +384,8 @@ export class HubMap {
 
         this.drawField(spinT, inside ? px : this.cx, inside ? py : this.cy, inside);
 
+        if (this.tipEl && !this.tipEl.hidden) this.placeTooltip();
+
         for (const b of this.bodies) {
             const a = b.a + b.spin * spinT;
             const hx = this.cx + Math.cos(a) * b.r;
@@ -375,10 +410,15 @@ export class HubMap {
             b.label.setPosition(x, y + b.baseR + 5);
 
             // Only bodies we can actually observe are allowed to breathe.
+            // Breathing is a claim that something is being watched, so only
+            // measured bodies do it. The rest hold a steady light rather than
+            // going dark.
             const observed = b.instrumentation !== "listed" && !b.archived && !this.reducedMotion;
             const pulse = observed ? 0.78 + 0.22 * Math.sin(t * 1.8 + b.phase) : 1;
-            b.dot.setAlpha((b.archived ? 0.5 : 1) * pulse);
-            b.glow?.setAlpha(observed ? 0.10 + 0.07 * Math.sin(t * 1.8 + b.phase) : 0.08);
+            const rest = b.archived ? 0.55 : b.instrumentation === "listed" ? 0.85 : 1;
+            b.dot.setAlpha(rest * pulse);
+            b.glow?.setAlpha(observed ? 0.10 + 0.07 * Math.sin(t * 1.8 + b.phase)
+                : b.instrumentation === "listed" ? 0.09 : 0.08);
             if (b.halo) b.halo.setScale(0.92 + (observed ? 0.14 * Math.sin(t * 1.8 + b.phase) : 0));
 
             const want = b.hovered ? 1.6 : 1;
@@ -415,7 +455,7 @@ export class HubMap {
         this.sweep?.destroy();
         this.activityText?.destroy();
         this.hint?.destroy();
-        this.tooltip?.destroy();
+        this.tipEl?.remove();
         this.summary?.destroy();
         this.byId.clear();
         this.bodies.forEach(b => { b.dot.destroy(); b.glow?.destroy(); b.halo?.destroy(); b.label.destroy(); });
