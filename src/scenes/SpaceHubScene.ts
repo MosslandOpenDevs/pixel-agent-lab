@@ -135,6 +135,10 @@ export class SpaceHubScene extends Phaser.Scene {
             animate = false;
         }
 
+        // The map HUD is a DOM overlay pinned over the stage, so it has to be
+        // hidden when the camera is showing a belt zone instead.
+        this.hubMap?.setHudVisible(zone === "hub");
+
         if (animate) {
             cam.pan(cx, cy, 300, "Sine.easeInOut");
             cam.zoomTo(zoom, 300, "Sine.easeInOut");
