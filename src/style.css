@@ -436,3 +436,30 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 .eco-life.lab { background: #2a2438; color: #c4b5fd; }
 .eco-life.archive { background: #2b2320; color: #d6a48a; }
 .eco-life.none { background: transparent; color: #475569; }
+
+/* --- Hub map tooltip ------------------------------------------------------ */
+/* Deliberately a DOM node rather than a Phaser Text: the scene runs with
+   `pixelArt: true` (NEAREST filtering) and the 1440px canvas is downscaled to
+   the stage and again by camera zoom, which turns small canvas glyphs to mush.
+   The browser renders this at native resolution instead. */
+.hub-tip {
+    position: fixed;
+    z-index: 1000;
+    pointer-events: none;
+    max-width: 280px;
+    padding: 9px 11px;
+    border-radius: 6px;
+    border: 1px solid #2b4a72;
+    background: rgba(6, 12, 26, 0.97);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #dbe6f5;
+    -webkit-font-smoothing: antialiased;
+}
+.hub-tip .t { font-size: 13px; font-weight: 700; color: #f1f5f9; margin-bottom: 3px; }
+.hub-tip .m { color: #9fb2cc; }
+.hub-tip .m b.ok { color: #7ee2a8; font-weight: 600; }
+.hub-tip .dim { color: #6b7f99; }
+.hub-tip .a { margin-top: 5px; color: #7dd3fc; font-size: 11px; }
