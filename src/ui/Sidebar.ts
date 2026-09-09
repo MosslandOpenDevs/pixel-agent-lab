@@ -28,7 +28,8 @@ export function initSidebar(): void {
     <div id="stage"></div>
   </main>
   <nav class="zone-tabs" role="tablist" aria-label="Service zone">
-    <button class="zone-tab active" data-zone="algora" role="tab" aria-selected="true">Algora</button>
+    <button class="zone-tab active" data-zone="hub" role="tab" aria-selected="true">Map</button>
+    <button class="zone-tab" data-zone="algora" role="tab" aria-selected="false">Algora</button>
     <button class="zone-tab" data-zone="ao" role="tab" aria-selected="false">AO</button>
     <button class="zone-tab" data-zone="bridge" role="tab" aria-selected="false">Bridge</button>
   </nav>
