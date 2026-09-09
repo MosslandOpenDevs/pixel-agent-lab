@@ -145,6 +145,29 @@ export class HubMap {
     /** Set by the scene so a streaming body can open its belt. */
     onOpenZone?: (zone: string) => void;
 
+    /**
+     * Shows or hides everything this map draws.
+     *
+     * It has to exist. The backdrop is deliberately enormous — it must cover the
+     * hub's overscan, which on a portrait phone runs ~2000px past the map
+     * rectangle — and it sits in a depth band above the belt zones so those
+     * cannot paint through it. Left visible, that single rectangle covers the
+     * whole world: switching to a belt moved the camera onto a zone that was
+     * completely obscured, which looked exactly like the tab doing nothing.
+     *
+     * Selecting by depth rather than keeping a list means dynamically created
+     * bodies and motes are covered automatically. Nothing else in the scene uses
+     * this band — the belt zones top out around 12, the header sits at 100.
+     */
+    setMapVisible(visible: boolean): void {
+        for (const o of this.scene.children.list) {
+            const obj = o as Phaser.GameObjects.GameObject & { depth?: number; setVisible?: (v: boolean) => unknown };
+            if (typeof obj.depth === "number" && obj.depth >= D && typeof obj.setVisible === "function") {
+                obj.setVisible(visible);
+            }
+        }
+    }
+
     constructor(scene: Phaser.Scene, cx: number, cy: number, w: number, h: number) {
         this.scene = scene;
         this.cx = cx; this.cy = cy; this.w = w; this.h = h;
@@ -304,6 +327,7 @@ export class HubMap {
     setHudVisible(visible: boolean): void {
         if (this.hudEl) this.hudEl.hidden = !visible;
         if (this.labelLayer) this.labelLayer.hidden = !visible;
+        this.setMapVisible(visible);
     }
 
     setActivity(ingested: Record<string, number>, healthCheckedAt: string | null): void {
@@ -364,6 +388,10 @@ export class HubMap {
                 this.byId.set(node.service.id, body);
             });
         }
+
+        // A rebuild can land while a belt zone is showing; new objects default to
+        // visible, so re-apply the current state.
+        this.setMapVisible(!this.hudEl?.hidden);
 
         const streaming = nodes.filter(n => n.instrumentation === "stream").length;
         const health = nodes.filter(n => n.instrumentation === "health").length;
