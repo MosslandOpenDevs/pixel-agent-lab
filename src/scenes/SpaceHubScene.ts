@@ -5,7 +5,8 @@ import { AOZone } from "../zones/AOZone.ts";
 import { BridgeZone } from "../zones/BridgeZone.ts";
 import { CentralMonitor } from "../zones/CentralMonitor.ts";
 import { DataBridge } from "../services/data-bridge.ts";
-import { setConnectionStatus, updateSidebar } from "../ui/Sidebar.ts";
+import { EcosystemFeed } from "../services/ecosystem-feed.ts";
+import { setConnectionStatus, updateSidebar, updateEcosystem } from "../ui/Sidebar.ts";
 
 const W = 1440;
 const H = 760;
@@ -24,6 +25,7 @@ export class SpaceHubScene extends Phaser.Scene {
     private bridgeZone!: BridgeZone;
     private centralMonitor!: CentralMonitor;
     private dataBridge!: DataBridge;
+    private ecosystem!: EcosystemFeed;
     private sidebarTimer = 0;
     private currentZone: ZoneKey = "algora";
     private zoneSwitchHandler?: EventListener;
@@ -60,6 +62,12 @@ export class SpaceHubScene extends Phaser.Scene {
             setConnectionStatus(state);
         });
 
+        // Registry + cross-service health. Separate from DataBridge because it
+        // runs on its own far slower cadence (see EcosystemFeed) and is not part
+        // of the LIVE/OFFLINE verdict for the three visualized services.
+        this.ecosystem = new EcosystemFeed();
+        this.ecosystem.init().then(() => updateEcosystem(this.ecosystem));
+
         // mobile: zoom into one zone at a time (zone tabs drive the camera).
         // Register the tab listener unconditionally so it is never a dead
         // control; the handler no-ops on desktop widths.
@@ -86,6 +94,7 @@ export class SpaceHubScene extends Phaser.Scene {
         if (this.zoneSwitchHandler) document.removeEventListener("zone-switch", this.zoneSwitchHandler);
         if (this.resizeHandler) this.scale.off("resize", this.resizeHandler);
         this.dataBridge?.destroy();
+        this.ecosystem?.destroy();
     }
 
     private switchZone(zone: ZoneKey, animate: boolean): void {
@@ -123,6 +132,7 @@ export class SpaceHubScene extends Phaser.Scene {
         if (this.sidebarTimer > 500) {
             this.sidebarTimer = 0;
             updateSidebar(this.dataBridge);
+            updateEcosystem(this.ecosystem);
         }
     }
 

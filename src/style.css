@@ -330,3 +330,66 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
     .zone-tab.active[data-zone="ao"]      { color: #fcd34d; border-top-color: #fcd34d; }
     .zone-tab.active[data-zone="bridge"]  { color: #60a5fa; border-top-color: #60a5fa; }
 }
+
+/* --- Ecosystem panel (links.moss.land registry) -------------------------- */
+/* The visual weight of a row encodes how much this monitor can actually see:
+   a service we only know the name of must not read as healthy. */
+
+.eco-group { margin-top: 8px; }
+
+.eco-group-title {
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin: 6px 0 3px;
+}
+
+.eco-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    font-size: 10px;
+    color: #cbd5e1;
+    text-decoration: none;
+}
+
+.eco-row:hover { color: #e2e8f0; }
+.eco-row:focus-visible { outline: 1px solid #38bdf8; outline-offset: 2px; }
+
+.eco-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Streaming services are the two with real telemetry — the only ones allowed
+   to look fully "on". */
+.eco-row.streaming .eco-name { color: #f1f5f9; font-weight: 600; }
+
+/* Archived: still on the map, visibly not alive. */
+.eco-row.archived { opacity: 0.45; }
+.eco-row.archived .eco-name { text-decoration: line-through; }
+
+.eco-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+    background: #475569;
+}
+.eco-dot.ok { background: #22c55e; }
+.eco-dot.degraded { background: #f59e0b; }
+.eco-dot.down { background: #ef4444; }
+/* Not health-checked: hollow, so absence of information never reads as green. */
+.eco-dot.unknown { background: transparent; box-shadow: inset 0 0 0 1px #475569; }
+
+.eco-life {
+    font-size: 8px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    letter-spacing: 0.04em;
+    background: #1e293b;
+    color: #94a3b8;
+}
+.eco-life.beta { background: #14324a; color: #7dd3fc; }
+.eco-life.lab { background: #2a2438; color: #c4b5fd; }
+.eco-life.archive { background: #2b2320; color: #d6a48a; }
+.eco-life.none { background: transparent; color: #475569; }
