@@ -142,8 +142,13 @@ server {
     location = /api/health {
         proxy_hide_header Access-Control-Allow-Origin;
         proxy_hide_header Vary;
-        add_header Access-Control-Allow-Origin $cors_origin always;
-        add_header Vary "Accept-Encoding, Origin" always;
+        # Health is public, uncredentialed liveness data, so the ecosystem
+        # contract publishes it at ACAO:* rather than through $cors_origin --
+        # a consumer we have not thought of yet should still be able to read it.
+        # The allow-list still guards the *-api/ proxies below, which is where
+        # the requesting origin actually matters.
+        add_header Access-Control-Allow-Origin "*" always;
+        add_header Vary "Accept-Encoding" always;
         add_header Cache-Control "no-cache" always;
         proxy_pass http://monitor_web/health.json;
         proxy_http_version 1.1;
