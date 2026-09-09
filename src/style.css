@@ -478,6 +478,12 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
    are fixed-position labels, so nothing is lost by lifting them out. */
 #stage { position: relative; }
 
+/* `display: flex` below outranks the user-agent's `[hidden] { display: none }`,
+   so setting .hidden on this element silently did nothing — the HUD stayed on
+   screen over the belt zones. Any element given an explicit display needs this. */
+.hub-hud[hidden],
+.hub-labels[hidden] { display: none !important; }
+
 .hub-hud {
     position: absolute;
     inset: 0;
