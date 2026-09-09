@@ -8,14 +8,13 @@ import type {
     AlgoraStats,
     AOStatus,
     BridgeStats,
-    BridgeProposal,
     BridgeOutcome,
     BridgeTrustEntry,
     UnifiedSignal,
 } from "./types.ts";
 import { fetchAlgoraSignals, fetchAlgoraIssues, fetchAlgoraStats } from "./algora-client.ts";
 import { fetchAOSignals, fetchAODebates, fetchAOStatus, fetchAOIdeas, fetchAOPlans, fetchAOProjects } from "./ao-client.ts";
-import { fetchBridgeSignals, fetchBridgeStats, fetchBridgeProposals, fetchBridgeOutcomes, fetchBridgeTrustLeaderboard } from "./bridge-client.ts";
+import { fetchBridgeSignals, fetchBridgeStats, fetchBridgeOutcomes, fetchBridgeTrustLeaderboard } from "./bridge-client.ts";
 
 // --- Source normalizer ---
 function normalizeSource(raw: string): string {
@@ -109,7 +108,6 @@ export class DataBridge {
     ideaCache: AOIdea[] = [];
     planCache: AOPlan[] = [];
     projectCache: AOProject[] = [];
-    proposalCache: BridgeProposal[] = [];
     outcomeCache: BridgeOutcome[] = [];
     trustCache: BridgeTrustEntry[] = [];
 
@@ -188,8 +186,11 @@ export class DataBridge {
         if (projects.status === "fulfilled") this.projectCache = projects.value;
     }
     private async pollBridgeGovernance(): Promise<void> {
-        const [props, outs, trust] = await Promise.allSettled([fetchBridgeProposals(), fetchBridgeOutcomes(), fetchBridgeTrustLeaderboard()]);
-        if (props.status === "fulfilled") this.proposalCache = props.value;
+        // Bridge's proposal list is deliberately NOT fetched here: /bridge-api/proposals
+        // returns the full collection (~3.3 MB, and the API ignores ?limit), and nothing
+        // in the app reads it — the proposal figures shown in the sidebar come from
+        // /bridge-api/stats instead. Re-adding it needs a server-side limit first.
+        const [outs, trust] = await Promise.allSettled([fetchBridgeOutcomes(), fetchBridgeTrustLeaderboard()]);
         if (outs.status === "fulfilled") this.outcomeCache = outs.value;
         if (trust.status === "fulfilled") this.trustCache = trust.value;
     }

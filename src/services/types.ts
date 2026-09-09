@@ -152,6 +152,10 @@ export type BridgeStats = {
     };
 };
 
+// Response shape of /bridge-api/proposals. Kept as the documented contract even
+// though nothing fetches it today: the endpoint returns the full collection
+// (~3.3 MB) and ignores ?limit, so it is not worth polling until the API grows
+// server-side pagination. Proposal counts come from /bridge-api/stats instead.
 export type BridgeProposal = {
     id: string;
     title: string;
