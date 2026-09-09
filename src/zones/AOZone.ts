@@ -241,8 +241,12 @@ export class AOZone {
         });
 
         // funnel
+        // Guard `stats`, not just the envelope: /ao-api/status can answer 200
+        // with a degraded body that omits `stats`, and this runs every frame —
+        // an unguarded deref would throw on each update and stop the Bridge and
+        // CentralMonitor updates that follow it in SpaceHubScene.
         const ls = dataBridge.liveStats.ao;
-        if (ls) {
+        if (ls?.stats) {
             this.funnelText?.setText(
                 `Ideas: ${ls.stats.ideas_generated} \u2192 Plans: ${ls.stats.plans_created} \u2192 Projects: ${this.totalProjects}`
             );

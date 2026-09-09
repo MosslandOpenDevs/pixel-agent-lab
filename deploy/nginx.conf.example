@@ -5,6 +5,11 @@
 # production MUST provide these three proxies itself. Path rewrites below mirror
 # vite.config.ts. Adjust upstream host:port to match your deployment.
 #
+# This mirrors the configuration verified running in front of monitor.moss.land
+# (nginx 1.18). Two deployment shapes are supported below: serving `dist/` from
+# local disk, or proxying to the PM2 `serve` process (ecosystem.config.cjs,
+# port 6300) — which may live on a different host than nginx.
+#
 # CORS (GitHub issue #1): monitor is ALSO consumed cross-origin — e.g. the
 # moss.land homepage governance widget fetches these endpoints from a different
 # origin. Hardcoding a single `Access-Control-Allow-Origin: https://moss.land`
@@ -12,90 +17,180 @@
 # Offline (0/3). Reflect an allow-list of origins and answer OPTIONS preflight
 # instead, and hide any fixed ACAO the upstream may already send.
 
-# --- http{} context ---------------------------------------------------------
-# Reflect the request Origin only when it is allow-listed; empty otherwise
-# (an empty ACAO is treated as "not allowed" by the browser).
+# --- http{} context (e.g. /etc/nginx/conf.d/cors-map.conf) -------------------
+# Reflect the request Origin only when it is allow-listed; empty otherwise.
+# nginx omits a header whose value is an empty string, so a non-allow-listed
+# origin simply receives no Access-Control-Allow-Origin at all.
 map $http_origin $cors_origin {
     default                      "";
-    "~^https://moss\.land$"      $http_origin;
-    "~^https://www\.moss\.land$" $http_origin;
-    "~^http://localhost:5173$"   $http_origin;   # local dev
+    "https://moss.land"          $http_origin;
+    "https://www.moss.land"      $http_origin;
+    "http://localhost:5173"      $http_origin;   # local dev (omit in production)
 }
 
-# Optional but recommended: collapse www -> apex so there is a single origin.
+# Recommended: collapse www -> apex so there is a single origin. Note this must
+# cover :443 — the origin that broke in issue #1 was https://www.moss.land, and
+# a :80-only redirect never sees it.
 # server {
 #     listen 80;
+#     listen 443 ssl;
 #     server_name www.moss.land;
+#     ssl_certificate     /etc/letsencrypt/live/www.moss.land/fullchain.pem;
+#     ssl_certificate_key /etc/letsencrypt/live/www.moss.land/privkey.pem;
 #     return 301 https://moss.land$request_uri;
 # }
 
+# Origin serving the built SPA. Point this at wherever `npm run build` output is
+# served from — the PM2 `serve` process on this host, or another host entirely.
+upstream monitor_web {
+    server 127.0.0.1:6300;
+    keepalive 32;
+}
+
+# --- HTTP -> HTTPS ----------------------------------------------------------
 server {
     listen 80;
     server_name monitor.moss.land;
 
-    # Static build output. Either serve dist directly (as below) or proxy_pass
-    # to the PM2 `serve` process (ecosystem.config.cjs, port 6300).
-    root /var/www/pixel-agent-lab/dist;
-    index index.html;
+    # The redirect MUST live inside `location /`, not at server level: a
+    # server-level `return` runs in the rewrite phase, before nginx selects a
+    # location, so it would swallow the ACME challenge below and webroot
+    # issuance/renewal would 301 instead of serving the token.
+    location ^~ /.well-known/acme-challenge/ {
+        default_type "text/plain";
+        root /var/www/monitor.moss.land;
+    }
 
     location / {
-        try_files $uri $uri/ /index.html;
+        return 301 https://$server_name$request_uri;
+    }
+}
+
+# --- HTTPS ------------------------------------------------------------------
+server {
+    listen 443 ssl http2;
+    server_name monitor.moss.land;
+
+    ssl_certificate     /etc/letsencrypt/live/monitor.moss.land/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/monitor.moss.land/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    add_header X-Frame-Options        "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy        "strict-origin-when-cross-origin" always;
+
+    # Compress proxied JSON. Debian/Ubuntu ships nginx.conf with `gzip on;` but
+    # `gzip_proxied` and `gzip_types` COMMENTED OUT — their defaults (`off` and
+    # `text/html`) each independently prevent proxied JSON from being compressed,
+    # so the API responses ship uncompressed unless this is set. Measured on the
+    # Bridge and AO endpoints: ~74-78% smaller. Scoped to this server block so
+    # other vhosts on the same nginx are unaffected.
+    gzip_proxied    any;
+    gzip_min_length 1024;
+    gzip_comp_level 5;
+    gzip_types      application/json;
+
+    proxy_connect_timeout 60s;
+    proxy_send_timeout    60s;
+    proxy_read_timeout    60s;
+
+    # --- Static SPA ---------------------------------------------------------
+    # Option A (nginx serves the build directly):
+    #     root /var/www/pixel-agent-lab/dist;
+    #     index index.html;
+    #     location / { try_files $uri $uri/ /index.html; }
+    # Option B (proxy to the PM2 `serve` process), as used in production:
+    location / {
+        proxy_pass http://monitor_web;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Algora:  /algora-api/*  ->  http://127.0.0.1:3201/api/*
+    # --- API proxies --------------------------------------------------------
+    # Rewrites mirror vite.config.ts exactly:
+    #   /algora-api/x -> :3201/api/x     (trailing slash on proxy_pass strips the prefix)
+    #   /ao-api/x     -> :3001/x
+    #   /bridge-api/x -> :3101/api/x
+    #
+    # Each block: hide any CORS/Vary headers the upstream already sets (so they
+    # cannot duplicate or contradict ours), then set our own. `always` makes them
+    # apply to error responses too, so a failing upstream still produces a CORS-
+    # valid response and the browser reports the real status instead of throwing
+    # an opaque network error.
+    #
+    # Vary must name BOTH Origin (ACAO is reflected per-origin) and
+    # Accept-Encoding (gzip above) — these responses are `public` cacheable, so
+    # omitting Origin lets a shared cache serve one origin's ACAO to another.
+
     location /algora-api/ {
-        if ($request_method = OPTIONS) {
-            add_header Access-Control-Allow-Origin  $cors_origin always;
-            add_header Access-Control-Allow-Methods "GET, OPTIONS" always;
-            add_header Access-Control-Allow-Headers "Content-Type" always;
-            add_header Access-Control-Max-Age       86400 always;
-            add_header Content-Length 0;
-            return 204;
-        }
         proxy_hide_header Access-Control-Allow-Origin;
-        add_header Access-Control-Allow-Origin $cors_origin always;
-        add_header Vary Origin always;
+        proxy_hide_header Access-Control-Allow-Credentials;
+        proxy_hide_header Access-Control-Allow-Methods;
+        proxy_hide_header Access-Control-Allow-Headers;
+        proxy_hide_header Vary;
+
+        add_header Access-Control-Allow-Origin  $cors_origin always;
+        add_header Access-Control-Allow-Methods "GET, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Content-Type" always;
+        add_header Vary "Accept-Encoding, Origin" always;
+
+        if ($request_method = OPTIONS) { return 204; }
+
         proxy_pass http://127.0.0.1:3201/api/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # AO:      /ao-api/*      ->  http://127.0.0.1:3001/*
     location /ao-api/ {
-        if ($request_method = OPTIONS) {
-            add_header Access-Control-Allow-Origin  $cors_origin always;
-            add_header Access-Control-Allow-Methods "GET, OPTIONS" always;
-            add_header Access-Control-Allow-Headers "Content-Type" always;
-            add_header Access-Control-Max-Age       86400 always;
-            add_header Content-Length 0;
-            return 204;
-        }
         proxy_hide_header Access-Control-Allow-Origin;
-        add_header Access-Control-Allow-Origin $cors_origin always;
-        add_header Vary Origin always;
+        proxy_hide_header Access-Control-Allow-Credentials;
+        proxy_hide_header Access-Control-Allow-Methods;
+        proxy_hide_header Access-Control-Allow-Headers;
+        proxy_hide_header Vary;
+
+        add_header Access-Control-Allow-Origin  $cors_origin always;
+        add_header Access-Control-Allow-Methods "GET, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Content-Type" always;
+        add_header Vary "Accept-Encoding, Origin" always;
+
+        if ($request_method = OPTIONS) { return 204; }
+
         proxy_pass http://127.0.0.1:3001/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Bridge:  /bridge-api/*  ->  http://127.0.0.1:3101/api/*
     location /bridge-api/ {
-        if ($request_method = OPTIONS) {
-            add_header Access-Control-Allow-Origin  $cors_origin always;
-            add_header Access-Control-Allow-Methods "GET, OPTIONS" always;
-            add_header Access-Control-Allow-Headers "Content-Type" always;
-            add_header Access-Control-Max-Age       86400 always;
-            add_header Content-Length 0;
-            return 204;
-        }
         proxy_hide_header Access-Control-Allow-Origin;
-        add_header Access-Control-Allow-Origin $cors_origin always;
-        add_header Vary Origin always;
+        proxy_hide_header Access-Control-Allow-Credentials;
+        proxy_hide_header Access-Control-Allow-Methods;
+        proxy_hide_header Access-Control-Allow-Headers;
+        proxy_hide_header Vary;
+
+        add_header Access-Control-Allow-Origin  $cors_origin always;
+        add_header Access-Control-Allow-Methods "GET, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Content-Type" always;
+        add_header Vary "Accept-Encoding, Origin" always;
+
+        if ($request_method = OPTIONS) { return 204; }
+
         proxy_pass http://127.0.0.1:3101/api/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
