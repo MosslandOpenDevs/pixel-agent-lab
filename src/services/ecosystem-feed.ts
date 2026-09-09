@@ -11,6 +11,9 @@ export type Instrumentation = "stream" | "health" | "listed";
 /** Services whose data this monitor actually polls (see DataBridge). */
 const STREAMING_IDS = new Set(["ao", "bridge"]);
 
+/** The service that publishes the health aggregate (city.moss.land). */
+const AGGREGATOR_ID = "city";
+
 export type EcosystemNode = {
     service: RegistryService;
     health: HealthEntry | null;
@@ -43,9 +46,14 @@ export class EcosystemFeed {
     nodes(): EcosystemNode[] {
         return this.registry.map(service => {
             const health = this.health.get(service.id) ?? null;
+            // Grade on evidence we actually hold, not on evidence that could in
+            // principle be collected. A registry `statusUrl` we never call is not
+            // an observation, and grading on it promoted two services (signal,
+            // city) above `listed` with `health: null` behind them — which
+            // HubMap then drew filled and pulsing.
             const instrumentation: Instrumentation = STREAMING_IDS.has(service.id)
                 ? "stream"
-                : health || service.statusUrl
+                : health
                     ? "health"
                     : "listed";
             return { service, health, instrumentation };
@@ -94,7 +102,18 @@ export class EcosystemFeed {
     private async pollHealth(): Promise<void> {
         const data = await this.withSignal(s => fetchEcosystemHealth(s));
         if (this.destroyed || !data) return;
-        this.health = new Map(data.services.map(h => [h.service, h]));
+        const entries = new Map(data.services.map(h => [h.service, h] as const));
+        // The aggregator does not report on itself, but a successful response is
+        // first-hand proof that it answered — so record that, rather than leaving
+        // the one service we demonstrably reached looking unobserved.
+        if (!entries.has(AGGREGATOR_ID)) {
+            entries.set(AGGREGATOR_ID, {
+                service: AGGREGATOR_ID,
+                status: "ok",
+                checkedAt: data.checkedAt,
+            });
+        }
+        this.health = new Map(entries);
         this.healthCheckedAt = data.checkedAt ?? null;
     }
 
