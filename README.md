@@ -25,7 +25,7 @@ The conceptual governance loop the three services share:
 
 `Signals → Issues → Debates/Plans → Execution/Delegation → Outcomes/Proof → Feedback`
 
-> The screen renders the three services as **independent zones with no connecting lines** — the sidebar frames them as three independent services. For the real cross-service data-handoff contract, see [`docs/mossland-services-overview.md`](docs/mossland-services-overview.md).
+> The screen renders the three services as **independent zones with no connecting lines** — the sidebar frames them as three independent services. For the conceptual cross-service data-handoff model, see [`docs/mossland-services-overview.md`](docs/mossland-services-overview.md) (its handoff section is explicitly a design sketch, not an implemented contract).
 
 ## Services
 
@@ -42,7 +42,7 @@ The conceptual governance loop the three services share:
     - A `LOADER` bot picks up incoming signals and loads them onto a vertical conveyor belt.
     - 11 agent clusters (38 agents total): Visionaries · Builders · Investors · Guardians · Operatives · Moderators · Advisors · Orchestrators · Archivists · Red Team · Scouts.
     - A 9-stage pipeline: Signal Intake → Issue Detection → Workflow Dispatch → Specialist Work → Doc Production → Dual-House Vote → Approval Route → Execution → Outcome Verify.
-    - Signals are promoted to issue cards partway along the belt; produced documents (`DP` · `GP` · `PA` · `WGC` · `ER` · `DR`) collect in a side dock.
+    - Signals are promoted to issue cards partway along the belt; a fixed legend below the stage column names the document types the pipeline produces (`DP` · `GP` · `PA` · `WGC` · `ER` · `DR`). The legend is static — it labels the types rather than counting them.
 
 ### AO — Debate & Plan · `:3001`
 
@@ -65,10 +65,10 @@ The conceptual governance loop the three services share:
 ## Interface
 
 ### Left panel
-- **Connection status** — a single aggregate LIVE / OFFLINE (LIVE while any service is reachable; "OFFLINE — no service reachable" only when all three are down).
-- **Stats** — signal queue, Algora issues, AO debate count.
+- **Connection status** — a single aggregate `Connecting…` / `LIVE` / `OFFLINE`. It stays `Connecting…` until the first poll settles, is `LIVE` while any service is reachable, and only reports "OFFLINE — no service reachable" once a poll has actually found all three down.
+- **Stats** — signal queue depth, Algora open issues, and AO debates today. The last two are the services' own totals; a service that did not respond shows `—`.
 - **Service I/O** — Algora / AO / Bridge listed separately, each with its own LIVE badge reflecting that service's reachability.
-- **About** — a legend for the visualization.
+- **About** — a one-paragraph description of what the screen is showing.
 
 ### Right stage
 - **Algora** — vertical belt + 9-stage pipeline + 11 agent-cluster arc.
@@ -84,8 +84,8 @@ The conceptual governance loop the three services share:
 
 ### Live data
 - All three services (Algora / AO / Bridge) are polled every **15 seconds**.
-- Boxes on the **Algora** and **AO** belts are real signals and ideas pulled from each service's API; the **Bridge** lane animates a steady proposal flow while its real proposal, outcome, and trust data drive the L-stage stats and the Trust & Outcomes panel.
-- Partial responses, missing fields, or a service outage never crash the view — the affected service simply drops its LIVE badge and falls back to placeholder counts while the rest keeps rendering.
+- The **Algora** belt is fed from a single merged queue of live signals from all three services' signal endpoints — it shows the whole sensed stream, not Algora-only traffic. **AO** belt bubbles are real AO ideas, and the belt stays empty when none are cached rather than inventing placeholder ones. The **Bridge** lane animates a steady proposal flow; its real outcome and trust data drive the Trust & Outcomes panel. (The `L0`-`L4` stage labels are static — no live figures are attached to them.)
+- Partial responses, missing fields, or a service outage never crash the view — the affected service drops its LIVE badge and its figures show `—`, while the rest keeps rendering. No number is ever substituted from another source in place of a figure the service did not return.
 
 ## Data Flow (per zone · independent)
 
@@ -95,7 +95,7 @@ The three services run **their own pipelines** independently, with no connecting
 - **AO** — ideas arrive → promoted to Plan (≥ 7) / Project (≥ 8) by score, or fade out → funnel totals.
 - **Bridge** — proposals arrive → run L0–L4 → swap to Outcome Proof at L4 → discharged.
 
-When data is empty or a service is offline, each zone holds its placeholder state and the sidebar honestly reflects LIVE/OFFLINE per service.
+When data is empty or a service is offline, each zone goes quiet rather than manufacturing items, and the sidebar honestly reflects LIVE/OFFLINE per service.
 
 ## Tech Stack
 

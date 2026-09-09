@@ -122,23 +122,7 @@ export class SpaceHubScene extends Phaser.Scene {
         this.sidebarTimer += dt;
         if (this.sidebarTimer > 500) {
             this.sidebarTimer = 0;
-            updateSidebar(this.dataBridge, {
-                algora: {
-                    signals: this.algoraZone.signalsProcessed,
-                    issues: this.algoraZone.issuesDetected,
-                    docs: this.algoraZone.docsProduced,
-                },
-                ao: {
-                    ideas: this.aoZone.totalIdeas,
-                    plans: this.aoZone.totalPlans,
-                    projects: this.aoZone.totalProjects,
-                },
-                bridge: {
-                    proposals: this.bridgeZone.proposalCount,
-                    outcomes: this.bridgeZone.outcomeCount,
-                    successRate: this.bridgeZone.successRate,
-                },
-            });
+            updateSidebar(this.dataBridge);
         }
     }
 

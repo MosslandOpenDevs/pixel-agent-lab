@@ -50,8 +50,6 @@ export class BridgeZone {
     private trustLabels: Phaser.GameObjects.Text[] = [];
     private outcomeLog?: Phaser.GameObjects.Text;
 
-    proposalCount = 0;
-    outcomeCount = 0;
     successRate = 0;
 
     constructor(scene: Phaser.Scene) {
@@ -175,8 +173,6 @@ export class BridgeZone {
         // update stats
         const bs = dataBridge.liveStats.bridge;
         if (bs) {
-            this.proposalCount = bs.proposals?.total ?? 0;
-            this.outcomeCount = bs.outcomes?.totalProofs ?? 0;
             this.successRate = bs.outcomes?.successRate ?? 0;
         }
 
