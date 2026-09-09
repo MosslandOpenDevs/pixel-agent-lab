@@ -24,6 +24,14 @@ import type { EcosystemNode, Instrumentation } from "../services/ecosystem-feed.
  *   refresh). Each corresponds to something that happened.
  */
 
+const RING_LABELS: Record<string, string> = {
+    official: "OFFICIAL",
+    participation: "PARTICIPATION",
+    developers: "DEVELOPERS",
+    markets: "MARKETS",
+    ecosystem: "ECOSYSTEM",
+};
+
 const RING_RADII: Record<string, number> = {
     official: 104,
     participation: 172,
@@ -93,10 +101,10 @@ export class HubMap {
     private orbitGfx?: Phaser.GameObjects.Graphics;
     private stars: Star[] = [];
 
-    private summary?: Phaser.GameObjects.Text;
     private tipEl?: HTMLDivElement;
-    private activityText?: Phaser.GameObjects.Text;
-    private hint?: Phaser.GameObjects.Text;
+    private hudEl?: HTMLDivElement;
+    private countsEl?: HTMLElement;
+    private activityEl?: HTMLElement;
     private bodies: Body[] = [];
 
     private signature = "";
@@ -146,23 +154,22 @@ export class HubMap {
         this.scene.add.circle(this.cx, this.cy, 34, 0x0b1226, 0.9).setStrokeStyle(2, COLOR.hub, 0.85).setDepth(6);
         this.scene.add.circle(this.cx, this.cy, 22, COLOR.hub, 0.10).setDepth(6);
         this.scene.add.circle(this.cx, this.cy, 9, COLOR.hub).setDepth(7);
-        this.scene.add.text(this.cx, this.cy + 44, "MOSSLAND", {
+        this.crisp(this.scene.add.text(this.cx, this.cy + 44, "MOSSLAND", {
             fontFamily: "monospace", fontSize: "14px", color: "#7dd3fc",
-        }).setOrigin(0.5).setDepth(7);
+        }).setOrigin(0.5).setDepth(7));
 
-        this.summary = this.scene.add.text(this.cx, this.cy - this.h / 2 + 26, "Loading registry…", {
-            fontFamily: "monospace", fontSize: "15px", color: "#cbd5e1",
-            backgroundColor: "#03060fcc", padding: { x: 12, y: 5 },
-        }).setOrigin(0.5).setDepth(8);
+        // Ring names: the orbits were pure geometry before, carrying none of the
+        // grouping they actually encode.
+        for (const [section, r] of Object.entries(RING_RADII)) {
+            this.crisp(this.scene.add.text(this.cx, this.cy - r - 9, RING_LABELS[section] ?? section, {
+                fontFamily: "monospace", fontSize: "10px", color: "#3f5b80",
+            }).setOrigin(0.5, 1).setDepth(5));
+        }
 
-        this.activityText = this.scene.add.text(this.cx, this.cy + this.h / 2 - 44, "", {
-            fontFamily: "monospace", fontSize: "13px", color: "#64748b",
-        }).setOrigin(0.5).setDepth(8);
-
-        this.hint = this.scene.add.text(this.cx, this.cy + this.h / 2 - 24,
-            "hover a body for detail  ·  click to open it", {
-            fontFamily: "monospace", fontSize: "11px", color: "#3f4d63",
-        }).setOrigin(0.5).setDepth(8);
+        // The HUD lives in the DOM for the same reason as the tooltip: these are
+        // fixed-position labels, and canvas text here is filtered NEAREST and then
+        // downscaled twice, which is what made it mushy.
+        this.buildHud();
 
         this.sweep = this.scene.add.circle(this.cx, this.cy, 1)
             .setStrokeStyle(2, COLOR.hub, 0.5).setDepth(5).setVisible(false);
@@ -180,6 +187,48 @@ export class HubMap {
         document.body.appendChild(this.tipEl);
 
         this.drawField(0, this.cx, this.cy, false);
+    }
+
+    /**
+     * World-anchored text has to stay on the canvas, so make it survive the
+     * downscale: render the glyph texture at 3x and let it filter LINEAR. The
+     * game runs `pixelArt: true`, which sets NEAREST globally — right for the
+     * sprites, ruinous for small text resampled at a non-integer factor.
+     */
+    private crisp(t: Phaser.GameObjects.Text): Phaser.GameObjects.Text {
+        t.setResolution(3);
+        t.texture?.setFilter(Phaser.Textures.FilterMode.LINEAR);
+        return t;
+    }
+
+    private buildHud(): void {
+        // Anchor to #stage (which the canvas fills) rather than .stage-wrap, so
+        // the HUD sits on the map instead of floating in the letterbox above it.
+        const host = document.querySelector<HTMLElement>("#stage")
+            ?? document.querySelector<HTMLElement>(".stage-wrap") ?? document.body;
+        const el = document.createElement("div");
+        el.className = "hub-hud";
+        el.innerHTML = `
+          <div class="hud-top">
+            <div class="hud-title">ECOSYSTEM MAP</div>
+            <div class="hud-counts" id="hubCounts">Loading registry…</div>
+          </div>
+          <div class="hud-legend">
+            <span><i class="k stream"></i>streaming — this monitor reads its data</span>
+            <span><i class="k health"></i>health-checked — status from the aggregator</span>
+            <span><i class="k listed"></i>listed — registered, not measured here</span>
+            <span><i class="k archived"></i>archived — preserved read-only</span>
+          </div>
+          <div class="hud-foot"><span id="hubActivity"></span><span class="hud-hint">hover a body for detail · click to open it</span></div>`;
+        host.appendChild(el);
+        this.hudEl = el;
+        this.countsEl = el.querySelector<HTMLElement>("#hubCounts") ?? undefined;
+        this.activityEl = el.querySelector<HTMLElement>("#hubActivity") ?? undefined;
+    }
+
+    /** The HUD only makes sense over the map, so hide it in the belt zones. */
+    setHudVisible(visible: boolean): void {
+        if (this.hudEl) this.hudEl.hidden = !visible;
     }
 
     setActivity(ingested: Record<string, number>, healthCheckedAt: string | null): void {
@@ -200,9 +249,10 @@ export class HubMap {
             this.lastHealthAt = healthCheckedAt;
             if (!this.reducedMotion) this.sweepT = 0;
         }
-        this.activityText?.setText(
-            this.signalsSeen > 0 ? `${this.signalsSeen} signals ingested this session` : "",
-        );
+        if (this.activityEl) {
+            this.activityEl.textContent =
+                this.signalsSeen > 0 ? `${this.signalsSeen} signals ingested this session` : "";
+        }
     }
 
     private emitMote(originId: string): void {
@@ -243,9 +293,11 @@ export class HubMap {
         const streaming = nodes.filter(n => n.instrumentation === "stream").length;
         const health = nodes.filter(n => n.instrumentation === "health").length;
         const listed = nodes.filter(n => n.instrumentation === "listed").length;
-        this.summary?.setText(
-            `${nodes.length} registered   ·   ${streaming} streaming   ·   ${health} health-checked   ·   ${listed} listed only`,
-        );
+        if (this.countsEl) {
+            this.countsEl.innerHTML =
+                `<b>${nodes.length}</b> registered <i>·</i> <b>${streaming}</b> streaming `
+                + `<i>·</i> <b>${health}</b> health-checked <i>·</i> <b>${listed}</b> listed only`;
+        }
     }
 
     private makeBody(node: EcosystemNode, r: number, a: number, index: number): Body {
@@ -278,11 +330,12 @@ export class HubMap {
         }
         dot.setDepth(10).setAlpha(archived ? 0.55 : instrumentation === "listed" ? 0.85 : 1);
 
-        const label = this.scene.add.text(x, y + baseR + 5, service.name, {
+        const label = this.crisp(this.scene.add.text(x, y + baseR + 5, service.name, {
             fontFamily: "monospace",
             fontSize: instrumentation === "stream" ? "13px" : "11px",
             color: archived ? "#c08a5e" : instrumentation === "listed" ? "#a9c4e8" : "#e2e8f0",
-        }).setOrigin(0.5, 0).setDepth(10);
+            resolution: 3,
+        }).setOrigin(0.5, 0).setDepth(10));
         if (archived) label.setAlpha(0.8);
 
         // Generous hit area — the dots are small, the targets should not be.
@@ -453,10 +506,8 @@ export class HubMap {
         this.starGfx?.destroy();
         this.orbitGfx?.destroy();
         this.sweep?.destroy();
-        this.activityText?.destroy();
-        this.hint?.destroy();
+        this.hudEl?.remove();
         this.tipEl?.remove();
-        this.summary?.destroy();
         this.byId.clear();
         this.bodies.forEach(b => { b.dot.destroy(); b.glow?.destroy(); b.halo?.destroy(); b.label.destroy(); });
         this.bodies = [];

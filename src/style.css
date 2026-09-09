@@ -463,3 +463,70 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 .hub-tip .m b.ok { color: #7ee2a8; font-weight: 600; }
 .hub-tip .dim { color: #6b7f99; }
 .hub-tip .a { margin-top: 5px; color: #7dd3fc; font-size: 11px; }
+
+/* --- Hub map HUD ---------------------------------------------------------- */
+/* DOM rather than Phaser Text, for the same reason as .hub-tip: the scene runs
+   `pixelArt: true` (NEAREST filtering) and the 1440px canvas is downscaled to
+   the stage and again by camera zoom, which shreds small canvas glyphs. These
+   are fixed-position labels, so nothing is lost by lifting them out. */
+#stage { position: relative; }
+
+.hub-hud {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 14px 18px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    -webkit-font-smoothing: antialiased;
+}
+
+.hud-top { text-align: center; }
+.hud-title {
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    color: #64748b;
+}
+.hud-counts {
+    margin-top: 5px;
+    font-size: 13px;
+    color: #a8bcd6;
+}
+.hud-counts b { color: #f1f5f9; font-weight: 700; }
+.hud-counts i { color: #40536e; font-style: normal; margin: 0 2px; }
+
+.hud-legend {
+    position: absolute;
+    left: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 10.5px;
+    color: #8fa3bf;
+}
+.hud-legend span { display: flex; align-items: center; gap: 7px; }
+.hud-legend i.k {
+    width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto;
+}
+.hud-legend i.k.stream   { background: #22c55e; box-shadow: 0 0 0 3px #22c55e28; }
+.hud-legend i.k.health   { background: #22c55e; opacity: 0.85; }
+.hud-legend i.k.listed   { background: #a9c4e8; opacity: 0.85; }
+.hud-legend i.k.archived { background: #c08a5e; opacity: 0.6; }
+
+.hud-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    font-size: 11px;
+    color: #5b6f8c;
+}
+.hud-hint { color: #445972; }
+
+@media (max-width: 900px) {
+    .hud-legend { display: none; }
+    .hud-counts { font-size: 11px; }
+}
