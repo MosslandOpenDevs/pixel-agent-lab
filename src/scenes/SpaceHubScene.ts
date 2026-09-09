@@ -18,7 +18,9 @@ type ZoneKey = "hub" | "algora" | "ao" | "bridge";
 // coordinates. It is the default view: the ecosystem is the subject, and a belt
 // is the detail you open for the two services that actually stream.
 const MAP_Y = H + 40;   // just below the three service zones
-const MAP_H = 600;
+// Matches the camera's aspect so the fitted view fills it, instead of leaving
+// the map shrunk to a fraction of the screen with everything illegible.
+const MAP_H = 760;
 
 const ZONE_VIEWS: Record<ZoneKey, { x: number; y: number; w: number; h: number }> = {
     hub:     { x: 0,   y: MAP_Y, w: W,   h: MAP_H },
@@ -59,7 +61,8 @@ export class SpaceHubScene extends Phaser.Scene {
         this.aoZone = new AOZone(this);
         this.bridgeZone = new BridgeZone(this);
         this.centralMonitor = new CentralMonitor(this);
-        this.hubMap = new HubMap(this, W / 2, MAP_Y + MAP_H / 2);
+        this.hubMap = new HubMap(this, W / 2, MAP_Y + MAP_H / 2, W, MAP_H);
+        this.hubMap.onOpenZone = zone => this.switchZone(zone as ZoneKey, true);
 
         this.algoraZone.create();
         this.aoZone.create();
@@ -115,6 +118,12 @@ export class SpaceHubScene extends Phaser.Scene {
 
     private switchZone(zone: ZoneKey, animate: boolean): void {
         this.currentZone = zone;
+        // The map can navigate too, so reflect it in the tab bar.
+        document.querySelectorAll<HTMLButtonElement>(".zone-tab").forEach(b => {
+            const active = b.dataset.zone === zone;
+            b.classList.toggle("active", active);
+            b.setAttribute("aria-selected", String(active));
+        });
         const v = ZONE_VIEWS[zone];
         const cam = this.cameras.main;
         const zoom = Math.min(cam.width / v.w, cam.height / v.h) * 0.88;
