@@ -114,6 +114,11 @@ export class DataBridge {
      *  from "still loading" in the AO panel). */
     debatesErrored = false;
 
+    /** Monotonic count of signals actually ingested, per origin. The hub map
+     *  emits one mote per counted signal, so its motion can never outrun the
+     *  data — an idle service simply produces none. */
+    ingested: Record<"algora" | "ao" | "bridge", number> = { algora: 0, ao: 0, bridge: 0 };
+
     liveStats: LiveStats = { algora: null, ao: null, bridge: null };
     issueCache: AlgoraIssue[] = [];
     debateCache: AODebate[] = [];
@@ -198,9 +203,9 @@ export class DataBridge {
             fetchAlgoraSignals(30, signal), fetchAOSignals(20, signal), fetchBridgeSignals(20, signal),
         ]);
         const unified: UnifiedSignal[] = [];
-        if (a.status === "fulfilled") for (const s of a.value) if (!this.seenSignalIds.has(s.id)) { this.seenSignalIds.add(s.id); unified.push(algoraSignalToUnified(s)); }
-        if (ao.status === "fulfilled") for (const s of ao.value) if (!this.seenSignalIds.has(s.id)) { this.seenSignalIds.add(s.id); unified.push(aoSignalToUnified(s)); }
-        if (b.status === "fulfilled") for (const s of b.value) if (!this.seenSignalIds.has(s.id)) { this.seenSignalIds.add(s.id); unified.push(bridgeSignalToUnified(s)); }
+        if (a.status === "fulfilled") for (const s of a.value) if (!this.seenSignalIds.has(s.id)) { this.seenSignalIds.add(s.id); unified.push(algoraSignalToUnified(s)); this.ingested.algora++; }
+        if (ao.status === "fulfilled") for (const s of ao.value) if (!this.seenSignalIds.has(s.id)) { this.seenSignalIds.add(s.id); unified.push(aoSignalToUnified(s)); this.ingested.ao++; }
+        if (b.status === "fulfilled") for (const s of b.value) if (!this.seenSignalIds.has(s.id)) { this.seenSignalIds.add(s.id); unified.push(bridgeSignalToUnified(s)); this.ingested.bridge++; }
         // shuffle
         for (let i = unified.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [unified[i], unified[j]] = [unified[j], unified[i]]; }
         this.signalQueue.push(...unified);

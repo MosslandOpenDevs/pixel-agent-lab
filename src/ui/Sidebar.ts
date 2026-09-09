@@ -13,14 +13,14 @@ export function initSidebar(): void {
   <button id="panelToggle" class="panel-toggle" aria-label="Toggle info panel" aria-controls="panelAside" aria-expanded="false">☰</button>
   <aside id="panelAside" class="panel">
     <h1>Mossland Space Hub</h1>
-    <p class="sub">Governance Monitor · 3 Independent Services</p>
+    <p class="sub">Governance Monitor · live map of the Mossland ecosystem</p>
     <div id="connStatus" class="conn-status"><span class="dot connecting"></span> Connecting...</div>
     <div id="stats" class="stats"></div>
     <div id="serviceStatus" class="stats"></div>
     <div id="ecosystem" class="stats eco"></div>
     <div class="detail">
       <h2>About</h2>
-      <div class="detail-desc">Three independent Mossland services, each polled live every 15 seconds. The Algora belt carries the merged live signal stream from all three services; AO belt bubbles are real AO ideas, and the belt stays empty when none are available. Bridge's proposal counts are live; its Trust &amp; Outcomes figures show \u2014 because the outcome and trust endpoints are still empty. A service that does not respond shows \u2014 rather than a substituted figure.</div>
+      <div class="detail-desc">A map of every service in the links.moss.land registry, and belts for the few that actually stream data here. How solid a body looks is how much this monitor can really see: services it streams are brightest, ones covered by the health aggregator pulse, and ones it only knows from the registry sit still with a hollow dot. Archived services stay on the map, dimmed. Motion on the map is real \u2014 each mote is one ingested signal, and the ring sweep is an actual health refresh. Anything a service does not report shows \u2014 rather than a substituted figure.</div>
     </div>
   </aside>
   <div class="panel-backdrop"></div>
@@ -111,8 +111,12 @@ export function updateEcosystem(feed: EcosystemFeed): void {
         return;
     }
 
+    // Count the disjoint instrumentation tiers, so these agree with the map's
+    // own summary. Counting "anything with health data" would double-count the
+    // streaming services and report a different number for the same word.
     const streaming = nodes.filter(n => n.instrumentation === "stream").length;
-    const checked = nodes.filter(n => n.health).length;
+    const checked = nodes.filter(n => n.instrumentation === "health").length;
+    const listed = nodes.filter(n => n.instrumentation === "listed").length;
 
     const groups = new Map<string, EcosystemNode[]>();
     for (const n of nodes) {
@@ -142,8 +146,9 @@ export function updateEcosystem(feed: EcosystemFeed): void {
     ecoEl.innerHTML = `
     <h2>Ecosystem</h2>
     <div class="row"><span>Registered</span><b>${nodes.length}</b></div>
-    <div class="row"><span>Health-checked</span><b>${checked}</b></div>
     <div class="row"><span>Streaming here</span><b>${streaming}</b></div>
+    <div class="row"><span>Health-checked</span><b>${checked}</b></div>
+    <div class="row"><span>Listed only</span><b>${listed}</b></div>
     ${sections}
     `;
 }
@@ -167,7 +172,7 @@ export function updateSidebar(dataBridge: DataBridge): void {
     // fetch caches — `issueCache.length` only ever reported the 30-item fetch cap,
     // and `debateCache.length` the 10-item one.
     statsEl.innerHTML = `
-    <div class="row"><span>Monitoring</span><b>Algora (Sense) | AO (Plan) | Bridge (Execute)</b></div>
+    <div class="row"><span>Streaming</span><b>Algora (Sense) | AO (Plan) | Bridge (Execute)</b></div>
     <div class="row"><span>Signal Queue</span><b>${dataBridge.queueSize()}</b></div>
     <div class="row"><span>Open Issues</span><b>${a ? a.openIssues ?? 0 : NA}</b></div>
     <div class="row"><span>Debates Today</span><b>${ao?.stats ? ao.stats.debates_today : NA}</b></div>
