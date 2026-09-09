@@ -1,5 +1,7 @@
 # Mossland Space Hub — Governance Monitor
 
+> **이 저장소의 상태:** **`Lifecycle: Lab`** (실험, best-effort) — [MIP-1](https://agora.moss.land/proposals/6a85129f8be190cf5d2ebcc1)(2026-09-02 비준) 및 [links.moss.land 레지스트리](https://links.moss.land/ecosystem-registry.json)의 `monitor` 항목 기준. 예고 없이 변경되거나 중단될 수 있습니다.
+
 [English](README.md) · **한국어**
 
 Mossland Space Hub는 Mossland 3대 핵심 거버넌스 서비스 — **Algora**, **AO**, **Bridge** — 의 운영 상태를 **우주 물류 센터 시각화**(컨베이어 벨트 · 픽셀 에이전트)로 한 화면에 실시간 렌더링하는 라이브 대시보드입니다.
