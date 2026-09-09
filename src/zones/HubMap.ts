@@ -24,6 +24,10 @@ import type { EcosystemNode, Instrumentation } from "../services/ecosystem-feed.
  *   refresh). Each corresponds to something that happened.
  */
 
+/** Explicit stack: bare "monospace" resolves to Courier on Safari/macOS, whose
+ *  thin strokes are the worst possible face to downscale with nearest-neighbour. */
+const MONO = 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace';
+
 const RING_LABELS: Record<string, string> = {
     official: "OFFICIAL",
     participation: "PARTICIPATION",
@@ -79,6 +83,17 @@ type Body = {
     hovered: boolean;
 };
 
+/**
+ * The hub draws in its own depth band, above every belt-zone object.
+ *
+ * Phaser depth is global to the scene, so a Bridge sprite at depth 12 paints
+ * over the map's backdrop at depth 2 whenever the camera happens to see both —
+ * and the hub is fitted by its circle, so it overscans the map rectangle by
+ * ~2000px on a phone. No amount of spacing in world coordinates fixes that;
+ * only ordering does.
+ */
+const D = 200;
+
 const MAX_MOTES = 48;
 const MAX_SPAWN_PER_TICK = 6;
 const STAR_COUNT = 520;
@@ -131,7 +146,13 @@ export class HubMap {
         this.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
         // Own backdrop, so the service zones above cannot bleed into this view.
-        this.scene.add.rectangle(this.cx, this.cy, this.w, this.h, 0x03060f).setDepth(2);
+        // Oversized on purpose: the camera fits the hub by its circle, so it
+        // overscans this rectangle and the belt zones above used to show through
+        // along the top edge.
+        // Sized for the worst overscan, not for the map. A portrait phone fitted by
+        // the hub circle sees ~2000px of world height, far past this rectangle, and
+        // anything uncovered shows the belt zones behind. Cheap: one solid quad.
+        this.scene.add.rectangle(this.cx, this.cy, 6000, 6000, 0x03060f).setDepth(D + 2);
 
         const maxR = Math.hypot(this.w, this.h) / 2;
         for (let i = 0; i < STAR_COUNT; i++) {
@@ -147,23 +168,23 @@ export class HubMap {
                 tint: Math.random() < 0.12 ? 0x7dd3fc : 0xdbeafe,
             });
         }
-        this.starGfx = this.scene.add.graphics().setDepth(3);
+        this.starGfx = this.scene.add.graphics().setDepth(D + 3);
         // Orbit guides, drawn every frame so they can stay faint and rotate-free.
-        this.orbitGfx = this.scene.add.graphics().setDepth(4);
+        this.orbitGfx = this.scene.add.graphics().setDepth(D + 4);
 
-        this.scene.add.circle(this.cx, this.cy, 34, 0x0b1226, 0.9).setStrokeStyle(2, COLOR.hub, 0.85).setDepth(6);
-        this.scene.add.circle(this.cx, this.cy, 22, COLOR.hub, 0.10).setDepth(6);
-        this.scene.add.circle(this.cx, this.cy, 9, COLOR.hub).setDepth(7);
+        this.scene.add.circle(this.cx, this.cy, 34, 0x0b1226, 0.9).setStrokeStyle(2, COLOR.hub, 0.85).setDepth(D + 6);
+        this.scene.add.circle(this.cx, this.cy, 22, COLOR.hub, 0.10).setDepth(D + 6);
+        this.scene.add.circle(this.cx, this.cy, 9, COLOR.hub).setDepth(D + 7);
         this.crisp(this.scene.add.text(this.cx, this.cy + 44, "MOSSLAND", {
-            fontFamily: "monospace", fontSize: "14px", color: "#7dd3fc",
-        }).setOrigin(0.5).setDepth(7));
+            fontFamily: MONO, fontSize: "14px", color: "#7dd3fc",
+        }).setOrigin(0.5).setDepth(D + 7));
 
         // Ring names: the orbits were pure geometry before, carrying none of the
         // grouping they actually encode.
         for (const [section, r] of Object.entries(RING_RADII)) {
             this.crisp(this.scene.add.text(this.cx, this.cy - r - 9, RING_LABELS[section] ?? section, {
-                fontFamily: "monospace", fontSize: "10px", color: "#3f5b80",
-            }).setOrigin(0.5, 1).setDepth(5));
+                fontFamily: MONO, fontSize: "10px", color: "#3f5b80",
+            }).setOrigin(0.5, 1).setDepth(D + 5));
         }
 
         // The HUD lives in the DOM for the same reason as the tooltip: these are
@@ -172,7 +193,7 @@ export class HubMap {
         this.buildHud();
 
         this.sweep = this.scene.add.circle(this.cx, this.cy, 1)
-            .setStrokeStyle(2, COLOR.hub, 0.5).setDepth(5).setVisible(false);
+            .setStrokeStyle(2, COLOR.hub, 0.5).setDepth(D + 5).setVisible(false);
 
         // The tooltip is a DOM element, not a Phaser Text. The game runs with
         // `pixelArt: true`, which forces NEAREST filtering, and the whole 1440px
@@ -196,8 +217,11 @@ export class HubMap {
      * sprites, ruinous for small text resampled at a non-integer factor.
      */
     private crisp(t: Phaser.GameObjects.Text): Phaser.GameObjects.Text {
+        // Resolution only. Text rebuilds its texture on every setText, which
+        // discards any filter set here — so calling setFilter(LINEAR) looks like
+        // it helps and silently reverts the moment the label updates. Rendering
+        // the glyphs at 3x is what actually survives the downscale.
         t.setResolution(3);
-        t.texture?.setFilter(Phaser.Textures.FilterMode.LINEAR);
         return t;
     }
 
@@ -214,10 +238,20 @@ export class HubMap {
             <div class="hud-counts" id="hubCounts">Loading registry…</div>
           </div>
           <div class="hud-legend">
-            <span><i class="k stream"></i>streaming — this monitor reads its data</span>
-            <span><i class="k health"></i>health-checked — status from the aggregator</span>
-            <span><i class="k listed"></i>listed — registered, not measured here</span>
-            <span><i class="k archived"></i>archived — preserved read-only</span>
+            <div class="lg">
+              <div class="lg-h">FORM — how much we see</div>
+              <span><i class="f stream"></i>streaming · we read its data</span>
+              <span><i class="f health"></i>health-checked · status only</span>
+              <span><i class="f listed"></i>listed · not measured here</span>
+            </div>
+            <div class="lg">
+              <div class="lg-h">COLOUR — what it reports</div>
+              <span><i class="c ok"></i>ok</span>
+              <span><i class="c degraded"></i>degraded</span>
+              <span><i class="c down"></i>down</span>
+              <span><i class="c none"></i>no measurement</span>
+              <span><i class="c arch"></i>archived</span>
+            </div>
           </div>
           <div class="hud-foot"><span id="hubActivity"></span><span class="hud-hint">hover a body for detail · click to open it</span></div>`;
         host.appendChild(el);
@@ -258,7 +292,7 @@ export class HubMap {
     private emitMote(originId: string): void {
         const body = this.byId.get(originId);
         if (!body || this.motes.length >= MAX_MOTES) return;
-        const dot = this.scene.add.circle(body.dot.x, body.dot.y, 2.5, COLOR.hub).setDepth(11).setAlpha(0.95);
+        const dot = this.scene.add.circle(body.dot.x, body.dot.y, 2.5, COLOR.hub).setDepth(D + 11).setAlpha(0.95);
         this.motes.push({ dot, fromX: body.dot.x, fromY: body.dot.y, t: 0, speed: 0.55 + Math.random() * 0.35 });
     }
 
@@ -323,19 +357,19 @@ export class HubMap {
         // the *character* of the light, never whether there is any: unmeasured
         // ones shine steadily, measured ones breathe, streaming ones carry a halo.
         glow = this.scene.add.circle(x, y, baseR * (instrumentation === "listed" ? 2.0 : 2.6),
-            color, instrumentation === "listed" ? 0.09 : 0.13).setDepth(8);
+            color, instrumentation === "listed" ? 0.09 : 0.13).setDepth(D + 8);
         dot = this.scene.add.circle(x, y, baseR, color);
         if (instrumentation === "stream") {
-            halo = this.scene.add.circle(x, y, baseR + 9).setStrokeStyle(1.5, color, 0.5).setDepth(9);
+            halo = this.scene.add.circle(x, y, baseR + 9).setStrokeStyle(1.5, color, 0.5).setDepth(D + 9);
         }
-        dot.setDepth(10).setAlpha(archived ? 0.55 : instrumentation === "listed" ? 0.85 : 1);
+        dot.setDepth(D + 10).setAlpha(archived ? 0.55 : instrumentation === "listed" ? 0.85 : 1);
 
         const label = this.crisp(this.scene.add.text(x, y + baseR + 5, service.name, {
-            fontFamily: "monospace",
+            fontFamily: MONO,
             fontSize: instrumentation === "stream" ? "13px" : "11px",
             color: archived ? "#c08a5e" : instrumentation === "listed" ? "#a9c4e8" : "#e2e8f0",
             resolution: 3,
-        }).setOrigin(0.5, 0).setDepth(10));
+        }).setOrigin(0.5, 0).setDepth(D + 10));
         if (archived) label.setAlpha(0.8);
 
         // Generous hit area — the dots are small, the targets should not be.
