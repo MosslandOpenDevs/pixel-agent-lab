@@ -626,3 +626,35 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
     .hub-label { font-size: 10px; }
     .hub-label.stream { font-size: 11px; }
 }
+
+/* --- Hub map pinned labels (orbit names + core) --------------------------- */
+/* The last canvas text on this map. Same reason as .hub-label: `pixelArt: true`
+   filters NEAREST and the canvas is downscaled twice, so even large fixed
+   labels lose their strokes. Nothing readable on the map is drawn on canvas now. */
+.hub-pin {
+    position: fixed;
+    left: 0;
+    top: 0;
+    white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    line-height: 1;
+    pointer-events: none;
+    -webkit-font-smoothing: antialiased;
+}
+.hub-pin-ring {
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    color: #5c7ba6;
+    text-shadow: 0 1px 3px rgba(3, 6, 15, 0.95);
+}
+.hub-pin-core {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #7dd3fc;
+    text-shadow: 0 1px 4px rgba(3, 6, 15, 0.95);
+}
+@media (max-width: 900px) {
+    .hub-pin-ring { font-size: 9px; letter-spacing: 0.12em; }
+    .hub-pin-core { font-size: 11px; }
+}
