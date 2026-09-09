@@ -104,12 +104,35 @@ server {
     #     location / { try_files $uri $uri/ /index.html; }
     # Option B (proxy to the PM2 `serve` process), as used in production:
     location / {
+        add_header Cache-Control "no-cache" always;
         proxy_pass http://monitor_web;
         proxy_http_version 1.1;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Content-hashed build output: safe to cache hard, and it must be, or every
+    # navigation re-fetches over a megabyte.
+    location /assets/ {
+        proxy_pass http://monitor_web;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+    }
+
+    # index.html must never be cached without revalidation. It carries the hashed
+    # asset names, so a stale copy points the browser at a build that no longer
+    # exists — and `serve -s` answers missing paths with index.html at HTTP 200,
+    # so the browser gets HTML where it asked for JavaScript and the page silently
+    # does nothing. Serving it with no Cache-Control at all leaves this to
+    # heuristic freshness, which is how a deployed fix can fail to reach anyone.
+    location = /index.html {
+        proxy_pass http://monitor_web/index.html;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        add_header Cache-Control "no-cache" always;
     }
 
     # Monitor's own health endpoint. `health.json` is emitted into the build by
