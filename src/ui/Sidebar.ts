@@ -1,4 +1,4 @@
-import type { DataBridge } from "../services/data-bridge.ts";
+import type { ConnState, DataBridge } from "../services/data-bridge.ts";
 
 let statsEl: HTMLDivElement;
 let serviceEl: HTMLDivElement;
@@ -62,12 +62,16 @@ export function initSidebar(): void {
     });
 }
 
-export function setConnectionStatus(live: boolean): void {
-    if (live) {
-        connEl.innerHTML = `<span class="dot live"></span> LIVE — Real-time service data`;
-    } else {
-        connEl.innerHTML = `<span class="dot offline"></span> OFFLINE — no service reachable`;
-    }
+export function setConnectionStatus(state: ConnState): void {
+    connEl.innerHTML = connMarkup(state, "Real-time service data");
+}
+
+/** Single source of truth for the status line. "connecting" is a real state:
+ *  reporting it as OFFLINE claims an outage before anything has been polled. */
+function connMarkup(state: ConnState, liveSuffix: string): string {
+    if (state === "live") return `<span class="dot live"></span> LIVE — ${liveSuffix}`;
+    if (state === "offline") return `<span class="dot offline"></span> OFFLINE — no service reachable`;
+    return `<span class="dot connecting"></span> Connecting...`;
 }
 
 export function updateSidebar(
@@ -80,7 +84,7 @@ export function updateSidebar(
 ): void {
     const ls = dataBridge.liveStats;
     const up = dataBridge.serviceUp;
-    const live = dataBridge.isConnected();
+    const conn = dataBridge.connectionState();
 
     // pipeline summary stats
     statsEl.innerHTML = `
@@ -137,9 +141,5 @@ export function updateSidebar(
     `;
 
     // connection status update
-    if (live) {
-        connEl.innerHTML = `<span class="dot live"></span> LIVE — queue: ${dataBridge.queueSize()}`;
-    } else {
-        connEl.innerHTML = `<span class="dot offline"></span> OFFLINE — no service reachable`;
-    }
+    connEl.innerHTML = connMarkup(conn, `queue: ${dataBridge.queueSize()}`);
 }

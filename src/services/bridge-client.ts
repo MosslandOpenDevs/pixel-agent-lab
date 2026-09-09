@@ -1,31 +1,25 @@
 import type { BridgeSignal, BridgeStats, BridgeOutcome, BridgeTrustEntry } from "./types.ts";
+import { getJSON } from "./http.ts";
 
 const BASE = "/bridge-api";
 
-export async function fetchBridgeSignals(limit = 20): Promise<BridgeSignal[]> {
-    const res = await fetch(`${BASE}/signals?limit=${limit}`);
-    if (!res.ok) throw new Error(`Bridge signals: ${res.status}`);
-    const data = await res.json();
+export async function fetchBridgeSignals(limit = 20, signal?: AbortSignal): Promise<BridgeSignal[]> {
+    const data = await getJSON<{ signals?: BridgeSignal[] }>(`${BASE}/signals?limit=${limit}`, "Bridge signals", signal);
     return data.signals ?? [];
 }
 
-export async function fetchBridgeStats(): Promise<BridgeStats> {
-    const res = await fetch(`${BASE}/stats`);
-    if (!res.ok) throw new Error(`Bridge stats: ${res.status}`);
-    return res.json();
+export async function fetchBridgeStats(signal?: AbortSignal): Promise<BridgeStats> {
+    return getJSON<BridgeStats>(`${BASE}/stats`, "Bridge stats", signal);
 }
 
-export async function fetchBridgeOutcomes(limit = 20): Promise<BridgeOutcome[]> {
-    const res = await fetch(`${BASE}/outcomes`);
-    if (!res.ok) throw new Error(`Bridge outcomes: ${res.status}`);
-    const data = await res.json();
+export async function fetchBridgeOutcomes(limit = 20, signal?: AbortSignal): Promise<BridgeOutcome[]> {
+    const data = await getJSON<{ outcomes?: BridgeOutcome[] }>(`${BASE}/outcomes`, "Bridge outcomes", signal);
     return (data.outcomes ?? []).slice(0, limit);
 }
 
-export async function fetchBridgeTrustLeaderboard(type = "agent"): Promise<BridgeTrustEntry[]> {
-    const res = await fetch(`${BASE}/trust/leaderboard/${type}`);
-    if (!res.ok) throw new Error(`Bridge trust: ${res.status}`);
-    const data = await res.json();
-    const list = data.leaderboard ?? data;
+export async function fetchBridgeTrustLeaderboard(type = "agent", signal?: AbortSignal): Promise<BridgeTrustEntry[]> {
+    const data = await getJSON<{ leaderboard?: BridgeTrustEntry[] } | BridgeTrustEntry[]>(
+        `${BASE}/trust/leaderboard/${type}`, "Bridge trust", signal);
+    const list = Array.isArray(data) ? data : data.leaderboard;
     return Array.isArray(list) ? list : [];
 }

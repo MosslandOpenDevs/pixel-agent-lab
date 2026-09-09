@@ -56,8 +56,8 @@ export class SpaceHubScene extends Phaser.Scene {
 
         // data bridge
         this.dataBridge = new DataBridge();
-        this.dataBridge.init().then(ok => {
-            setConnectionStatus(ok);
+        this.dataBridge.init().then(state => {
+            setConnectionStatus(state);
         });
 
         // mobile: zoom into one zone at a time (zone tabs drive the camera).

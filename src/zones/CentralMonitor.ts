@@ -52,8 +52,8 @@ export class CentralMonitor {
 
     update(_dt: number, dataBridge: DataBridge): void {
         const queueSize = dataBridge.queueSize();
-        const connected = dataBridge.isConnected();
-        const label = connected ? "LIVE" : "OFFLINE";
+        const state = dataBridge.connectionState();
+        const label = state === "live" ? "LIVE" : state === "offline" ? "OFFLINE" : "CONNECTING";
         this.statusText?.setText(`${label} | Queue: ${queueSize} | Polling: 15s`);
 
         this.drawGraphics();
