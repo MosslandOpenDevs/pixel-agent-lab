@@ -102,8 +102,15 @@ const STAR_COUNT = 520;
 const PULL_RADIUS = 260;
 const PULL_STRENGTH = 30;
 
-/** Radians/sec at the core. Outer orbits turn slower (differential rotation). */
-const SPIN_BASE = 0.020;
+/**
+ * Radians/sec at the core; outer orbits turn slower (differential rotation).
+ *
+ * Was 0.020, which is a full turn every ~6.4 minutes — about 1.7px/s on the inner
+ * ring. Technically animating, indistinguishable from a still image. At 0.05 the
+ * inner ring moves ~4px/s and the outer ~7px/s: clearly alive when you look, and
+ * still slow enough to ignore while reading a label.
+ */
+const SPIN_BASE = 0.05;
 
 export class HubMap {
     private scene: Phaser.Scene;
@@ -497,9 +504,16 @@ export class HubMap {
     }
 
     update(dt: number): void {
+        // A single non-finite frame used to corrupt the map permanently: `elapsed`
+        // and the per-body offsets accumulate, and NaN is absorbing, so once one
+        // got in nothing recovered — every body froze where it stood even after
+        // the clock was fine again. That matters more now the loop survives a bad
+        // frame instead of dying on it: surviving into a frozen map is no better.
+        if (!Number.isFinite(dt)) return;
+        const step = Math.min(Math.max(dt, 0), 50) / 1000;
         this.elapsed += dt;
+        if (!Number.isFinite(this.elapsed)) this.elapsed = 0;
         const t = this.elapsed / 1000;
-        const step = Math.min(dt, 50) / 1000;
         const spinT = this.reducedMotion ? 0 : t;
 
         const p = this.scene.input.activePointer;
@@ -528,6 +542,9 @@ export class HubMap {
             }
             b.ox += (tx - b.ox) * Math.min(1, step * 6);
             b.oy += (ty - b.oy) * Math.min(1, step * 6);
+            // Self-healing rather than absorbing: a poisoned offset resets instead
+            // of pinning its body for the life of the page.
+            if (!Number.isFinite(b.ox) || !Number.isFinite(b.oy)) { b.ox = 0; b.oy = 0; }
 
             const x = hx + b.ox, y = hy + b.oy;
             b.dot.setPosition(x, y);

@@ -37,28 +37,45 @@ const game = new Phaser.Game({
  * Keep one bad frame from killing the page.
  *
  * Phaser drives its loop from a requestAnimationFrame chain that re-arms *after*
- * the step callback returns, with no try/finally around it. So a single throw
- * inside any frame — a WebGL hiccup, a bug in one zone — does not just skip that
- * frame, it ends the loop permanently: animation stops, camera pans never
- * complete, and the page sits frozen on its last painted frame while still
- * looking alive. That failure is invisible and unrecoverable without a reload.
+ * the step callback returns, with no try/finally around it
+ * (dom/RequestAnimationFrame.js). So a single throw inside any frame does not
+ * just skip that frame — it ends the loop permanently: animation stops, camera
+ * pans never complete, and the page sits frozen on its last painted frame while
+ * still looking alive. Nothing revives it either; start() and wake() both
+ * early-return while `isRunning` is still true, and the visibility handlers only
+ * touch timestamps.
  *
- * Wrapping the callback costs nothing and turns it into a logged, survivable
- * glitch. Guarded because it reaches into Phaser's internals.
+ * The wrapper works because the step closure re-reads `callback` every frame, so
+ * replacing it is enough. The timing is the subtle part: Phaser emits READY and
+ * only *then* calls start(), which assigns the real callback — so installing on
+ * READY wraps the constructor's NOOP and is overwritten moments later. (That is
+ * exactly the bug this replaces: a guard that looked installed and never ran.)
+ *
+ * Patching `start` instead has no timing dependency: whatever callback Phaser
+ * eventually installs gets wrapped on its way in.
  */
-game.events.once(Phaser.Core.Events.READY, () => {
-    const raf = (game.loop as unknown as { raf?: { callback?: (t: number) => void } }).raf;
-    if (!raf || typeof raf.callback !== "function") return;
-    const step = raf.callback;
-    let reported = false;
-    raf.callback = function (this: unknown, time: number) {
-        try {
-            step.call(this, time);
-        } catch (err) {
-            if (!reported) {
-                reported = true;   // one report, not one per frame
-                console.error("[loop] a frame threw; continuing", err);
-            }
-        }
-    };
-});
+{
+    const raf = (game.loop as unknown as {
+        raf?: { start?: (cb: (t: number) => void, force: boolean, target: number) => void };
+    }).raf;
+
+    if (raf && typeof raf.start === "function") {
+        const originalStart = raf.start.bind(raf);
+        let reported = false;
+        raf.start = (cb, force, target) =>
+            originalStart(
+                (time: number) => {
+                    try {
+                        cb(time);
+                    } catch (err) {
+                        if (!reported) {
+                            reported = true;   // one report, not one per frame
+                            console.error("[loop] a frame threw; continuing", err);
+                        }
+                    }
+                },
+                force,
+                target,
+            );
+    }
+}
