@@ -67,7 +67,7 @@ type Body = {
     dot: Phaser.GameObjects.Arc;
     glow?: Phaser.GameObjects.Arc;
     halo?: Phaser.GameObjects.Arc;
-    label: Phaser.GameObjects.Text;
+    label: HTMLDivElement;
     /** Orbit, in polar coords around the hub. */
     r: number;
     a: number;
@@ -117,6 +117,7 @@ export class HubMap {
     private stars: Star[] = [];
 
     private tipEl?: HTMLDivElement;
+    private labelLayer?: HTMLDivElement;
     private hudEl?: HTMLDivElement;
     private countsEl?: HTMLElement;
     private activityEl?: HTMLElement;
@@ -202,6 +203,10 @@ export class HubMap {
         // exactly the mush that made this unreadable. A DOM node is rendered by
         // the browser at native resolution and stays crisp, without giving up the
         // pixel-art look of the scene itself.
+        this.labelLayer = document.createElement("div");
+        this.labelLayer.className = "hub-labels";
+        document.body.appendChild(this.labelLayer);
+
         this.tipEl = document.createElement("div");
         this.tipEl.className = "hub-tip";
         this.tipEl.hidden = true;
@@ -216,6 +221,34 @@ export class HubMap {
      * game runs `pixelArt: true`, which sets NEAREST globally — right for the
      * sprites, ruinous for small text resampled at a non-integer factor.
      */
+    /**
+     * Projection constants for this frame. getBoundingClientRect forces layout,
+     * so it is read once per frame rather than once per label — 28 labels at
+     * 60fps would otherwise be ~1700 forced layouts a second.
+     */
+    private projection(): { left: number; top: number; right: number; bottom: number; s: number; vx: number; vy: number } | null {
+        const canvas = this.scene.game.canvas;
+        if (!canvas) return null;
+        const rect = canvas.getBoundingClientRect();
+        if (!rect.width || !canvas.width) return null;
+        const cam = this.scene.cameras.main;
+        return {
+            left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom,
+            s: (rect.width / canvas.width) * cam.zoom,   // world units -> page px
+            vx: cam.worldView.x, vy: cam.worldView.y,
+        };
+    }
+
+    /** World point -> page pixels, using this frame's projection. */
+    private placeLabel(b: Body, wx: number, wy: number, p: NonNullable<ReturnType<HubMap["projection"]>>): void {
+        const sx = p.left + (wx - p.vx) * p.s;
+        const sy = p.top + (wy + b.baseR + 6 - p.vy) * p.s;
+        // Off-camera labels are hidden rather than piling up along the edges.
+        const inside = sx > p.left - 60 && sx < p.right + 60 && sy > p.top - 20 && sy < p.bottom + 20;
+        b.label.style.transform = `translate(-50%, 0) translate(${Math.round(sx)}px, ${Math.round(sy)}px)`;
+        b.label.style.visibility = inside ? "visible" : "hidden";
+    }
+
     private crisp(t: Phaser.GameObjects.Text): Phaser.GameObjects.Text {
         // Resolution only. Text rebuilds its texture on every setText, which
         // discards any filter set here — so calling setFilter(LINEAR) looks like
@@ -240,9 +273,9 @@ export class HubMap {
           <div class="hud-legend">
             <div class="lg">
               <div class="lg-h">FORM — how much we see</div>
-              <span><i class="f stream"></i>streaming · we read its data</span>
-              <span><i class="f health"></i>health-checked · status only</span>
-              <span><i class="f listed"></i>listed · not measured here</span>
+              <span><i class="f stream"></i>streaming · ringed, we read its data</span>
+              <span><i class="f health"></i>health-checked · breathing, status only</span>
+              <span><i class="f listed"></i>listed · steady, not measured here</span>
             </div>
             <div class="lg">
               <div class="lg-h">COLOUR — what it reports</div>
@@ -263,6 +296,7 @@ export class HubMap {
     /** The HUD only makes sense over the map, so hide it in the belt zones. */
     setHudVisible(visible: boolean): void {
         if (this.hudEl) this.hudEl.hidden = !visible;
+        if (this.labelLayer) this.labelLayer.hidden = !visible;
     }
 
     setActivity(ingested: Record<string, number>, healthCheckedAt: string | null): void {
@@ -303,7 +337,7 @@ export class HubMap {
         if (signature === this.signature) return;
         this.signature = signature;
 
-        this.bodies.forEach(b => { b.dot.destroy(); b.glow?.destroy(); b.halo?.destroy(); b.label.destroy(); });
+        this.bodies.forEach(b => { b.dot.destroy(); b.glow?.destroy(); b.halo?.destroy(); b.label.remove(); });
         this.bodies = [];
         this.byId.clear();
 
@@ -364,13 +398,16 @@ export class HubMap {
         }
         dot.setDepth(D + 10).setAlpha(archived ? 0.55 : instrumentation === "listed" ? 0.85 : 1);
 
-        const label = this.crisp(this.scene.add.text(x, y + baseR + 5, service.name, {
-            fontFamily: MONO,
-            fontSize: instrumentation === "stream" ? "13px" : "11px",
-            color: archived ? "#c08a5e" : instrumentation === "listed" ? "#a9c4e8" : "#e2e8f0",
-            resolution: 3,
-        }).setOrigin(0.5, 0).setDepth(D + 10));
-        if (archived) label.setAlpha(0.8);
+        // DOM, not a Phaser Text. `pixelArt: true` forces NEAREST filtering, and
+        // raising the Text resolution does not save it — the oversized glyph
+        // texture is still point-sampled on the way down, so strokes get dropped
+        // rather than smoothed. Rendering names in the DOM is the same fix that
+        // made the tooltip and the HUD legible, and it has the extra property
+        // that names keep a constant size instead of shrinking with camera zoom.
+        const label = document.createElement("div");
+        label.className = "hub-label " + instrumentation + (archived ? " archived" : "");
+        label.textContent = service.name;
+        this.labelLayer?.appendChild(label);
 
         // Generous hit area — the dots are small, the targets should not be.
         dot.setInteractive(new Phaser.Geom.Circle(baseR, baseR, baseR + 16), Phaser.Geom.Circle.Contains);
@@ -473,6 +510,8 @@ export class HubMap {
 
         if (this.tipEl && !this.tipEl.hidden) this.placeTooltip();
 
+        const proj = this.bodies.length > 0 ? this.projection() : null;
+
         for (const b of this.bodies) {
             const a = b.a + b.spin * spinT;
             const hx = this.cx + Math.cos(a) * b.r;
@@ -494,7 +533,7 @@ export class HubMap {
             b.dot.setPosition(x, y);
             b.glow?.setPosition(x, y);
             b.halo?.setPosition(x, y);
-            b.label.setPosition(x, y + b.baseR + 5);
+            if (proj) this.placeLabel(b, x, y, proj);
 
             // Only bodies we can actually observe are allowed to breathe.
             // Breathing is a claim that something is being watched, so only
@@ -510,7 +549,7 @@ export class HubMap {
 
             const want = b.hovered ? 1.6 : 1;
             b.dot.setScale(b.dot.scaleX + (want - b.dot.scaleX) * Math.min(1, step * 12));
-            b.label.setAlpha(b.hovered ? 1 : b.instrumentation === "listed" ? 0.7 : 0.95);
+            b.label.classList.toggle("hovered", b.hovered);
         }
 
         if (this.reducedMotion) return;
@@ -542,8 +581,9 @@ export class HubMap {
         this.sweep?.destroy();
         this.hudEl?.remove();
         this.tipEl?.remove();
+        this.labelLayer?.remove();
         this.byId.clear();
-        this.bodies.forEach(b => { b.dot.destroy(); b.glow?.destroy(); b.halo?.destroy(); b.label.destroy(); });
+        this.bodies.forEach(b => { b.dot.destroy(); b.glow?.destroy(); b.halo?.destroy(); b.label.remove(); });
         this.bodies = [];
     }
 }
