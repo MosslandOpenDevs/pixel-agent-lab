@@ -50,7 +50,6 @@ export class BridgeZone {
     private trustLabels: Phaser.GameObjects.Text[] = [];
     private outcomeLog?: Phaser.GameObjects.Text;
 
-    successRate = 0;
 
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
@@ -173,7 +172,6 @@ export class BridgeZone {
         // update stats
         const bs = dataBridge.liveStats.bridge;
         if (bs) {
-            this.successRate = bs.outcomes?.successRate ?? 0;
         }
 
         // animate bots
@@ -219,13 +217,20 @@ export class BridgeZone {
         const scores = dataBridge.trustCache
             .map(t => t.score)
             .filter(n => typeof n === "number" && isFinite(n));
+        // /bridge-api/trust/leaderboard currently returns an empty list for every
+        // entity type, so this has to render "no data" rather than hold whatever
+        // text the label was created with.
         if (scores.length > 0) {
             const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
             this.trustLabels[0]?.setText(`Agent Trust\n${avgScore.toFixed(1)}`);
+        } else {
+            this.trustLabels[0]?.setText("Agent Trust\n\u2014");
         }
         if (bs) {
             this.trustLabels[1]?.setText(`Proposals\n${bs.proposals?.total ?? 0}`);
-            this.trustLabels[2]?.setText(`Success Rate\n${bs.outcomes?.successRate ?? 0}%`);
+            // null means no proof recorded yet; 0% would claim every outcome failed.
+            const sr = bs.outcomes?.successRate;
+            this.trustLabels[2]?.setText(`Success Rate\n${typeof sr === "number" ? sr + "%" : "\u2014"}`);
         }
 
         // outcome log

@@ -17,7 +17,7 @@ export function initSidebar(): void {
     <div id="serviceStatus" class="stats"></div>
     <div class="detail">
       <h2>About</h2>
-      <div class="detail-desc">Three independent Mossland services, each polled live every 15 seconds. The Algora belt carries the merged live signal stream from all three services; AO belt bubbles are real AO ideas, and the belt stays empty when none are available. Bridge's live outcome and trust data drives its stats and Trust panel. A service that does not respond shows \u2014 rather than a substituted figure.</div>
+      <div class="detail-desc">Three independent Mossland services, each polled live every 15 seconds. The Algora belt carries the merged live signal stream from all three services; AO belt bubbles are real AO ideas, and the belt stays empty when none are available. Bridge's proposal counts are live; its Trust &amp; Outcomes figures show \u2014 because the outcome and trust endpoints are still empty. A service that does not respond shows \u2014 rather than a substituted figure.</div>
     </div>
   </aside>
   <div class="panel-backdrop"></div>
@@ -115,7 +115,11 @@ export function updateSidebar(dataBridge: DataBridge): void {
     const bOut = b
         ? `Issues ${b.issues?.total ?? 0} · Proofs ${b.outcomes?.totalProofs ?? 0}`
         : NA;
-    const bHint = b ? `proposals:${b.proposals?.total ?? 0} · success:${b.outcomes?.successRate ?? 0}%` : "L0-L4 pipeline";
+    const successRate = b?.outcomes?.successRate;
+    // `?? 0` here used to turn "no proofs recorded yet" (null) into "0% success",
+    // which reads as every outcome having failed.
+    const bSuccess = typeof successRate === "number" ? `${successRate}%` : NA;
+    const bHint = b ? `proposals:${b.proposals?.total ?? 0} · success:${bSuccess}` : "L0-L4 pipeline";
 
     const badge = (ok: boolean) => ok ? ' <span class="live-badge">LIVE</span>' : '';
 

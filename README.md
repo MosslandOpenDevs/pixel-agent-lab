@@ -84,7 +84,7 @@ The conceptual governance loop the three services share:
 
 ### Live data
 - All three services (Algora / AO / Bridge) are polled every **15 seconds**.
-- The **Algora** belt is fed from a single merged queue of live signals from all three services' signal endpoints — it shows the whole sensed stream, not Algora-only traffic. **AO** belt bubbles are real AO ideas, and the belt stays empty when none are cached rather than inventing placeholder ones. The **Bridge** lane animates a steady proposal flow; its real outcome and trust data drive the Trust & Outcomes panel. (The `L0`-`L4` stage labels are static — no live figures are attached to them.)
+- The **Algora** belt is fed from a single merged queue of live signals from all three services' signal endpoints — it shows the whole sensed stream, not Algora-only traffic. **AO** belt bubbles are real AO ideas, and the belt stays empty when none are cached rather than inventing placeholder ones. The **Bridge** lane animates a steady proposal flow, and its proposal counts come from `/bridge-api/stats`. Its Trust & Outcomes panel currently has **no data to show**: `/bridge-api/outcomes` and `/bridge-api/trust/leaderboard/*` both return empty lists, and `outcomes.successRate` is `null`, so those figures render as `—` rather than as `0%`. (The `L0`-`L4` stage labels are static — no live figures are attached to them.)
 - Partial responses, missing fields, or a service outage never crash the view — the affected service drops its LIVE badge and its figures show `—`, while the rest keeps rendering. No number is ever substituted from another source in place of a figure the service did not return.
 
 ## Data Flow (per zone · independent)

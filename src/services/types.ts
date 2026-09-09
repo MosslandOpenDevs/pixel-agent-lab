@@ -151,7 +151,16 @@ export type BridgeStats = {
     };
     outcomes: {
         totalProofs: number;
-        successRate: number;
+        // null when no proof has been recorded yet — distinct from 0%, which
+        // would mean every recorded outcome failed.
+        successRate: number | null;
+    };
+    // Bridge counts simulated rows separately from real ones; `total` above is
+    // real-only, and these are a disjoint parallel bucket (verified against the
+    // live payload: each byCategory list sums to its own total).
+    synthetic?: {
+        total: number;
+        byCategory?: Array<{ category: string; count: number }>;
     };
 };
 
