@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Claude Code's local scratch: agent worktrees are whole checkouts of this
+# repo, so a stray `git add .` would stage a nested clone. launch.json here
+# is a personal dev convenience, not a shared config.
+.claude/

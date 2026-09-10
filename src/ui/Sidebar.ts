@@ -1,6 +1,11 @@
 import type { ConnState, DataBridge } from "../services/data-bridge.ts";
 import type { EcosystemFeed, EcosystemNode } from "../services/ecosystem-feed.ts";
 
+/** The three values the ecosystem health contract defines. A service that
+ *  answers with anything else is answering — we just cannot read its verdict,
+ *  which is worth showing rather than quietly translating into "ok". */
+const CONTRACT_STATUS = new Set(["ok", "degraded", "down"]);
+
 let statsEl: HTMLDivElement;
 let serviceEl: HTMLDivElement;
 let connEl: HTMLDivElement;
@@ -114,9 +119,13 @@ export function updateEcosystem(feed: EcosystemFeed): void {
     // Count the disjoint instrumentation tiers, so these agree with the map's
     // own summary. Counting "anything with health data" would double-count the
     // streaming services and report a different number for the same word.
-    const streaming = nodes.filter(n => n.instrumentation === "stream").length;
-    const checked = nodes.filter(n => n.instrumentation === "health").length;
-    const listed = nodes.filter(n => n.instrumentation === "listed").length;
+    // Services only. The files and the external links are registry entries too,
+    // but folding them in made "listed only" read as a pile of unwatched
+    // services when most of it was llms.txt and six exchange listings.
+    const services = nodes.filter(n => n.kind === "service");
+    const streaming = services.filter(n => n.instrumentation === "stream").length;
+    const checked = services.filter(n => n.instrumentation === "health").length;
+    const listed = services.filter(n => n.instrumentation === "listed").length;
 
     const groups = new Map<string, EcosystemNode[]>();
     for (const n of nodes) {
@@ -126,15 +135,19 @@ export function updateEcosystem(feed: EcosystemFeed): void {
     }
 
     const row = (n: EcosystemNode) => {
-        const { service: sv, health, instrumentation } = n;
+        const { service: sv, health, instrumentation, kind } = n;
         const archived = sv.lifecycle === "archive" || sv.status === "deprecated";
-        const dot = health
-            ? `<span class="eco-dot ${esc(health.status)}" title="${esc(health.status)}${health.latencyMs != null ? " \u00b7 " + health.latencyMs + "ms" : ""}"></span>`
-            : `<span class="eco-dot unknown" title="not health-checked"></span>`;
+        // A file has no status dot and a third-party listing's uptime is not our
+        // claim; an empty slot keeps the names aligned without asserting one.
+        const dot = kind !== "service"
+            ? `<span class="eco-dot none" title="${kind === "artifact" ? "a published file, not a service" : "an external destination"}"></span>`
+            : health
+                ? `<span class="eco-dot ${CONTRACT_STATUS.has(health.status) ? esc(health.status) : "offcontract"}" title="${esc(health.status)}${CONTRACT_STATUS.has(health.status) ? "" : " \u2014 not one of ok/degraded/down"}${health.latencyMs != null ? " \u00b7 " + health.latencyMs + "ms" : ""}"></span>`
+                : `<span class="eco-dot unknown" title="not health-checked"></span>`;
         const life = sv.lifecycle
             ? `<span class="eco-life ${esc(sv.lifecycle)}">${esc(sv.lifecycle)}</span>`
             : `<span class="eco-life none" title="no MIP-1 lifecycle recorded">\u2014</span>`;
-        return `<a class="eco-row${archived ? " archived" : ""}${instrumentation === "stream" ? " streaming" : ""}" href="${esc(sv.url)}" target="_blank" rel="noopener noreferrer">${dot}<span class="eco-name">${esc(sv.name)}</span>${life}</a>`;
+        return `<a class="eco-row${archived ? " archived" : ""}${instrumentation === "stream" ? " streaming" : ""}${kind !== "service" ? " reference" : ""}" href="${esc(sv.url)}" target="_blank" rel="noopener noreferrer">${dot}<span class="eco-name">${esc(sv.name)}</span>${life}</a>`;
     };
 
     const sections = [...groups.entries()].map(([key, list]) => `
@@ -145,7 +158,7 @@ export function updateEcosystem(feed: EcosystemFeed): void {
 
     ecoEl.innerHTML = `
     <h2>Ecosystem</h2>
-    <div class="row"><span>Registered</span><b>${nodes.length}</b></div>
+    <div class="row"><span>Services</span><b>${services.length}</b></div>
     <div class="row"><span>Streaming here</span><b>${streaming}</b></div>
     <div class="row"><span>Health-checked</span><b>${checked}</b></div>
     <div class="row"><span>Listed only</span><b>${listed}</b></div>
