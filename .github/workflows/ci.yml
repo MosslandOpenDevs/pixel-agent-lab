@@ -1,0 +1,47 @@
+name: CI
+
+# Every push to a branch and every PR into main. The monitor has no deploy job
+# here — it ships by hand to its own box — so this gate exists to answer one
+# question before a merge: does the build still typecheck, and do the service
+# readers still conclude what they are supposed to conclude?
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# A new push supersedes the old answer; nothing here is worth finishing twice.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          # Track the LTS line rather than pinning an exact patch. A gate that
+          # asserts a version the runner no longer ships fails at Install and
+          # skips everything after it — which looks identical to a green run
+          # nobody read. Nothing here measures anything version-specific.
+          node-version: lts/*
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      # Last, because it is the slowest and the least likely to be the reason a
+      # change is wrong. It still has to pass: `tsc && vite build` is what the
+      # deploy actually runs, and it emits health.json.
+      - run: npm run build
