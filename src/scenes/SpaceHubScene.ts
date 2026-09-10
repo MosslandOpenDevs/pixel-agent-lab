@@ -183,6 +183,14 @@ export class SpaceHubScene extends Phaser.Scene {
             updateEcosystem(this.ecosystem);
             // Cheap: HubMap ignores this unless the registry snapshot changed.
             this.hubMap.setNodes(this.ecosystem.nodes());
+            // Must follow setNodes, which rebuilds the id->body map a mote spawns
+            // from. Both are diffing calls — setActivity emits only on an
+            // ingest delta and restarts the sweep only on a new health clock —
+            // so re-running them every 500ms costs a comparison and nothing else.
+            // Without this the map's two claims about motion being real were
+            // simply false: the call existed once, at create(), where it did no
+            // more than record the baseline it had nothing to compare against.
+            this.hubMap.setActivity(this.dataBridge.ingested, this.ecosystem.healthCheckedAt);
         }
     }
 
