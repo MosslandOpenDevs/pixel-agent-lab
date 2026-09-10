@@ -430,6 +430,14 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 .eco-dot.down { background: #ef4444; }
 /* Not health-checked: hollow, so absence of information never reads as green. */
 .eco-dot.unknown { background: transparent; box-shadow: inset 0 0 0 1px #475569; }
+/* Not a service: a file or an external destination. An empty ring rather than
+   a grey dot — grey reads as "unknown status", and these have no status. */
+.eco-dot.none { background: transparent; box-shadow: inset 0 0 0 1px #46566e; }
+/* Answered, but not in the contract's vocabulary (algora still says "running").
+   Same blue-white the map uses for unmeasured: it is present and lit, and it is
+   making a claim we are not entitled to colour green. */
+.eco-dot.offcontract { background: #a9c4e8; }
+.eco-row.reference .eco-name { color: #7b8ca6; }
 
 .eco-life {
     font-size: 8px;
@@ -550,6 +558,7 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 .hud-legend i.f.stream::after  { width: 11px; height: 11px; animation: legend-breathe 2.4s ease-in-out infinite; }
 .hud-legend i.f.health::after  { width: 9px;  height: 9px;  animation: legend-breathe 2.4s ease-in-out infinite; }
 .hud-legend i.f.listed::after  { width: 6px;  height: 6px;  opacity: 0.7; }
+.hud-legend i.f.reference::after { width: 4px; height: 4px; opacity: 0.5; }
 
 @keyframes legend-breathe {
     0%, 100% { opacity: 1; }
@@ -615,6 +624,9 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 }
 .hub-label.stream { font-size: 12px; font-weight: 600; color: #f1f5f9; }
 .hub-label.listed { color: #93a9c6; }
+/* Links and files. Quieter than any service, because they are not one and
+   should not compete with one for attention. */
+.hub-label.reference { color: #6f8099; font-size: 10px; letter-spacing: 0.02em; }
 .hub-label.archived { color: #c08a5e; opacity: 0.85; }
 .hub-label.hovered { color: #ffffff; }
 
@@ -624,6 +636,7 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 
 @media (max-width: 900px) {
     .hub-label { font-size: 10px; }
+    .hub-label.reference { font-size: 9px; }
     .hub-label.stream { font-size: 11px; }
 }
 

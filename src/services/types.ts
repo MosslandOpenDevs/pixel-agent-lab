@@ -226,8 +226,16 @@ export type RegistryService = {
     /** MIP-1 lifecycle. Absent on 13 of 30 entries, so it is genuinely optional —
      *  render "unspecified", never a default like "lab". */
     lifecycle?: "beta" | "lab" | "archive" | string;
-    /** Health endpoint. Only 7 of 30 entries have one. */
+    /** Health endpoint, per the ecosystem health contract (links/HEALTH_CONTRACT.md).
+     *  16 of 30 entries have one; the rest are artifacts, channels and third-party
+     *  links that have nothing to report. */
     statusUrl?: string;
+    /** True on entries that are a *file*, not a running thing — llms.txt,
+     *  sitemap.xml, ecosystem-registry.json. The registry says so itself, and it
+     *  is the difference between "can be down" and "can only be missing". */
+    artifact?: boolean;
+    /** "mossland" for everything we run; "third-party" for the exchange listings. */
+    owner?: string;
     maintainer?: string;
     hidden?: boolean;
 };

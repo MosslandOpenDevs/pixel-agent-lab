@@ -1,17 +1,27 @@
 import Phaser from "phaser";
-import type { EcosystemNode, Instrumentation } from "../services/ecosystem-feed.ts";
+import type { EcosystemNode, Instrumentation, NodeKind } from "../services/ecosystem-feed.ts";
+
+/** This monitor's own id in the registry. Its star is the one place on the map
+ *  the viewer is already standing, which changes what a click can usefully do. */
+const SELF_ID = "monitor";
 
 /**
  * The Space Hub map: the Mossland ecosystem as a slowly turning galaxy, with
  * every registered service a body in orbit around the registry at its core.
  *
  * The rule the visuals encode: **a body may only look as alive as the data
- * behind it.** Most of the ecosystem exposes nothing but a registry entry, so
- * drawing 28 busy belts would be a lie.
+ * behind it.** Drawing 28 busy belts would be a lie.
  *
  *   listed  → hollow, dim, does not breathe. We know it exists. Nothing more.
- *   health  → filled and breathing, coloured by the aggregator's verdict.
+ *   health  → filled and breathing, coloured by its own reported status.
  *   stream  → bright, haloed, and its belt is one click away.
+ *
+ * A second axis, and the one that decides whether the first even applies: not
+ * every registry entry is a service. `llms.txt`, `sitemap.xml` and the registry
+ * JSON are *files*; the GitHub orgs, Medium, X and the exchange listings are
+ * *destinations*. None of them can be "degraded", so none of them are graded —
+ * they are drawn as small quiet marks. Asking whether llms.txt is up is not a
+ * question with an answer, and a map that invites it is a map that misleads.
  *
  * Two kinds of motion, kept deliberately distinct:
  *
@@ -75,6 +85,7 @@ type Body = {
     color: number;
     phase: number;
     instrumentation: Instrumentation;
+    kind: NodeKind;
     archived: boolean;
     hovered: boolean;
 };
@@ -314,6 +325,7 @@ export class HubMap {
               <span><i class="f stream"></i>streaming · ringed, we read its data</span>
               <span><i class="f health"></i>health-checked · breathing, status only</span>
               <span><i class="f listed"></i>listed · steady, not measured here</span>
+              <span><i class="f reference"></i>link or file · not a service</span>
             </div>
             <div class="lg">
               <div class="lg-h">COLOUR — what it reports</div>
@@ -371,7 +383,7 @@ export class HubMap {
 
     setNodes(nodes: EcosystemNode[]): void {
         const signature = nodes
-            .map(n => `${n.service.id}:${n.instrumentation}:${n.health?.status ?? "-"}:${n.service.lifecycle ?? "-"}`)
+            .map(n => `${n.service.id}:${n.kind}:${n.instrumentation}:${n.health?.status ?? "-"}:${n.service.lifecycle ?? "-"}`)
             .join("|");
         if (signature === this.signature) return;
         this.signature = signature;
@@ -401,18 +413,24 @@ export class HubMap {
         // visible, so re-apply the current state.
         this.setMapVisible(!this.hudEl?.hidden);
 
-        const streaming = nodes.filter(n => n.instrumentation === "stream").length;
-        const health = nodes.filter(n => n.instrumentation === "health").length;
-        const listed = nodes.filter(n => n.instrumentation === "listed").length;
+        // Count services against services. Folding the files and the exchange
+        // links into "listed only" made the ecosystem look far less observed than
+        // it is — they are not unobserved services, they are not services.
+        const services = nodes.filter(n => n.kind === "service");
+        const references = nodes.length - services.length;
+        const streaming = services.filter(n => n.instrumentation === "stream").length;
+        const health = services.filter(n => n.instrumentation === "health").length;
+        const listed = services.filter(n => n.instrumentation === "listed").length;
         if (this.countsEl) {
             this.countsEl.innerHTML =
-                `<b>${nodes.length}</b> registered <i>·</i> <b>${streaming}</b> streaming `
-                + `<i>·</i> <b>${health}</b> health-checked <i>·</i> <b>${listed}</b> listed only`;
+                `<b>${services.length}</b> services <i>·</i> <b>${streaming}</b> streaming `
+                + `<i>·</i> <b>${health}</b> health-checked <i>·</i> <b>${listed}</b> listed only `
+                + `<i>·</i> <b>${references}</b> links &amp; files`;
         }
     }
 
     private makeBody(node: EcosystemNode, r: number, a: number, index: number): Body {
-        const { service, health, instrumentation } = node;
+        const { service, health, instrumentation, kind } = node;
         const archived = service.lifecycle === "archive" || service.status === "deprecated";
         // Colour carries the health claim, and only a real verdict earns a
         // verdict colour. No measurement means the neutral star — present, lit,
@@ -422,7 +440,15 @@ export class HubMap {
             : COLOR.unmeasured;
         const color = archived ? COLOR.archived : statusColor;
 
-        const baseR = instrumentation === "stream" ? 10 : instrumentation === "health" ? 7.5 : 5;
+        // A file and an exchange listing are not services, so they are drawn as
+        // the smallest, quietest marks on the map. They are here because they are
+        // part of the ecosystem's surface and worth finding — but sizing them
+        // like a running service would invite the question "is llms.txt up?",
+        // which has no answer.
+        const reference = kind !== "service";
+        const baseR = reference ? 3
+            : instrumentation === "stream" ? 10
+                : instrumentation === "health" ? 7.5 : 5;
         const x = this.cx + Math.cos(a) * r;
         const y = this.cy + Math.sin(a) * r;
 
@@ -433,13 +459,17 @@ export class HubMap {
         // Every registered service is a lit star. What instrumentation changes is
         // the *character* of the light, never whether there is any: unmeasured
         // ones shine steadily, measured ones breathe, streaming ones carry a halo.
-        glow = this.scene.add.circle(x, y, baseR * (instrumentation === "listed" ? 2.0 : 2.6),
-            color, instrumentation === "listed" ? 0.09 : 0.13).setDepth(D + 8);
+        // References get no glow at all — they are marks, not bodies.
+        if (!reference) {
+            glow = this.scene.add.circle(x, y, baseR * (instrumentation === "listed" ? 2.0 : 2.6),
+                color, instrumentation === "listed" ? 0.09 : 0.13).setDepth(D + 8);
+        }
         dot = this.scene.add.circle(x, y, baseR, color);
         if (instrumentation === "stream") {
             halo = this.scene.add.circle(x, y, baseR + 9).setStrokeStyle(1.5, color, 0.5).setDepth(D + 9);
         }
-        dot.setDepth(D + 10).setAlpha(archived ? 0.55 : instrumentation === "listed" ? 0.85 : 1);
+        dot.setDepth(D + 10).setAlpha(
+            reference ? 0.5 : archived ? 0.55 : instrumentation === "listed" ? 0.85 : 1);
 
         // DOM, not a Phaser Text. `pixelArt: true` forces NEAREST filtering, and
         // raising the Text resolution does not save it — the oversized glyph
@@ -448,7 +478,8 @@ export class HubMap {
         // made the tooltip and the HUD legible, and it has the extra property
         // that names keep a constant size instead of shrinking with camera zoom.
         const label = document.createElement("div");
-        label.className = "hub-label " + instrumentation + (archived ? " archived" : "");
+        label.className = "hub-label " + (reference ? "reference" : instrumentation)
+            + (archived ? " archived" : "");
         label.textContent = service.name;
         this.labelLayer?.appendChild(label);
 
@@ -458,7 +489,7 @@ export class HubMap {
         const body: Body = {
             node, dot, glow, halo, label,
             r, a, spin: SPIN_BASE * (0.35 + 0.65 * (1 - r / RING_RADII.ecosystem)),
-            ox: 0, oy: 0, baseR, color, phase: index * 0.7, instrumentation, archived, hovered: false,
+            ox: 0, oy: 0, baseR, color, phase: index * 0.7, instrumentation, kind, archived, hovered: false,
         };
 
         dot.on("pointerover", () => { body.hovered = true; this.showTooltip(body); this.scene.input.setDefaultCursor("pointer"); });
@@ -470,16 +501,27 @@ export class HubMap {
     private showTooltip(b: Body): void {
         const el = this.tipEl;
         if (!el) return;
-        const { service: sv, health, instrumentation } = b.node;
+        const { service: sv, health, instrumentation, kind } = b.node;
         const esc = (v: string) => v.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string));
-        const measured = health
-            ? `<b class="ok">health ${esc(health.status)}</b>${health.latencyMs != null ? ` · ${health.latencyMs}ms` : ""}`
-            : `<span class="dim">not measured by this monitor</span>`;
+        const isSelf = sv.id === SELF_ID;
+        // A file is either served or missing; a link's uptime belongs to whoever
+        // runs it. Neither has a health line, because neither has health.
+        const measured = kind === "artifact"
+            ? `<span class="dim">a published file, not a service</span>`
+            : kind === "link"
+                ? `<span class="dim">an external destination — not ours to measure</span>`
+                : health
+                    ? `<b class="ok">health ${esc(health.status)}</b>${health.latencyMs != null ? ` · ${health.latencyMs}ms` : ""}`
+                    : `<span class="dim">not measured by this monitor</span>`;
+        const action = isSelf ? "you are here — click to recentre"
+            : instrumentation === "stream" ? "click to open its belt"
+                : kind === "artifact" ? "click to open the file"
+                    : "click to open the service";
         el.innerHTML = `<div class="t">${esc(sv.name)}</div>`
-            + `<div class="m">${esc(sv.lifecycle ?? "lifecycle unspecified")} · ${esc(instrumentation)}</div>`
+            + `<div class="m">${esc(sv.lifecycle ?? "lifecycle unspecified")} · ${esc(kind === "service" ? instrumentation : kind)}</div>`
             + `<div class="m">${measured}</div>`
             + (b.archived ? `<div class="m dim">archived — preserved read-only</div>` : "")
-            + `<div class="a">${instrumentation === "stream" ? "click to open its belt" : "click to open the service"}</div>`;
+            + `<div class="a">${action}</div>`;
         el.hidden = false;
         this.placeTooltip();
     }
@@ -505,7 +547,25 @@ export class HubMap {
             this.onOpenZone(id);
             return;
         }
+        // Our own star. Opening monitor.moss.land in a new tab hands the viewer a
+        // second copy of the page they are already looking at — the one click on
+        // this map that cannot go anywhere. Recentre the view on it instead,
+        // which is the useful reading of "take me to this one".
+        if (id === SELF_ID) {
+            this.focusSelf(b);
+            return;
+        }
         window.open(b.node.service.url, "_blank", "noopener,noreferrer");
+    }
+
+    /** Pulls the camera back to the hub and flashes our own star, so clicking it
+     *  does something legible instead of nothing. */
+    private focusSelf(b: Body): void {
+        this.scene.cameras.main.pan(this.cx, this.cy, 420, "Sine.easeInOut");
+        this.scene.tweens.add({
+            targets: b.dot, scale: { from: 1, to: 2.2 },
+            duration: 260, yoyo: true, repeat: 1, ease: "Sine.easeInOut",
+        });
     }
 
     /**
@@ -599,9 +659,10 @@ export class HubMap {
             // Breathing is a claim that something is being watched, so only
             // measured bodies do it. The rest hold a steady light rather than
             // going dark.
-            const observed = b.instrumentation !== "listed" && !b.archived && !this.reducedMotion;
+            const reference = b.kind !== "service";
+            const observed = !reference && b.instrumentation !== "listed" && !b.archived && !this.reducedMotion;
             const pulse = observed ? 0.78 + 0.22 * Math.sin(t * 1.8 + b.phase) : 1;
-            const rest = b.archived ? 0.55 : b.instrumentation === "listed" ? 0.85 : 1;
+            const rest = reference ? 0.5 : b.archived ? 0.55 : b.instrumentation === "listed" ? 0.85 : 1;
             b.dot.setAlpha(rest * pulse);
             b.glow?.setAlpha(observed ? 0.10 + 0.07 * Math.sin(t * 1.8 + b.phase)
                 : b.instrumentation === "listed" ? 0.09 : 0.08);
