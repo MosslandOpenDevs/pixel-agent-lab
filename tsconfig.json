@@ -4,7 +4,9 @@
         "useDefineForClassFields": true,
         "module": "ESNext",
         "lib": ["ES2022", "DOM", "DOM.Iterable"],
-        "types": ["vite/client"],
+        // `node` is for the test server in tests/ecosystem-client.test.ts —
+        // the app itself never touches a node API.
+        "types": ["vite/client", "node"],
         "skipLibCheck": true,
 
         /* Bundler mode */
@@ -22,5 +24,9 @@
         "noFallthroughCasesInSwitch": true,
         "noUncheckedSideEffectImports": true
     },
-    "include": ["src"]
+    // `tests` and the vitest config are here so `tsc` covers them too: a test
+    // that no longer compiles is a test that stopped guarding anything, and
+    // `npm test` alone would report that as a passing suite of whatever is
+    // left.
+    "include": ["src", "tests", "vitest.config.ts"]
 }

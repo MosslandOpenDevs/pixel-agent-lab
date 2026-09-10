@@ -1,5 +1,5 @@
 import type { EcosystemRegistry, RegistryService, EcosystemHealth, HealthEntry } from "./types.ts";
-import { getJSON } from "./http.ts";
+import { getJSON, getJSONWithStatus } from "./http.ts";
 
 // Both of these are served with `Access-Control-Allow-Origin: *`, so they are
 // fetched cross-origin directly and need no entry in the monitor's nginx proxy.
@@ -42,6 +42,13 @@ export async function fetchEcosystemHealth(signal?: AbortSignal): Promise<Ecosys
  * `null` here means "answered, but we cannot interpret the verdict", which the
  * map then draws as unmeasured rather than inventing a colour. Guessing that
  * "running" means "ok" would hide exactly the non-conformance worth seeing.
+ *
+ * Read through `getJSONWithStatus`, not `getJSON`, because a service is allowed
+ * to declare bad news in the status line. `signal` and `signalmap` answer 503
+ * when their feed is dry — on purpose, since a deploy gate reads that code — and
+ * throwing on it meant their outage arrived here as nothing at all and drew as
+ * "not health-checked". A body that names its own state is believed whatever the
+ * code says; only a 5xx we could not parse makes us supply the verdict.
  */
 export async function fetchServiceHealth(
     service: RegistryService,
@@ -49,18 +56,26 @@ export async function fetchServiceHealth(
 ): Promise<HealthEntry | null> {
     if (!service.statusUrl) return null;
     const started = performance.now();
-    const data = await getJSON<Partial<HealthEntry> & { timestamp?: string }>(
-        service.statusUrl, `${service.id} health`, signal,
+    const { httpCode, data } = await getJSONWithStatus<Partial<HealthEntry> & { timestamp?: string }>(
+        service.statusUrl, signal,
     );
-    const status = typeof data?.status === "string" ? data.status : null;
+    const declared = typeof data?.status === "string" ? data.status : null;
+    // Only 5xx stands in for a missing verdict. A 5xx is the service failing, so
+    // "down" is its own report by another means. A 4xx is not: it says the
+    // request was wrong — a moved path, a rate limit — and the service answering
+    // "no" quickly is evidence it is alive, so calling it down would be a false
+    // alarm. Those stay unmeasured, which is the honest reading of a health
+    // address we can no longer use.
+    const status = declared ?? (httpCode >= 500 ? "down" : null);
     if (!status) return null;
     return {
         service: service.id,
         status,
+        httpCode,
         // Ours, not theirs: the round trip we just measured. The contract's
         // `timestamp` is when the service generated its answer, which is a
         // different fact and belongs in `checkedAt`.
         latencyMs: Math.round(performance.now() - started),
-        checkedAt: typeof data.timestamp === "string" ? data.timestamp : undefined,
+        checkedAt: typeof data?.timestamp === "string" ? data.timestamp : undefined,
     };
 }
