@@ -257,16 +257,14 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
     }
 }
 
-/* Tablet only: lay the panel blocks in a row so the Service I/O cards and
-   Detail don't get buried in a tiny inner scroll region. */
+/* Tablet only: lay the panel blocks in a row, while retaining the bounded
+   scroll area above. A full registry must not push the stage off-screen. */
 @media (min-width: 768px) and (max-width: 1100px) {
     .panel {
         display: flex;
         flex-wrap: wrap;
         align-items: flex-start;
         gap: 8px;
-        max-height: none;
-        overflow: visible;
     }
     .panel h1,
     .panel .sub,
@@ -475,7 +473,11 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 }
 .hub-tip .t { font-size: 13px; font-weight: 700; color: #f1f5f9; margin-bottom: 3px; }
 .hub-tip .m { color: #9fb2cc; }
-.hub-tip .m b.ok { color: #7ee2a8; font-weight: 600; }
+.hub-tip .m b { font-weight: 600; }
+.hub-tip .m b.ok { color: #7ee2a8; }
+.hub-tip .m b.degraded { color: #fbbf24; }
+.hub-tip .m b.down { color: #f87171; }
+.hub-tip .m b.unknown { color: #9fb2cc; }
 .hub-tip .dim { color: #6b7f99; }
 .hub-tip .a { margin-top: 5px; color: #7dd3fc; font-size: 11px; }
 

@@ -1,157 +1,120 @@
 # Mossland Space Hub — Governance Monitor
 
-> **이 저장소의 상태:** **`Lifecycle: Lab`** (실험, best-effort) — [MIP-1](https://agora.moss.land/proposals/6a85129f8be190cf5d2ebcc1)(2026-09-02 비준) 및 [links.moss.land 레지스트리](https://links.moss.land/ecosystem-registry.json)의 `monitor` 항목 기준. 예고 없이 변경되거나 중단될 수 있습니다.
+[English](README.md) · **한국어** · [모니터 열기](https://monitor.moss.land)
 
-[English](README.md) · **한국어**
+> **Lifecycle: Lab** — 실험적이며 best-effort로 운영되어 변경되거나 중단될 수 있습니다. [Mossland 생태계 레지스트리](https://links.moss.land/ecosystem-registry.json)의 `monitor` 항목은 2026-09-02 비준된 [MIP-1](https://agora.moss.land/proposals/6a85129f8be190cf5d2ebcc1)을 따릅니다.
 
-Mossland Space Hub는 **Mossland 서비스 생태계 지도**를 궤도 정거장 형태로 렌더링하는 라이브 대시보드입니다. [links.moss.land 레지스트리](https://links.moss.land/ecosystem-registry.json)에 등록된 모든 서비스가 궤도 위의 천체로 표시되고, 그중 실제로 데이터를 스트리밍하는 소수만 자기 컨베이어 벨트 구역을 갖습니다.
+Mossland 생태계를 탐색하는 지도와 Algora, AO, Bridge의 픽셀 아트 상세 화면입니다. 레지스트리 메타데이터, 서비스 상태, 거버넌스 데이터를 하나의 정적 웹 앱에서 보여줍니다.
 
-중심 원칙은 **천체는 그 뒤에 있는 데이터만큼만 살아 보일 수 있다**는 것입니다. 생태계 대부분은 레지스트리 항목 외에는 아무것도 노출하지 않으며, 지도는 그 사실을 숨기지 않습니다 — 아무것도 나르지 않는 벨트 28개를 돌리는 대신에요.
+지도는 **등록 여부**, **관측 가능한 범위**, **서비스가 보고한 상태**를 구분합니다. 레지스트리에 등록되었다는 사실만으로 정상 동작을 판단하지 않습니다.
 
-![Status](https://img.shields.io/badge/status-live-brightgreen)
-[![Live](https://img.shields.io/badge/live-monitor.moss.land-brightgreen)](https://monitor.moss.land)
-![Stack](https://img.shields.io/badge/stack-Vite%20%C2%B7%20TS%20%C2%B7%20Phaser%203-blue)
-![License](https://img.shields.io/badge/license-MIT-blue)
+## 모니터 탐색
 
-https://github.com/user-attachments/assets/1e3ab6cb-41f0-4bff-a227-a6b4505b2c3e
+기본 화면은 **Map**입니다. 레지스트리 항목은 Official, Participation, Developers, Markets, Ecosystem 영역별 궤도에 배치됩니다. 천체에 마우스를 올리면 상세 정보가 표시됩니다. Algora, AO, Bridge를 클릭하면 상세 화면이 열리고, 다른 항목은 해당 목적지로 이동합니다. 모니터 자신의 천체를 클릭하면 지도 중앙으로 돌아옵니다.
 
-## 왜 (Why)
+| 지도 형태 | 의미 |
+| --- | --- |
+| 링이 있는 Streaming | 모니터가 데이터 API를 폴링하는 서비스: Algora, AO, Bridge. 이 표시 자체가 정상 상태를 뜻하지는 않습니다. |
+| Health-checked | 직접 조회 또는 대체 집계 경로로 얻은 상태 측정값이 있습니다. |
+| Listed only | 레지스트리에 등록되어 있지만 상태 측정값은 없습니다. |
+| Link or file | 거래소 링크, 소셜 계정, 공개 파일 등의 참조 항목입니다. 서비스 상태 집계에서 제외합니다. |
 
-- **생태계 전체를 한눈에** — 등록된 모든 서비스와 MIP-1 라이프사이클, 그리고 각 서비스가 실제로 얼마나 관측 가능한지.
-- **실제 작업 추적** — 각 서비스의 실제 처리 단계를 벨트 위 박스 이동으로 추적.
-- **입력에서 결과까지** — 신호 유입부터 검증된 결과까지 전체 흐름을 시각화.
+색상은 `ok`, `degraded`, `down`, 또는 해석 가능한 측정값 없음을 나타냅니다. 보관·폐기된 항목도 흐리게 표시해 지도에 남깁니다. 사이드바에는 레지스트리 항목과 라이프사이클, 서비스 수, API 응답 여부, 거버넌스 수치가 표시됩니다.
 
-세 서비스가 공유하는 개념적 거버넌스 루프:
+**Map / Algora / AO / Bridge** 탭은 데스크톱과 모바일 모두에서 동작합니다. 768px 미만에서는 메뉴 버튼으로 정보 패널을 열고, 768~1100px에서는 패널이 스테이지 위에 배치됩니다. 모바일 기준 너비를 넘나들면 캔버스를 맞추기 위해 앱을 새로 불러옵니다. 모션 감소 설정을 사용하면 지도 회전과 활동 효과가 억제되고 탭 전환 시 카메라 이동 애니메이션이 생략됩니다.
 
-`Signals → Issues → Debates/Plans → Execution/Delegation → Outcomes/Proof → Feedback`
+## 거버넌스 상세 화면
 
-> 화면은 세 서비스를 **연결선 없이 독립 구역**으로 렌더링합니다(사이드바에서 세 개의 독립 서비스로 표현). 서비스 간 데이터 핸드오프의 **개념 모델**은 [`docs/mossland-services-overview.md`](docs/mossland-services-overview.md) 참고(해당 문서의 핸드오프 절은 구현된 계약이 아니라 설계 스케치임을 스스로 밝히고 있습니다).
+세 서비스는 독립적입니다. 단계 이름은 각 서비스의 작업 흐름을 설명하며, 서비스 간 데이터 전달이 구현되어 있다는 뜻은 아닙니다.
 
-## 서비스 (Services)
+| 화면 | 표시 내용 |
+| --- | --- |
+| **Algora · Sense & Detect** | 세로 신호 벨트, 9개 작업 단계, 에이전트 클러스터. 벨트는 Algora만이 아니라 **세 서비스 모두**에서 가져온 신호를 합친 큐를 사용합니다. |
+| **AO · Debate & Plan** | 캐시된 AO 아이디어와 점수, 토론 주제·발췌문, Ideas / Plans / Projects 총계. 아이디어 버블은 계획 전환 7점, 프로젝트 전환 8점 기준을 시각화합니다. |
+| **Bridge · Execute & Verify** | L0~L4 작업 흐름, 전문 에이전트, stats의 제안 총계, 에이전트 신뢰도, 최근 결과. 모니터는 전체 제안 목록을 조회하지 않습니다. |
 
-| 서비스 | 포트 | 역할 | Input | Output |
-|--------|------|------|-------|--------|
-| **Algora** | `:3201` | Sense & Detect | github / rss / social / chain 신호 | 구조화된 signal, 우선순위화된 issue |
-| **AO** | `:3001` | Debate & Plan | 신호 / 이슈 컨텍스트 | Ideas → Plans → Projects |
-| **Bridge** | `:3101` | Execute & Verify | 확정된 제안 / 태스크 | execution record, verified outcome, trust score |
+서비스별 역할과 개념적인 거버넌스 루프는 [서비스 개요](docs/mossland-services-overview.md)를 참고하세요. 해당 문서의 서비스 간 데이터 전달 모델은 설계 스케치입니다.
 
-### Algora — Sense & Detect · `:3201`
+### 데이터 해석 시 알아둘 점
 
-- **책임** — 다중 소스 신호 수집, 이슈 감지·우선순위화, 거버넌스 안건화.
-- **화면:**
-    - `LOADER` 봇이 신호를 집어 세로 컨베이어 벨트에 적재.
-    - 11개 에이전트 클러스터(총 38 agents): Visionaries · Builders · Investors · Guardians · Operatives · Moderators · Advisors · Orchestrators · Archivists · Red Team · Scouts.
-    - 9단계 파이프라인: Signal Intake → Issue Detection → Workflow Dispatch → Specialist Work → Doc Production → Dual-House Vote → Approval Route → Execution → Outcome Verify.
-    - 신호는 벨트를 따라가다 이슈 카드로 승격되며, 스테이지 열 아래의 **고정 범례**가 파이프라인이 산출하는 문서 종류(`DP` · `GP` · `PA` · `WGC` · `ER` · `DR`)를 표시합니다. 이 범례는 정적이며, 개수를 세지 않고 종류만 나타냅니다.
+- **푸시 스트림이 아닌 폴링입니다.** 서비스 API는 이전 조회 주기가 끝난 뒤 15초, 상태 조회는 60초, 레지스트리는 10분 후에 갱신합니다. 요청 주기의 제한 시간은 10초입니다.
+- **API 응답 여부와 서비스 상태는 다릅니다.** 신호 또는 통계 요청에 성공하면 해당 서비스에 `LIVE` 배지가 붙습니다. 세 서비스 중 하나라도 응답하면 전체 상태는 `LIVE`, 모두 응답하지 않으면 `OFFLINE`, 첫 판단 전에는 `Connecting…`입니다. 생태계 상태 피드는 별도로 상태를 측정합니다.
+- **상태는 관측 근거로 판단합니다.** 브라우저가 레지스트리의 `statusUrl`을 직접 조회하며, 직접 측정값이 [city 상태 집계](https://city.moss.land/api/health)보다 우선합니다. HTTP 오류 응답에도 상태가 명시되어 있으면 유지합니다. 해석할 수 없는 5xx 응답은 `down`으로 처리하지만, 네트워크·CORS 실패나 유효한 판정이 없는 응답만으로 장애를 단정하지 않습니다. 알 수 없는 상태 문자열도 임의로 바꾸지 않습니다.
+- **움직임마다 의미가 다릅니다.** 지도 입자는 새로 수집된 신호에 반응하며 표시 개수에는 제한이 있습니다. 링 스윕은 완료된 상태 조회에 반응합니다. 은하 회전은 장식입니다. 벨트 이동, 단계 전환, Bridge의 제안·증명 애니메이션은 작업 흐름을 설명하며, 실행 추적 기록이나 작업 완료 증거가 아닙니다.
+- **최신 조회보다 오래된 스냅샷이 남을 수 있습니다.** 개별 요청이 실패해도 상세 데이터 캐시는 유지되고, 상태 조회가 전부 실패하면 이전 스냅샷을 유지합니다. AO는 캐시된 아이디어를 다시 표시할 수 있습니다. 신뢰도나 성공률이 없으면 `—`를 표시하며, 없는 값을 측정된 0으로 해석해서는 안 됩니다. 이 앱은 관측용 뷰어이며 가동 시간이나 실행의 감사 기록이 아닙니다.
 
-### AO — Debate & Plan · `:3001`
+## 로컬 실행
 
-- **책임** — 멀티 에이전트 토론, 아이디어/계획/프로젝트 생성.
-- **화면:**
-    - 로더 봇이 아이디어를 가로 컨베이어 벨트에 투입.
-    - 에이전트 링: Diverge(16) → Converge(8) → Plan(10).
-    - 벨트 위 score 임계값: **score ≥ 7 → Plan 문서**, **≥ 8 → Project 박스**, 그 미만은 소멸.
-    - 실시간 Debate 카드가 실제 토론 topic과 스니펫을 표시(AO 미응답 시 "AO debates unavailable").
-    - 하단 퍼널: Ideas / Plans / Projects 누계.
-
-### Bridge — Execute & Verify · `:3101`
-
-- **책임** — 실행/위임, 인간 투표, 결과 검증(Outcome/Proof), 신뢰 지표.
-- **화면:**
-    - 5개 전문 에이전트: Risk · Treasury · Community · Product · Moderator.
-    - L0→L4 파이프라인: L0 Signal Collection → L1 Deliberation → L2 Human Voting → L3 Execution → L4 Outcome Proof (L4에서 제안이 outcome-proof로 전환).
-    - Trust & Outcomes 패널: Agent Trust · Proposals · Success Rate + 최근 outcome 로그.
-
-## 인터페이스 (Interface)
-
-### 좌측 패널
-- **연결 상태** — 단일 집계 `Connecting…` / `LIVE` / `OFFLINE`. 첫 폴링이 끝날 때까지는 `Connecting…`이고, 하나라도 도달 가능하면 `LIVE`이며, 폴링 결과 셋 다 불가로 확인된 뒤에만 "OFFLINE — no service reachable"을 표시합니다.
-- **Stats** — 신호 큐 길이, Algora 미해결 이슈, 오늘의 AO 토론 수. 뒤의 둘은 각 서비스가 보고한 전체 수치이며, 응답하지 않은 서비스는 `—`로 표시됩니다.
-- **Service I/O** — Algora / AO / Bridge를 개별 표시, 각 서비스의 도달 여부를 반영한 LIVE 배지.
-- **About** — 화면이 무엇을 보여주는지에 대한 한 문단 설명.
-
-### 우측 스테이지
-- **Algora** — 세로 벨트 + 9단계 파이프라인 + 11개 에이전트 클러스터 아크.
-- **AO** — 가로 벨트(score 임계값에 따라 Plan/Project로 승격) + Debate 카드 + 에이전트 링(Diverge/Converge/Plan).
-- **Bridge** — 가로 벨트(L0→L4) + 5개 전문 에이전트 + Trust & Outcomes 패널.
-- **허브 스트립** — 전체 폭 DataBridge 상태 스트립(집계 연결 · 큐 크기 · 15초 폴링).
-
-### 모바일 / 반응형
-- **< 768px** — 하단 탭(Algora / AO / Bridge)으로 한 번에 한 서비스 구역을 확대; 좌상단 ☰ 버튼으로 좌측 패널을 오버레이 토글.
-- **768–1100px** — 좌측 패널을 상단에 가로로 배치.
-- 모바일/데스크톱 브레이크포인트를 넘나들면(회전/리사이즈) 올바른 스케일 설정으로 재초기화.
-- `prefers-reduced-motion` 존중(펄스/전환/카메라 팬 완화).
-
-### 실시간 데이터
-- 세 서비스(Algora / AO / Bridge)를 각각 **15초 주기로 폴링**.
-- **Algora** 벨트는 세 서비스의 signal 엔드포인트에서 받은 신호를 **하나로 합친 큐**에서 공급받습니다 — Algora 트래픽만이 아니라 감지된 스트림 전체를 보여줍니다. **AO** 벨트의 버블은 실제 AO 아이디어이며, 캐시가 비면 임의의 placeholder를 만들어내지 않고 벨트를 비워 둡니다. **Bridge** 레인은 꾸준한 제안 흐름을 애니메이션으로 보여주며 제안 수치는 `/bridge-api/stats`에서 옵니다. Trust & Outcomes 패널은 **현재 표시할 데이터가 없습니다** — `/bridge-api/outcomes` 와 `/bridge-api/trust/leaderboard/*` 가 모두 빈 배열을 반환하고 `outcomes.successRate` 가 `null` 이라, 해당 수치는 `0%` 가 아니라 `—` 로 표시됩니다. (`L0`~`L4` 스테이지 라벨은 정적이며, 연결된 실시간 수치는 없습니다.)
-- 부분 응답·필드 누락·서비스 장애에도 크래시 없이, 해당 서비스만 LIVE 배지를 잃고 수치는 `—`로 표시되며 나머지는 계속 렌더링됩니다. 서비스가 반환하지 않은 값을 다른 출처의 숫자로 대체해 보여주는 일은 없습니다.
-
-## 데이터 흐름 (구역별 · 독립)
-
-세 서비스는 서로 연결선 없이 **각자의 파이프라인**을 독립적으로 돌립니다.
-
-- **Algora** — 신호 유입 → `LOADER` 적재 → 9단계(이슈 승격 + 문서 산출) → Outcome Verify 후 배출.
-- **AO** — 아이디어 유입 → score 기반 Plan(≥ 7)/Project(≥ 8) 승격 또는 소멸 → 퍼널 누계.
-- **Bridge** — 제안 유입 → L0~L4 통과 → L4에서 Outcome Proof로 전환 → 배출.
-
-데이터가 비어 있거나 서비스가 offline이면 각 구역은 새 항목을 만들어내지 않고 조용한 상태를 유지하며, 사이드바가 서비스별 LIVE/OFFLINE을 정직하게 반영합니다.
-
-## 기술 스택 (Tech Stack)
-
-| 레이어 | 선택 | 이유 |
-|--------|------|------|
-| 2D 엔진 | Phaser 3 | 벨트/에이전트 애니메이션, 구역별 카메라 팬/줌 |
-| 언어 | TypeScript | 타입이 있는 서비스 클라이언트와 월드 상태 |
-| 빌드 | Vite 7 | 빠른 dev 서버 + 정적 SPA 빌드 |
-| UI | 없음(vanilla DOM) | 사이드바/패널은 순수 DOM, 프레임워크 없음 |
-| 서빙 | `serve` / PM2 | 프로덕션에서 정적 `dist` 호스팅 |
-
-정적 SPA, UI 프레임워크 없음. 요구 사항: Node `>= 20.19` (Vite 7).
-
-## 실행 (Running Locally)
+**Node.js 22.12 이상**과 npm을 사용하세요. Vite의 지원 범위는 `^20.19.0 || >=22.12.0`이므로 20.x 계열의 20.19 이상도 호환되지만, 22.12보다 이른 22.x 버전은 지원하지 않습니다. TypeScript, Vite 7, Phaser 3, 순수 DOM/CSS, Vitest를 사용합니다.
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-빌드:
+Vite가 로컬 주소를 출력하며 기본값은 `http://localhost:5173`입니다. 레지스트리와 상태 지도는 공개 교차 출처 엔드포인트를 사용합니다. 거버넌스 상세 데이터를 모두 표시하려면 세 API를 로컬에서 실행하거나 [vite.config.ts](vite.config.ts)의 프록시 대상을 수정하세요.
+
+| 브라우저 경로 | 개발 환경 기본 업스트림 | 조회 데이터 |
+| --- | --- | --- |
+| `/algora-api/*` | `http://localhost:3201/api/*` | 신호, 이슈, 통계 |
+| `/ao-api/*` | `http://localhost:3001/*` | 신호, 상태, 토론, 아이디어, 계획, 프로젝트 |
+| `/bridge-api/*` | `http://localhost:3101/api/*` | 신호, 통계, 결과, 에이전트 신뢰도 |
+
+API 서버는 별도 프로젝트이며 이 저장소에서 실행하지 않습니다. 프런트엔드 API 키나 `.env` 파일은 필요하지 않습니다. 레지스트리와 대체 상태 집계 주소는 [ecosystem-client.ts](src/services/ecosystem-client.ts)에 정의되어 있습니다. 직접 조회하는 상태 엔드포인트는 CORS로 브라우저 접근을 허용해야 합니다.
+
+### 검증 및 빌드
 
 ```bash
+npm run typecheck
+npm test
 npm run build
 ```
 
-빌드 결과물 서빙:
+브랜치 푸시와 `main` 대상 풀 리퀘스트에 대해 [GitHub Actions](.github/workflows/ci.yml)도 같은 검사를 실행합니다. 테스트는 상태 응답 해석과 생태계 피드 동작을 검증합니다. 해당 코드를 수정할 때는 `npm run test:watch`를 사용할 수 있습니다.
 
 ```bash
-npm run serve          # serve dist -l 6300 -s
-# 또는 PM2
-pm2 start ecosystem.config.cjs
+npm run preview       # 프로덕션 빌드를 로컬에서 확인
+# 또는
+npm run serve         # dist/를 6300 포트에서 서빙
 ```
 
-## 배포 (Deployment)
+미리보기와 정적 서빙에는 Vite 개발 API 프록시가 **포함되지 않습니다**. 전체 프로덕션 동작을 확인하려면 아래 리버스 프록시 구성이 필요합니다.
 
-프런트엔드는 정적 SPA이며 `dist/`를 아무 정적 호스트로 서빙하면 됩니다.
+## 배포
 
-앱은 런타임에 세 서비스 API를 **같은 오리진** 경로로 호출합니다:
+검토한 커밋을 빌드해 `dist/`를 배포합니다. 배포는 수동이며, GitHub Actions는 변경을 검증하지만 배포하지 않습니다. 정적 파일을 직접 서빙하거나, PM2가 이미 설치된 환경에서 [ecosystem.config.cjs](ecosystem.config.cjs)를 사용할 수 있습니다. 이 설정은 설치된 로컬 `serve` 패키지를 6300 포트에서 실행하므로 시작 전에 `npm ci`를 실행하세요.
 
-- `/algora-api` → Algora signals/issues/stats
-- `/ao-api` → AO signals/debates/status/ideas/plans/projects
-- `/bridge-api` → Bridge signals/stats/proposals/outcomes/trust
+앱에는 URL 경로 기반 라우팅이 없습니다. 정적 서버는 JavaScript 리소스를 포함해 **없는 파일에 404를 반환**하며 `index.html`로 대체하지 않습니다. 다른 호스트나 리버스 프록시에서도 이 동작을 유지하세요.
 
-개발 시에는 `vite.config.ts`의 dev 프록시가 이 경로들을 `localhost:3201 / 3001 / 3101`로 연결합니다. **프로덕션에서는 dev 프록시가 동작하지 않으므로**, 정적 파일 앞단의 리버스 프록시(nginx 등)가 위 세 경로를 각 서비스 업스트림으로 프록시해야 합니다.
+프로덕션 경로 설정은 [deploy/nginx.conf.example](deploy/nginx.conf.example)에 있습니다. 호스트에 맞게 도메인, 인증서, 업스트림 주소, 파일 경로를 조정하세요. 배포에는 다음 구성이 필요합니다.
 
-예시 구성은 [`deploy/nginx.conf.example`](deploy/nginx.conf.example) 참고. 현재 배포: `https://monitor.moss.land` (정적 `dist` + nginx 리버스 프록시).
+1. 위 표의 경로 변환을 유지하는 세 개의 동일 출처 API 프록시.
+2. 생성된 `health.json`을 반환하는 정확한 `/api/health` 경로.
+3. HTML·상태 응답의 재검증과 콘텐츠 해시가 있는 `/assets/` 파일의 immutable 캐싱.
+4. 의도한 API 소비자를 위한 CORS. 예제는 허용된 출처를 반사하고, `OPTIONS`를 처리하며, `Origin`과 `Accept-Encoding`에 따라 응답 캐시를 구분합니다. 공개 상태 엔드포인트에는 `Access-Control-Allow-Origin: *`를 사용합니다.
 
-### CORS (교차 오리진 소비자)
+배포 후 데스크톱·모바일 너비에서 지도와 세 상세 탭을 열어 확인하세요. API가 JSON을 반환하고, 서비스 응답 여부가 결정되며, 레지스트리·상태 데이터와 브라우저 리소스가 오류 없이 로드되는지 확인합니다. `/api/health`가 빌드한 커밋을 식별하는 JSON을 반환하고, 존재하지 않는 `/assets/` 파일은 404를 반환하는지도 검증하세요.
 
-monitor의 API 경로는 same-origin뿐 아니라 **다른 오리진**(예: moss.land 홈페이지의 거버넌스 위젯)에서도 호출됩니다. 따라서 리버스 프록시는 `Access-Control-Allow-Origin`을 단일 apex로 **고정하지 말고**, 허용 오리진 목록(`moss.land`, `www.moss.land`, dev `localhost:5173`)을 **반사(reflect)**하고 `OPTIONS` 프리플라이트에 응답해야 합니다. 예시 설정의 `map $http_origin` 블록과 각 `/…-api/` location의 CORS 헤더 참고. (GitHub issue #1)
+### 모니터 상태 엔드포인트
 
-## 관련 프로젝트 (Related Projects)
+프로덕션 빌드마다 `dist/health.json`을 생성합니다. 리버스 프록시는 이를 [`/api/health`](https://monitor.moss.land/api/health)로 제공합니다.
 
-- [`mossland-pixelops`](https://github.com/MosslandOpenDevs/mossland-pixelops) — 같은 거버넌스 시각화 아이디어를 이벤트 소싱 구조로 다시 설계하는 초기 단계 자매 프로젝트(현재 pre-alpha 스캐폴드).
+```json
+{
+  "status": "ok",
+  "service": "monitor",
+  "role": "viewer",
+  "pipeline": "none",
+  "timestamp": "<빌드 시각>",
+  "buildTime": "<동일한 빌드 시각>",
+  "commit": "<짧은 Git 커밋 해시, Git 체크아웃 밖에서는 null>"
+}
+```
 
-## 라이선스 (License)
+이 응답은 서빙 중인 프런트엔드 빌드를 식별합니다. 타임스탬프는 **빌드 시각**이며 마지막 상태 조회 시각이나 업스트림 데이터의 최신성이 아닙니다. `status: "ok"`가 Algora, AO, Bridge 또는 생태계 전체의 정상을 보증하지는 않습니다. Vite 개발 모드에는 이 경로가 없으며, 로컬 빌드는 미리보기·정적 서빙의 `/health.json`에서 확인할 수 있습니다.
 
-MIT — 자세한 내용은 [LICENSE](LICENSE) 참고.
+## 관련 프로젝트와 라이선스
+
+- [Mossland 생태계 레지스트리](https://links.moss.land) — 서비스 검색과 라이프사이클 메타데이터.
+- [mossland-pixelops](https://github.com/MosslandOpenDevs/mossland-pixelops) — 관련 프로젝트인 이벤트 소싱 기반 픽셀 아트 운영 지도.
+- [MIT 라이선스](LICENSE).

@@ -131,7 +131,12 @@ export class SpaceHubScene extends Phaser.Scene {
             b.classList.toggle("active", active);
             b.setAttribute("aria-selected", String(active));
         });
-        const v = ZONE_VIEWS[zone];
+        // Bridge stacks Trust & Outcomes under its left belt on phones. Fit
+        // that compact layout, otherwise the empty desktop column halves its
+        // size and makes the mobile labels unreadable.
+        const v = zone === "bridge" && window.innerWidth < 768
+            ? { x: 0, y: 480, w: 640, h: 280 }
+            : ZONE_VIEWS[zone];
         const cam = this.cameras.main;
         // Fitting a landscape region into a portrait camera by its *limiting*
         // axis shrinks it to a fraction of the screen — on a phone the whole

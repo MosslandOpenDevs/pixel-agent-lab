@@ -101,7 +101,7 @@ server {
     # Option A (nginx serves the build directly):
     #     root /var/www/pixel-agent-lab/dist;
     #     index index.html;
-    #     location / { try_files $uri $uri/ /index.html; }
+    #     location / { try_files $uri $uri/ =404; }
     # Option B (proxy to the PM2 `serve` process), as used in production:
     location / {
         add_header Cache-Control "no-cache" always;
@@ -124,9 +124,9 @@ server {
 
     # index.html must never be cached without revalidation. It carries the hashed
     # asset names, so a stale copy points the browser at a build that no longer
-    # exists — and `serve -s` answers missing paths with index.html at HTTP 200,
-    # so the browser gets HTML where it asked for JavaScript and the page silently
-    # does nothing. Serving it with no Cache-Control at all leaves this to
+    # exists. Keep missing asset requests as 404s: this app has no pathname
+    # routes, so its serve/PM2 configuration deliberately omits `serve -s`.
+    # Serving HTML with no Cache-Control at all leaves this to
     # heuristic freshness, which is how a deployed fix can fail to reach anyone.
     location = /index.html {
         proxy_pass http://monitor_web/index.html;

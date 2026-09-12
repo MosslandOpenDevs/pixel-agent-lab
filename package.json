@@ -13,7 +13,7 @@
         "test": "vitest run",
         "test:watch": "vitest",
         "preview": "vite preview",
-        "serve": "serve dist -l 6300 -s"
+        "serve": "serve dist -l 6300"
     },
     "devDependencies": {
         "@types/node": "^22.20.2",
