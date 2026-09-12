@@ -45,7 +45,7 @@ See [the service overview](docs/mossland-services-overview.md) for responsibilit
 
 ## Run locally
 
-Use **Node.js 22.12+** and npm. Vite supports `^20.19.0 || >=22.12.0`, so Node 20.19+ within the 20.x line is also compatible; earlier 22.x releases are not. The app uses TypeScript, Vite 7, Phaser 3, vanilla DOM/CSS, and Vitest.
+Use **Node.js 22 LTS (22.12+) or Node.js 24 LTS** and npm. The development toolchain supports `^22.12.0 || ^24.0.0 || >=26.0.0`. The app uses TypeScript, Vite 7, Phaser 3, vanilla DOM/CSS, and Vitest.
 
 ```bash
 npm ci

@@ -45,7 +45,7 @@ Mossland 생태계를 탐색하는 지도와 Algora, AO, Bridge의 픽셀 아트
 
 ## 로컬 실행
 
-**Node.js 22.12 이상**과 npm을 사용하세요. Vite의 지원 범위는 `^20.19.0 || >=22.12.0`이므로 20.x 계열의 20.19 이상도 호환되지만, 22.12보다 이른 22.x 버전은 지원하지 않습니다. TypeScript, Vite 7, Phaser 3, 순수 DOM/CSS, Vitest를 사용합니다.
+**Node.js 22 LTS(22.12 이상) 또는 Node.js 24 LTS**와 npm을 사용하세요. 개발 도구 전체의 지원 범위는 `^22.12.0 || ^24.0.0 || >=26.0.0`입니다. TypeScript, Vite 7, Phaser 3, 순수 DOM/CSS, Vitest를 사용합니다.
 
 ```bash
 npm ci
