@@ -1,5 +1,12 @@
 # Mossland Space Hub — Governance Monitor
 
+<!-- opendevs-badges:start -->
+[![Lifecycle: Lab](https://img.shields.io/badge/Lifecycle-Lab-eab308?style=flat)](https://links.moss.land/ecosystem-registry.json)
+[![CI](https://github.com/MosslandOpenDevs/pixel-agent-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/MosslandOpenDevs/pixel-agent-lab/actions/workflows/ci.yml)
+[![Website: monitor.moss.land](https://img.shields.io/badge/Website-monitor.moss.land-2563eb?style=flat)](https://monitor.moss.land/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-64748b?style=flat)](https://github.com/MosslandOpenDevs/pixel-agent-lab/blob/main/LICENSE)
+<!-- opendevs-badges:end -->
+
 [English](README.md) · **한국어** · [모니터 열기](https://monitor.moss.land)
 
 > **Lifecycle: Lab** — 실험적이며 best-effort로 운영되어 변경되거나 중단될 수 있습니다. [Mossland 생태계 레지스트리](https://links.moss.land/ecosystem-registry.json)의 `monitor` 항목은 2026-09-02 비준된 [MIP-1](https://agora.moss.land/proposals/6a85129f8be190cf5d2ebcc1)을 따릅니다.
