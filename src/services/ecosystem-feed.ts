@@ -61,8 +61,8 @@ const TIMEOUT_MS = 10_000;
 export class EcosystemFeed {
     private registry: RegistryService[] = [];
     private health = new Map<string, HealthEntry>();
-    private timers: ReturnType<typeof setTimeout>[] = [];
-    private inFlight: AbortController | null = null;
+    private timers = new Set<ReturnType<typeof setTimeout>>();
+    private inFlight = new Set<AbortController>();
     private destroyed = false;
 
     /** Null until the first registry fetch settles — distinct from "empty". */
@@ -114,16 +114,19 @@ export class EcosystemFeed {
     private schedule(job: () => Promise<void>, everyMs: number): void {
         if (this.destroyed) return;
         const timer = setTimeout(async () => {
+            this.timers.delete(timer);
             await job();
             this.schedule(job, everyMs);
         }, everyMs);
-        this.timers.push(timer);
+        this.timers.add(timer);
     }
 
     private async withSignal<T>(run: (s: AbortSignal) => Promise<T>): Promise<T | null> {
         if (this.destroyed) return null;
         const ctrl = new AbortController();
-        this.inFlight = ctrl;
+        // Registry and health have independent schedules and can overlap.
+        // Teardown must cancel both, whichever request started last.
+        this.inFlight.add(ctrl);
         const timeout = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
         try {
             return await run(ctrl.signal);
@@ -131,7 +134,7 @@ export class EcosystemFeed {
             return null;                    // keep the previous snapshot
         } finally {
             clearTimeout(timeout);
-            if (this.inFlight === ctrl) this.inFlight = null;
+            this.inFlight.delete(ctrl);
         }
     }
 
@@ -204,8 +207,8 @@ export class EcosystemFeed {
     destroy(): void {
         this.destroyed = true;
         this.timers.forEach(clearTimeout);
-        this.timers = [];
-        this.inFlight?.abort();
-        this.inFlight = null;
+        this.timers.clear();
+        this.inFlight.forEach(ctrl => ctrl.abort());
+        this.inFlight.clear();
     }
 }

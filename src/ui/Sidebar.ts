@@ -10,6 +10,7 @@ let statsEl: HTMLDivElement;
 let serviceEl: HTMLDivElement;
 let connEl: HTMLDivElement;
 let ecoEl: HTMLDivElement;
+let ecosystemMarkup = "";
 
 export function initSidebar(): void {
     const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -25,7 +26,7 @@ export function initSidebar(): void {
     <div id="ecosystem" class="stats eco"></div>
     <div class="detail">
       <h2>About</h2>
-      <div class="detail-desc">A map of every service in the links.moss.land registry, and belts for the few that actually stream data here. How solid a body looks is how much this monitor can really see: services it streams are brightest, ones covered by the health aggregator pulse, and ones it only knows from the registry sit still with a hollow dot. Archived services stay on the map, dimmed. Motion on the map is real \u2014 each mote is one ingested signal, and the ring sweep is an actual health refresh. Anything a service does not report shows \u2014 rather than a substituted figure.</div>
+      <div class="detail-desc">Explore the Mossland service registry and governance activity. Map colours show reported health; rings mark services whose data is read here. Links and files are references, and archived services remain dimmed. Map particles follow newly received signals, while a sweep marks a health refresh. Detail belts illustrate workflows, not confirmed execution. LIVE means a data API responded; cached details can remain visible when a later request fails.</div>
     </div>
   </aside>
   <div class="panel-backdrop"></div>
@@ -43,6 +44,7 @@ export function initSidebar(): void {
     statsEl = document.querySelector<HTMLDivElement>("#stats")!;
     serviceEl = document.querySelector<HTMLDivElement>("#serviceStatus")!;
     ecoEl = document.querySelector<HTMLDivElement>("#ecosystem")!;
+    ecosystemMarkup = "";
     connEl = document.querySelector<HTMLDivElement>("#connStatus")!;
 
     // mobile panel toggle
@@ -95,6 +97,14 @@ const SECTION_LABELS: Record<string, string> = {
 const esc = (v: unknown) => String(v ?? "").replace(/[&<>"]/g, c =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
 
+function renderEcosystem(markup: string): void {
+    // The scene refreshes this panel twice a second. Replacing identical links
+    // drops keyboard focus and text selection even though no data changed.
+    if (markup === ecosystemMarkup) return;
+    ecosystemMarkup = markup;
+    ecoEl.innerHTML = markup;
+}
+
 /**
  * Ecosystem panel, driven by the links.moss.land registry.
  *
@@ -106,13 +116,13 @@ const esc = (v: unknown) => String(v ?? "").replace(/[&<>"]/g, c =>
 export function updateEcosystem(feed: EcosystemFeed): void {
     if (!ecoEl) return;
     if (!feed.isLoaded()) {
-        ecoEl.innerHTML = `<h2>Ecosystem</h2><div class="row"><span>Registry</span><b>loading\u2026</b></div>`;
+        renderEcosystem(`<h2>Ecosystem</h2><div class="row"><span>Registry</span><b>loading\u2026</b></div>`);
         return;
     }
 
     const nodes = feed.nodes();
     if (nodes.length === 0) {
-        ecoEl.innerHTML = `<h2>Ecosystem</h2><div class="row"><span>Registry</span><b>unavailable</b></div>`;
+        renderEcosystem(`<h2>Ecosystem</h2><div class="row"><span>Registry</span><b>unavailable</b></div>`);
         return;
     }
 
@@ -156,14 +166,14 @@ export function updateEcosystem(feed: EcosystemFeed): void {
       ${list.map(row).join("")}
     </div>`).join("");
 
-    ecoEl.innerHTML = `
+    renderEcosystem(`
     <h2>Ecosystem</h2>
     <div class="row"><span>Services</span><b>${services.length}</b></div>
     <div class="row"><span>Streaming here</span><b>${streaming}</b></div>
     <div class="row"><span>Health-checked</span><b>${checked}</b></div>
     <div class="row"><span>Listed only</span><b>${listed}</b></div>
     ${sections}
-    `;
+    `);
 }
 
 export function updateSidebar(dataBridge: DataBridge): void {

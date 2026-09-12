@@ -142,6 +142,7 @@ export class HubMap {
     private signature = "";
     private elapsed = 0;
     private reducedMotion = false;
+    private mapVisible = true;
 
     private motes: Mote[] = [];
     private byId = new Map<string, Body>();
@@ -169,11 +170,18 @@ export class HubMap {
      * this band — the belt zones top out around 12, the header sits at 100.
      */
     setMapVisible(visible: boolean): void {
+        this.mapVisible = visible;
         for (const o of this.scene.children.list) {
             const obj = o as Phaser.GameObjects.GameObject & { depth?: number; setVisible?: (v: boolean) => unknown };
             if (typeof obj.depth === "number" && obj.depth >= D && typeof obj.setVisible === "function") {
                 obj.setVisible(visible);
             }
+        }
+        this.sweep?.setVisible(visible && !this.reducedMotion && this.sweepT < 1);
+        if (!visible) {
+            if (this.tipEl) this.tipEl.hidden = true;
+            this.bodies.forEach(b => { b.hovered = false; });
+            this.scene.input.setDefaultCursor("default");
         }
     }
 
@@ -377,16 +385,35 @@ export class HubMap {
     private emitMote(originId: string): void {
         const body = this.byId.get(originId);
         if (!body || this.motes.length >= MAX_MOTES) return;
-        const dot = this.scene.add.circle(body.dot.x, body.dot.y, 2.5, COLOR.hub).setDepth(D + 11).setAlpha(0.95);
+        const dot = this.scene.add.circle(body.dot.x, body.dot.y, 2.5, COLOR.hub)
+            .setDepth(D + 11).setAlpha(0.95).setVisible(this.mapVisible);
         this.motes.push({ dot, fromX: body.dot.x, fromY: body.dot.y, t: 0, speed: 0.55 + Math.random() * 0.35 });
     }
 
     setNodes(nodes: EcosystemNode[]): void {
         const signature = nodes
-            .map(n => `${n.service.id}:${n.kind}:${n.instrumentation}:${n.health?.status ?? "-"}:${n.service.lifecycle ?? "-"}`)
+            .map(n => JSON.stringify([
+                n.service.id, n.kind, n.instrumentation, n.health?.status,
+                n.service.lifecycle, n.service.status, n.service.name, n.service.section,
+            ]))
             .join("|");
-        if (signature === this.signature) return;
+        if (signature === this.signature) {
+            // Latency and target URLs can change without changing a body's
+            // appearance. Keep its data current without rebuilding its orbit.
+            for (const node of nodes) {
+                const body = this.byId.get(node.service.id);
+                if (!body) continue;
+                const changed = body.node.health !== node.health || body.node.service !== node.service;
+                body.node = node;
+                if (changed && body.hovered) this.showTooltip(body);
+            }
+            return;
+        }
         this.signature = signature;
+
+        // Destroying a hovered body does not deliver a pointerout event.
+        if (this.tipEl) this.tipEl.hidden = true;
+        this.scene.input.setDefaultCursor("default");
 
         this.bodies.forEach(b => { b.dot.destroy(); b.glow?.destroy(); b.halo?.destroy(); b.label.remove(); });
         this.bodies = [];
@@ -435,9 +462,9 @@ export class HubMap {
         // Colour carries the health claim, and only a real verdict earns a
         // verdict colour. No measurement means the neutral star — present, lit,
         // and making no claim either way.
-        const statusColor = health
-            ? (COLOR[health.status as keyof typeof COLOR] as number) ?? COLOR.unmeasured
-            : COLOR.unmeasured;
+        const statusColor = health?.status === "ok" ? COLOR.ok
+            : health?.status === "degraded" ? COLOR.degraded
+                : health?.status === "down" ? COLOR.down : COLOR.unmeasured;
         const color = archived ? COLOR.archived : statusColor;
 
         // A file and an exchange listing are not services, so they are drawn as
@@ -500,10 +527,12 @@ export class HubMap {
 
     private showTooltip(b: Body): void {
         const el = this.tipEl;
-        if (!el) return;
+        if (!el || !this.mapVisible) return;
         const { service: sv, health, instrumentation, kind } = b.node;
         const esc = (v: string) => v.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string));
         const isSelf = sv.id === SELF_ID;
+        const healthClass = health?.status === "ok" || health?.status === "degraded" || health?.status === "down"
+            ? health.status : "unknown";
         // A file is either served or missing; a link's uptime belongs to whoever
         // runs it. Neither has a health line, because neither has health.
         const measured = kind === "artifact"
@@ -511,7 +540,7 @@ export class HubMap {
             : kind === "link"
                 ? `<span class="dim">an external destination — not ours to measure</span>`
                 : health
-                    ? `<b class="ok">health ${esc(health.status)}</b>${health.latencyMs != null ? ` · ${health.latencyMs}ms` : ""}`
+                    ? `<b class="${healthClass}">health ${esc(health.status)}</b>${health.latencyMs != null ? ` · ${health.latencyMs}ms` : ""}`
                     : `<span class="dim">not measured by this monitor</span>`;
         const action = isSelf ? "you are here — click to recentre"
             : instrumentation === "stream" ? "click to open its belt"
@@ -686,7 +715,7 @@ export class HubMap {
 
         if (this.sweepT < 1) {
             this.sweepT = Math.min(1, this.sweepT + dt / 1100);
-            this.sweep?.setVisible(true)
+            this.sweep?.setVisible(this.mapVisible)
                 .setRadius(34 + this.sweepT * (RING_RADII.ecosystem + 24))
                 .setStrokeStyle(2, COLOR.hub, 0.5 * (1 - this.sweepT));
         } else {

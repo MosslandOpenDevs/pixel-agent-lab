@@ -4,7 +4,7 @@
     "version": "1.0.0",
     "type": "module",
     "engines": {
-        "node": ">=20.19"
+        "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
     },
     "scripts": {
         "dev": "vite",
@@ -13,7 +13,7 @@
         "test": "vitest run",
         "test:watch": "vitest",
         "preview": "vite preview",
-        "serve": "serve dist -l 6300 -s"
+        "serve": "serve dist -l 6300"
     },
     "devDependencies": {
         "@types/node": "^22.20.2",

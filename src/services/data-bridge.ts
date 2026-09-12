@@ -86,6 +86,12 @@ const NO_SERVICES: ServiceFlags = { algora: false, ao: false, bridge: false };
 // thousand remembered ids is plenty to suppress repeats without growing forever.
 const MAX_SEEN_IDS = 2000;
 
+// Primary keys belong to each upstream, not to the combined feed. Keep the
+// original id in the public signal while deduplicating within its origin.
+function signalKey(signal: Pick<UnifiedSignal, "origin" | "id">): string {
+    return `${signal.origin}:${signal.id}`;
+}
+
 const POLL_INTERVAL_MS = 15_000;
 // Bounds a whole cycle. An in-flight guard alone would let one stuck request
 // block every later refresh, so the guard and this timeout have to ship together.
@@ -203,9 +209,16 @@ export class DataBridge {
             fetchAlgoraSignals(30, signal), fetchAOSignals(20, signal), fetchBridgeSignals(20, signal),
         ]);
         const unified: UnifiedSignal[] = [];
-        if (a.status === "fulfilled") for (const s of a.value) if (!this.seenSignalIds.has(s.id)) { this.seenSignalIds.add(s.id); unified.push(algoraSignalToUnified(s)); this.ingested.algora++; }
-        if (ao.status === "fulfilled") for (const s of ao.value) if (!this.seenSignalIds.has(s.id)) { this.seenSignalIds.add(s.id); unified.push(aoSignalToUnified(s)); this.ingested.ao++; }
-        if (b.status === "fulfilled") for (const s of b.value) if (!this.seenSignalIds.has(s.id)) { this.seenSignalIds.add(s.id); unified.push(bridgeSignalToUnified(s)); this.ingested.bridge++; }
+        const ingest = (s: UnifiedSignal) => {
+            const key = signalKey(s);
+            if (this.seenSignalIds.has(key)) return;
+            this.seenSignalIds.add(key);
+            unified.push(s);
+            this.ingested[s.origin]++;
+        };
+        if (a.status === "fulfilled") for (const s of a.value) ingest(algoraSignalToUnified(s));
+        if (ao.status === "fulfilled") for (const s of ao.value) ingest(aoSignalToUnified(s));
+        if (b.status === "fulfilled") for (const s of b.value) ingest(bridgeSignalToUnified(s));
         // shuffle
         for (let i = unified.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [unified[i], unified[j]] = [unified[j], unified[i]]; }
         this.signalQueue.push(...unified);
@@ -213,7 +226,7 @@ export class DataBridge {
         // Bound the dedupe memory: keep only ids still in the queue so it never
         // grows without limit on an always-on monitor.
         if (this.seenSignalIds.size > MAX_SEEN_IDS) {
-            this.seenSignalIds = new Set(this.signalQueue.map(s => s.id));
+            this.seenSignalIds = new Set(this.signalQueue.map(signalKey));
         }
         return { algora: a.status === "fulfilled", ao: ao.status === "fulfilled", bridge: b.status === "fulfilled" };
     }

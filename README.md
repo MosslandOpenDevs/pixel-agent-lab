@@ -1,157 +1,120 @@
 # Mossland Space Hub — Governance Monitor
 
-> **Status of this repository:** **`Lifecycle: Lab`** (실험, best-effort) — per [MIP-1](https://agora.moss.land/proposals/6a85129f8be190cf5d2ebcc1), ratified 2026-09-02, and the [links.moss.land registry](https://links.moss.land/ecosystem-registry.json) entry `monitor`. May change or stop without notice.
+**English** · [한국어](README.ko.md) · [Open the monitor](https://monitor.moss.land)
 
-**English** · [한국어](README.ko.md)
+> **Lifecycle: Lab** — experimental, best-effort, and subject to change or retirement. The `monitor` entry in the [Mossland ecosystem registry](https://links.moss.land/ecosystem-registry.json) follows [MIP-1](https://agora.moss.land/proposals/6a85129f8be190cf5d2ebcc1), ratified on 2026-09-02.
 
-Mossland Space Hub is a live **map of the Mossland service ecosystem**, rendered as an orbital station: every service in the [links.moss.land registry](https://links.moss.land/ecosystem-registry.json) is a body in orbit, and the few that actually stream data get their own conveyor-belt zone.
+An interactive map of the Mossland ecosystem, with pixel-art detail views for Algora, AO, and Bridge. It brings registry metadata, service health, and governance data into one static web app.
 
-The organizing rule is that **a body may only look as alive as the data behind it**. Most of the ecosystem exposes nothing but a registry entry, and the map says so rather than animating 28 belts that carry nothing.
+The map separates **what exists**, **what can be observed**, and **what a service reports**. A registry entry alone is not evidence that a service is healthy.
 
-![Status](https://img.shields.io/badge/status-live-brightgreen)
-[![Live](https://img.shields.io/badge/live-monitor.moss.land-brightgreen)](https://monitor.moss.land)
-![Stack](https://img.shields.io/badge/stack-Vite%20%C2%B7%20TS%20%C2%B7%20Phaser%203-blue)
-![License](https://img.shields.io/badge/license-MIT-blue)
+## Explore the monitor
 
-https://github.com/user-attachments/assets/1e3ab6cb-41f0-4bff-a227-a6b4505b2c3e
+**Map** is the default view. Registry entries orbit by section: Official, Participation, Developers, Markets, and Ecosystem. Hover over a body for details; click Algora, AO, or Bridge to open its detail view, or other entries to visit their destination. Clicking the monitor's own body recenters the map.
 
-## Why
+| Map form | Meaning |
+| --- | --- |
+| Streaming, with a ring | This monitor polls the service's data APIs: Algora, AO, or Bridge. This does not itself mean the service is healthy. |
+| Health-checked | A health reading is available, directly or through the fallback aggregator. |
+| Listed only | The registry lists the service, but no health reading is available. |
+| Link or file | A reference such as an exchange listing, social account, or published file; excluded from service health counts. |
 
-- **The whole ecosystem at a glance** — every registered service, its MIP-1 lifecycle, and how much of it is actually observable.
-- **Trace the actual work** — follow each service's real processing stages as boxes move along its belt.
-- **Input to outcome** — visualize the full flow from incoming signals to verified outcomes.
+Colour shows `ok`, `degraded`, `down`, or no interpretable measurement. Archived/deprecated entries stay visible with subdued styling. The sidebar lists registry entries and lifecycle labels, service counts, API reachability, and governance figures.
 
-The conceptual governance loop the three services share:
+The **Map / Algora / AO / Bridge** tabs work on desktop and mobile. Below 768px, the information panel opens from the menu button; between 768px and 1100px it sits above the stage. Crossing the mobile breakpoint reloads the app to fit its canvas. Reduced-motion preferences suppress map rotation and activity effects and remove tab-switch camera transitions.
 
-`Signals → Issues → Debates/Plans → Execution/Delegation → Outcomes/Proof → Feedback`
+## Governance detail views
 
-> The screen renders the three services as **independent zones with no connecting lines** — the sidebar frames them as three independent services. For the conceptual cross-service data-handoff model, see [`docs/mossland-services-overview.md`](docs/mossland-services-overview.md) (its handoff section is explicitly a design sketch, not an implemented contract).
+The three services are independent. Their stage labels illustrate each service's workflow; they do not establish an implemented data handoff between services.
 
-## Services
+| View | Displays |
+| --- | --- |
+| **Algora · Sense & Detect** | A vertical signal belt, nine workflow stages, and agent clusters. The belt consumes a merged queue of signals fetched from **all three services**, not only Algora. |
+| **AO · Debate & Plan** | Cached AO ideas and scores, debate topics/snippets, and Ideas / Plans / Projects totals. Idea bubbles illustrate score thresholds of 7 for a plan and 8 for a project. |
+| **Bridge · Execute & Verify** | An L0–L4 workflow, specialist agents, proposal totals from stats, agent trust, and recent outcomes. The monitor does not fetch the full proposal collection. |
 
-| Service | Port | Role | Input | Output |
-|---------|------|------|-------|--------|
-| **Algora** | `:3201` | Sense & Detect | github / rss / social / chain signals | structured signals, prioritized issues |
-| **AO** | `:3001` | Debate & Plan | signal / issue context | Ideas → Plans → Projects |
-| **Bridge** | `:3101` | Execute & Verify | confirmed proposals / tasks | execution records, verified outcomes, trust scores |
+See [the service overview](docs/mossland-services-overview.md) for responsibilities and the conceptual governance loop. Its cross-service handoff model is a design sketch.
 
-### Algora — Sense & Detect · `:3201`
+### Reading the data correctly
 
-- **Responsibility** — multi-source signal collection, issue detection & prioritization, governance agenda-setting.
-- **On screen:**
-    - A `LOADER` bot picks up incoming signals and loads them onto a vertical conveyor belt.
-    - 11 agent clusters (38 agents total): Visionaries · Builders · Investors · Guardians · Operatives · Moderators · Advisors · Orchestrators · Archivists · Red Team · Scouts.
-    - A 9-stage pipeline: Signal Intake → Issue Detection → Workflow Dispatch → Specialist Work → Doc Production → Dual-House Vote → Approval Route → Execution → Outcome Verify.
-    - Signals are promoted to issue cards partway along the belt; a fixed legend below the stage column names the document types the pipeline produces (`DP` · `GP` · `PA` · `WGC` · `ER` · `DR`). The legend is static — it labels the types rather than counting them.
+- **Polling, not a push stream.** Service APIs refresh 15 seconds after the previous cycle finishes. Health sweeps refresh after 60 seconds; the registry after 10 minutes. Requests have a 10-second cycle timeout.
+- **API reachability and health are different.** A service gets a `LIVE` badge when its signals or stats request succeeds. The aggregate is `LIVE` when any of the three responds, `OFFLINE` when none responds, and `Connecting…` before the first verdict. The ecosystem health feed has its own status readings.
+- **Health comes from evidence.** The browser reads service `statusUrl` addresses from the registry; direct readings override the [city health aggregate](https://city.moss.land/api/health). A declared status survives an HTTP error response. An unparseable 5xx means `down`; network/CORS failures and responses without a usable verdict do not by themselves prove an outage. Unknown status strings stay untranslated.
+- **Motion has different meanings.** Map particles are triggered by newly ingested signals and capped for display; a ring sweep follows a completed health refresh. Galaxy rotation is decorative. Belt travel, stage promotion, and Bridge's proposal/proof animation illustrate workflows; they are not execution traces or proof that work completed.
+- **Snapshots can be older than the latest poll.** Detail caches survive individual request failures, and a wholly unsuccessful health sweep retains the previous snapshot. AO can replay cached ideas. Missing trust scores or an absent success rate display `—`; an unavailable value must not be interpreted as a measured zero. This is an observational viewer, not an uptime or execution audit log.
 
-### AO — Debate & Plan · `:3001`
+## Run locally
 
-- **Responsibility** — multi-agent debate; generating ideas, plans, and projects.
-- **On screen:**
-    - A loader bot feeds ideas onto a horizontal conveyor belt.
-    - Agent ring: Diverge (16) → Converge (8) → Plan (10).
-    - Score thresholds on the belt: **score ≥ 7 → Plan document**, **≥ 8 → Project box**, anything lower fades out.
-    - Live Debate cards show the real debate topic and a snippet (falling back to "AO debates unavailable" when AO doesn't respond).
-    - Bottom funnel: running totals of Ideas / Plans / Projects.
-
-### Bridge — Execute & Verify · `:3101`
-
-- **Responsibility** — execution/delegation, human voting, outcome/proof verification, trust metrics.
-- **On screen:**
-    - 5 specialist agents: Risk · Treasury · Community · Product · Moderator.
-    - An L0→L4 pipeline: L0 Signal Collection → L1 Deliberation → L2 Human Voting → L3 Execution → L4 Outcome Proof (proposals swap to an outcome-proof at L4).
-    - Trust & Outcomes panel: Agent Trust · Proposals · Success Rate, plus a recent outcome log.
-
-## Interface
-
-### Left panel
-- **Connection status** — a single aggregate `Connecting…` / `LIVE` / `OFFLINE`. It stays `Connecting…` until the first poll settles, is `LIVE` while any service is reachable, and only reports "OFFLINE — no service reachable" once a poll has actually found all three down.
-- **Stats** — signal queue depth, Algora open issues, and AO debates today. The last two are the services' own totals; a service that did not respond shows `—`.
-- **Service I/O** — Algora / AO / Bridge listed separately, each with its own LIVE badge reflecting that service's reachability.
-- **About** — a one-paragraph description of what the screen is showing.
-
-### Right stage
-- **Algora** — vertical belt + 9-stage pipeline + 11 agent-cluster arc.
-- **AO** — horizontal belt (ideas promoted to Plan/Project by score threshold) + Debate cards + agent ring (Diverge/Converge/Plan).
-- **Bridge** — horizontal belt (L0→L4) + 5 specialist agents + Trust & Outcomes panel.
-- **Hub strip** — a full-width DataBridge status strip (aggregate connection · queue size · 15s polling).
-
-### Mobile / responsive
-- **< 768px** — a bottom tab bar (Algora / AO / Bridge) zooms one service zone at a time; a top-left ☰ button toggles the left panel as an overlay.
-- **768–1100px** — the left panel lays out horizontally across the top.
-- Crossing the mobile/desktop breakpoint (rotate/resize) re-initializes with the correct scale settings.
-- Respects `prefers-reduced-motion` (pulses/transitions/camera pans are reduced).
-
-### Live data
-- All three services (Algora / AO / Bridge) are polled every **15 seconds**.
-- The **Algora** belt is fed from a single merged queue of live signals from all three services' signal endpoints — it shows the whole sensed stream, not Algora-only traffic. **AO** belt bubbles are real AO ideas, and the belt stays empty when none are cached rather than inventing placeholder ones. The **Bridge** lane animates a steady proposal flow, and its proposal counts come from `/bridge-api/stats`. Its Trust & Outcomes panel currently has **no data to show**: `/bridge-api/outcomes` and `/bridge-api/trust/leaderboard/*` both return empty lists, and `outcomes.successRate` is `null`, so those figures render as `—` rather than as `0%`. (The `L0`-`L4` stage labels are static — no live figures are attached to them.)
-- Partial responses, missing fields, or a service outage never crash the view — the affected service drops its LIVE badge and its figures show `—`, while the rest keeps rendering. No number is ever substituted from another source in place of a figure the service did not return.
-
-## Data Flow (per zone · independent)
-
-The three services run **their own pipelines** independently, with no connecting lines between them.
-
-- **Algora** — signals arrive → `LOADER` loads the belt → 9 stages (issue promotion + document production) → discharged after Outcome Verify.
-- **AO** — ideas arrive → promoted to Plan (≥ 7) / Project (≥ 8) by score, or fade out → funnel totals.
-- **Bridge** — proposals arrive → run L0–L4 → swap to Outcome Proof at L4 → discharged.
-
-When data is empty or a service is offline, each zone goes quiet rather than manufacturing items, and the sidebar honestly reflects LIVE/OFFLINE per service.
-
-## Tech Stack
-
-| Layer | Choice | Rationale |
-|-------|--------|-----------|
-| 2D engine | Phaser 3 | Belt/agent animation, per-zone camera pan/zoom |
-| Language | TypeScript | Typed service clients and world state |
-| Build | Vite 7 | Fast dev server + static SPA build |
-| UI | None (vanilla DOM) | Sidebar/panel are plain DOM; no framework |
-| Serve | `serve` / PM2 | Static `dist` hosting in production |
-
-Static SPA, no UI framework. Requires Node `>= 20.19` (Vite 7).
-
-## Running Locally
+Use **Node.js 22 LTS (22.12+) or Node.js 24 LTS** and npm. The development toolchain supports `^22.12.0 || ^24.0.0 || >=26.0.0`. The app uses TypeScript, Vite 7, Phaser 3, vanilla DOM/CSS, and Vitest.
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-Build:
+Vite prints the local URL, normally `http://localhost:5173`. The registry and health map use public cross-origin endpoints. To populate all governance detail views, run the three APIs locally or adjust the proxy targets in [vite.config.ts](vite.config.ts):
+
+| Browser path | Default development upstream | Data read |
+| --- | --- | --- |
+| `/algora-api/*` | `http://localhost:3201/api/*` | Signals, issues, stats |
+| `/ao-api/*` | `http://localhost:3001/*` | Signals, status, debates, ideas, plans, projects |
+| `/bridge-api/*` | `http://localhost:3101/api/*` | Signals, stats, outcomes, agent trust |
+
+API servers are separate projects and are not started by this repository. No frontend API key or `.env` file is required. Registry and fallback health URLs are defined in [ecosystem-client.ts](src/services/ecosystem-client.ts); direct health endpoints must permit browser access with CORS.
+
+### Verify and build
 
 ```bash
+npm run typecheck
+npm test
 npm run build
 ```
 
-Serve the build output:
+These are the same checks run by [GitHub Actions](.github/workflows/ci.yml) for branch pushes and pull requests into `main`. Tests cover health-response interpretation and ecosystem feed behaviour. Use `npm run test:watch` while working on those readers.
 
 ```bash
-npm run serve          # serve dist -l 6300 -s
-# or with PM2
-pm2 start ecosystem.config.cjs
+npm run preview       # inspect the production build locally
+# or
+npm run serve         # serve dist/ on port 6300
 ```
 
-## Deployment
+Preview and static serving do **not** provide the Vite development API proxies. Full production verification needs the reverse-proxy setup below.
 
-The frontend is a static SPA — serve `dist/` from any static host.
+## Deploy
 
-At runtime the app calls the three service APIs on **same-origin** paths:
+Build the reviewed commit and publish `dist/`. Deployment is manual; GitHub Actions validates the change but does not deploy it. The repository supports static hosting directly or an existing PM2 installation using [ecosystem.config.cjs](ecosystem.config.cjs), which runs the installed local `serve` package on port 6300. Run `npm ci` before starting it.
 
-- `/algora-api` → Algora signals/issues/stats
-- `/ao-api` → AO signals/debates/status/ideas/plans/projects
-- `/bridge-api` → Bridge signals/stats/proposals/outcomes/trust
+The app has no pathname-based routes. Static serving deliberately returns **404 for missing files**, including JavaScript assets, instead of substituting `index.html`. Preserve that behaviour when using another host or reverse proxy.
 
-In development, `vite.config.ts`'s dev proxy maps these to `localhost:3201 / 3001 / 3101`. **The dev proxy does not run in production**, so a reverse proxy (nginx, etc.) in front of the static files must proxy these three paths to each service upstream.
+[deploy/nginx.conf.example](deploy/nginx.conf.example) documents the production routes. Adjust domains, certificates, upstream addresses, and disk paths for your host. The deployment must provide:
 
-See [`deploy/nginx.conf.example`](deploy/nginx.conf.example) for a sample config. Current deployment: `https://monitor.moss.land` (static `dist` + nginx reverse proxy).
+1. The three same-origin API proxies, preserving the path rewrites in the table above.
+2. An exact `/api/health` route to the generated `health.json`.
+3. Revalidation for HTML and health responses, and immutable caching for content-hashed `/assets/` files.
+4. CORS for intended API consumers. The example reflects an origin allowlist, handles `OPTIONS`, and varies API responses by `Origin` and `Accept-Encoding`. The public health endpoint uses `Access-Control-Allow-Origin: *`.
 
-### CORS (cross-origin consumers)
+After deployment, open the map and all three detail tabs at desktop and mobile widths. Check that API responses are JSON, service reachability settles, registry/health data loads, and browser assets load without errors. Verify `/api/health` returns JSON identifying the commit that was built, and a nonexistent `/assets/` file returns 404.
 
-The monitor's API paths are called not only same-origin but also from **other origins** (e.g. the governance widget on the moss.land homepage). So the reverse proxy must **not hardcode** `Access-Control-Allow-Origin` to a single apex — it should **reflect** an allow-list of origins (`moss.land`, `www.moss.land`, dev `localhost:5173`) and answer `OPTIONS` preflight requests. See the `map $http_origin` block and the per-`/…-api/` CORS headers in the example config. (GitHub issue #1)
+### Monitor health endpoint
 
-## Related Projects
+Every production build emits `dist/health.json`. The reverse proxy exposes it at [`/api/health`](https://monitor.moss.land/api/health):
 
-- [`mossland-pixelops`](https://github.com/MosslandOpenDevs/mossland-pixelops) — a sibling, earlier-stage re-architecture of the same governance-visualization idea (an event-sourced pixel-art operations map), currently a pre-alpha scaffold.
+```json
+{
+  "status": "ok",
+  "service": "monitor",
+  "role": "viewer",
+  "pipeline": "none",
+  "timestamp": "<build timestamp>",
+  "buildTime": "<same build timestamp>",
+  "commit": "<short Git commit, or null outside a Git checkout>"
+}
+```
 
-## License
+This identifies the served frontend build. Its timestamp is the **build time**, not the last health poll or the freshness of upstream data. `status: "ok"` does not certify Algora, AO, Bridge, or the wider ecosystem. Vite development mode does not expose this route; local builds can be inspected at `/health.json` through preview/static serving.
 
-MIT — see [LICENSE](LICENSE) for details.
+## Related projects and license
+
+- [Mossland ecosystem registry](https://links.moss.land) — service discovery and lifecycle metadata.
+- [mossland-pixelops](https://github.com/MosslandOpenDevs/mossland-pixelops) — a related event-sourced pixel-art operations map.
+- [MIT License](LICENSE).
