@@ -1,5 +1,12 @@
 # Mossland Space Hub — Governance Monitor
 
+<!-- opendevs-badges:start -->
+[![Lifecycle: Lab](https://img.shields.io/badge/Lifecycle-Lab-eab308?style=flat)](https://links.moss.land/ecosystem-registry.json)
+[![CI](https://github.com/MosslandOpenDevs/pixel-agent-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/MosslandOpenDevs/pixel-agent-lab/actions/workflows/ci.yml)
+[![Website: monitor.moss.land](https://img.shields.io/badge/Website-monitor.moss.land-2563eb?style=flat)](https://monitor.moss.land/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-64748b?style=flat)](https://github.com/MosslandOpenDevs/pixel-agent-lab/blob/main/LICENSE)
+<!-- opendevs-badges:end -->
+
 **English** · [한국어](README.ko.md) · [Open the monitor](https://monitor.moss.land)
 
 > **Lifecycle: Lab** — experimental, best-effort, and subject to change or retirement. The `monitor` entry in the [Mossland ecosystem registry](https://links.moss.land/ecosystem-registry.json) follows [MIP-1](https://agora.moss.land/proposals/6a85129f8be190cf5d2ebcc1), ratified on 2026-09-02.
