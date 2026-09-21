@@ -1,6 +1,12 @@
 import Phaser from "phaser";
-import type { EcosystemNode, Instrumentation, NodeKind } from "../services/ecosystem-feed.ts";
+import type {
+    EcosystemNode, HealthFreshness, Instrumentation, NodeKind, RegistryState,
+} from "../services/ecosystem-feed.ts";
+import type { ConnState, ServiceFlags } from "../services/data-bridge.ts";
 import { hubTooltipHtml } from "../ui/hub-tooltip.ts";
+import {
+    freshnessText, healthBucket, isArchived, namesHtml, shortClock, tallyHtml, tallyServices,
+} from "../ui/ecosystem-status.ts";
 
 /** This monitor's own id in the registry. Its star is the one place on the map
  *  the viewer is already standing, which changes what a click can usefully do. */
@@ -15,7 +21,19 @@ const SELF_ID = "monitor";
  *
  *   listed  → hollow, dim, does not breathe. We know it exists. Nothing more.
  *   health  → filled and breathing, coloured by its own reported status.
- *   stream  → bright, haloed, and its belt is one click away.
+ *   stream  → bright, haloed, and its belt is one click away. It breathes
+ *             while its data API answers or it carries a health reading.
+ *
+ * A reading only counts as observed while it is current. Once no health sweep
+ * has landed for STALE_AFTER_MS (the viewer's network is gone, say), every
+ * measured body stops breathing and dims, and the HUD dates the reading
+ * instead: the colours stay — they are the last thing known — but a snapshot
+ * hours old must not pulse like a live one.
+ *
+ * Colour is never the only carrier of a verdict. A down or degraded body names
+ * it on its label too, which is what a red-green colour-blind viewer — and
+ * anyone on a phone, where the legend is hidden — can read. That is text, not
+ * a new shape: shape is the FORM axis, and it is spoken for.
  *
  * A second axis, and the one that decides whether the first even applies: not
  * every registry entry is a service. `llms.txt`, `sitemap.xml` and the registry
@@ -109,6 +127,11 @@ const STAR_COUNT = 520;
 /** Half the side of a square with the area of a unit circle: √π / 2. */
 const STAR_HALF_SIDE = Math.sqrt(Math.PI) / 2;
 
+/** How far a measured body dims while its reading is stale. */
+const STALE_DIM = 0.45;
+/** Names per verdict in the HUD, which sits over the map; the sidebar lists all. */
+const HUD_NAMES = 4;
+
 /** Cursor influence: wide and soft, like the reference field. */
 const PULL_RADIUS = 260;
 const PULL_STRENGTH = 30;
@@ -140,17 +163,42 @@ export class HubMap {
     private pinned: { el: HTMLDivElement; wx: number; wy: number }[] = [];
     private hudEl?: HTMLDivElement;
     private countsEl?: HTMLElement;
+    private connEl?: HTMLElement;
+    private clockEl?: HTMLElement;
+    private tallyEl?: HTMLElement;
+    private namesEl?: HTMLElement;
     private activityEl?: HTMLElement;
+    /** The markup each HUD element was last given: they are refreshed twice a
+     *  second, and almost always with the same text. */
+    private hudWritten = new WeakMap<Element, string>();
     private bodies: Body[] = [];
 
-    private signature = "";
+    /** Null until the first setNodes. It used to start as "", which is also
+     *  the signature of an empty registry, so setNodes([]) returned before
+     *  writing anything and the HUD said "Loading registry…" for good. The
+     *  HUD text is no longer behind this check at all (see renderHud). */
+    private signature: string | null = null;
+    private nodes: EcosystemNode[] = [];
+    private registry: RegistryState = "loading";
+    private freshness: HealthFreshness | null = null;
+    private conn: ConnState = "connecting";
+    /** Which streaming services' data APIs answered this poll (DataBridge
+     *  .serviceUp). All false before the first verdict. */
+    private dataUp: ServiceFlags = { algora: false, ao: false, bridge: false };
+    /** The health reading is stale: measured bodies are drawn as not observed. */
+    private healthStale = false;
+    private tipHtml = "";
     private elapsed = 0;
     private reducedMotion = false;
     private mapVisible = true;
 
     private motes: Mote[] = [];
     private byId = new Map<string, Body>();
-    private lastIngested: Record<string, number> | null = null;
+    /** Zero, like the count it follows (DataBridge.newSignals), which already
+     *  leaves out each origin's first read. This used to start null and take
+     *  its baseline at the first call — a race between the first poll and the
+     *  first 500 ms tick that decided whether the backlog counted. */
+    private lastIngested: Record<string, number> = {};
     private lastHealthAt: string | null = null;
     private sweep?: Phaser.GameObjects.Arc;
     private sweepT = 1;
@@ -322,10 +370,22 @@ export class HubMap {
             ?? document.querySelector<HTMLElement>(".stage-wrap") ?? document.body;
         const el = document.createElement("div");
         el.className = "hub-hud";
+        // Under the counts: when the readings were taken (and, on a phone,
+        // whether the data APIs answer — the sidebar that says so is a closed
+        // drawer there), what the services report, and which of them are not
+        // ok, by name. Where rows stacked over the stage would cover the top
+        // of the outer orbit, the stylesheet leaves some of them to the panel
+        // and the body labels: the tally and names on a landscape tablet, the
+        // names on a short phone. The "stale" legend row is shown only while
+        // the readings are, because only then does it describe anything on
+        // the map.
         el.innerHTML = `
           <div class="hud-top">
             <div class="hud-title">ECOSYSTEM MAP</div>
             <div class="hud-counts" id="hubCounts">Loading registry…</div>
+            <div class="hud-status"><span class="hud-conn" id="hubConn"></span><span class="hud-clock" id="hubClock"></span></div>
+            <div class="hud-tally" id="hubTally"></div>
+            <div class="hud-names" id="hubNames"></div>
           </div>
           <div class="hud-legend">
             <div class="lg">
@@ -334,21 +394,36 @@ export class HubMap {
               <span><i class="f health"></i>health-checked · breathing, status only</span>
               <span><i class="f listed"></i>listed · steady, not measured here</span>
               <span><i class="f reference"></i>link or file · not a service</span>
+              <span class="lg-stale"><i class="f stale"></i>stale · dimmed and still, last reading kept</span>
             </div>
             <div class="lg">
               <div class="lg-h">COLOUR — what it reports</div>
               <span><i class="c ok"></i>ok</span>
-              <span><i class="c degraded"></i>degraded</span>
-              <span><i class="c down"></i>down</span>
-              <span><i class="c none"></i>no measurement</span>
-              <span><i class="c arch"></i>archived</span>
+              <span><i class="c degraded"></i>degraded · also on its label</span>
+              <span><i class="c down"></i>down · also on its label</span>
+              <span><i class="c none"></i>no measurement, or off-contract</span>
+              <span><i class="c arch"></i>archived · in place of its health</span>
             </div>
           </div>
           <div class="hud-foot"><span id="hubActivity"></span><span class="hud-hint">hover a body for detail · click to open it</span></div>`;
         host.appendChild(el);
         this.hudEl = el;
         this.countsEl = el.querySelector<HTMLElement>("#hubCounts") ?? undefined;
+        this.connEl = el.querySelector<HTMLElement>("#hubConn") ?? undefined;
+        this.clockEl = el.querySelector<HTMLElement>("#hubClock") ?? undefined;
+        this.tallyEl = el.querySelector<HTMLElement>("#hubTally") ?? undefined;
+        this.namesEl = el.querySelector<HTMLElement>("#hubNames") ?? undefined;
         this.activityEl = el.querySelector<HTMLElement>("#hubActivity") ?? undefined;
+        // What buildHud just wrote is what the memo must start from.
+        this.hudWritten = new WeakMap();
+        if (this.countsEl) this.hudWritten.set(this.countsEl, this.countsEl.innerHTML);
+    }
+
+    /** Writes a HUD element only when its markup changed. */
+    private setHud(el: HTMLElement | undefined, markup: string): void {
+        if (!el || this.hudWritten.get(el) === markup) return;
+        this.hudWritten.set(el, markup);
+        el.innerHTML = markup;
     }
 
     /** The HUD only makes sense over the map, so hide it in the belt zones. */
@@ -358,15 +433,15 @@ export class HubMap {
         this.setMapVisible(visible);
     }
 
+    /** `ingested` is DataBridge.newSignals: signals that arrived after each
+     *  origin's first read, so every delta here is activity, from zero. */
     setActivity(ingested: Record<string, number>, healthCheckedAt: string | null): void {
-        if (this.lastIngested) {
-            for (const [origin, total] of Object.entries(ingested)) {
-                const delta = total - (this.lastIngested[origin] ?? 0);
-                if (delta > 0) {
-                    this.signalsSeen += delta;
-                    if (!this.reducedMotion) {
-                        for (let i = 0; i < Math.min(delta, MAX_SPAWN_PER_TICK); i++) this.emitMote(origin);
-                    }
+        for (const [origin, total] of Object.entries(ingested)) {
+            const delta = total - (this.lastIngested[origin] ?? 0);
+            if (delta > 0) {
+                this.signalsSeen += delta;
+                if (!this.reducedMotion) {
+                    for (let i = 0; i < Math.min(delta, MAX_SPAWN_PER_TICK); i++) this.emitMote(origin);
                 }
             }
         }
@@ -390,7 +465,98 @@ export class HubMap {
         this.motes.push({ dot, fromX: body.dot.x, fromY: body.dot.y, t: 0, speed: 0.55 + Math.random() * 0.35 });
     }
 
-    setNodes(nodes: EcosystemNode[]): void {
+    /**
+     * The registry snapshot and what state the registry read is in. Bodies are
+     * rebuilt only when the snapshot changes; the HUD text is worked out on
+     * every call and written when it differs, so no state — an empty registry,
+     * a failed first read — can be caught behind the rebuild check again.
+     */
+    setNodes(nodes: EcosystemNode[], registry: RegistryState): void {
+        this.nodes = nodes;
+        this.registry = registry;
+        this.rebuild(nodes);
+        this.renderHud();
+    }
+
+    /**
+     * How current the health reading is, and whether the data APIs answer —
+     * overall for the HUD, per service for whether a streaming body has
+     * anything behind its breathing (see update). Called every 500 ms: this is
+     * what ages the reading into "stale" and keeps an open tooltip's age
+     * current.
+     */
+    setHealthStatus(freshness: HealthFreshness, conn: ConnState, dataUp: ServiceFlags): void {
+        this.freshness = freshness;
+        this.conn = conn;
+        this.dataUp = dataUp;
+        const stale = freshness.state === "stale";
+        if (stale !== this.healthStale) {
+            this.healthStale = stale;
+            this.hudEl?.classList.toggle("stale", stale);
+            this.labelLayer?.classList.toggle("stale", stale);
+        }
+        this.renderHud();
+        const hovered = this.bodies.find(b => b.hovered);
+        if (hovered) this.showTooltip(hovered);
+    }
+
+    private renderHud(): void {
+        const drawn = this.registry === "loaded" && this.nodes.length > 0;
+        const f = this.freshness;
+        const clock = drawn && f ? freshnessText(f) : "";
+        // A phone has no sidebar on screen, so this is the only place it can
+        // see whether the data APIs answer. Hidden above 767px, where the
+        // sidebar's status line is always in view.
+        this.setHud(this.connEl, (this.conn === "live" ? `<span class="dot live"></span>LIVE`
+            : this.conn === "offline" ? `<span class="dot offline"></span>OFFLINE`
+                : `<span class="dot connecting"></span>CONNECTING`) + (clock ? "<i>·</i>" : ""));
+        this.setHud(this.clockEl, clock);
+
+        if (!drawn) {
+            // Same words as the sidebar. "failed" is a first read that got
+            // nothing, retried within seconds; "loaded" with no entries is a
+            // registry that answered without a list we can draw.
+            this.setHud(this.countsEl, this.registry === "loading" ? "Loading registry…"
+                : this.registry === "failed" ? `<span class="hud-warn">Registry unreachable — retrying</span>`
+                    : `<span class="hud-warn">Registry unavailable</span>`);
+            this.setHud(this.tallyEl, "");
+            this.setHud(this.namesEl, "");
+            return;
+        }
+
+        // Count services against services. Folding the files and the exchange
+        // links into "listed only" made the ecosystem look far less observed than
+        // it is — they are not unobserved services, they are not services.
+        const nodes = this.nodes;
+        const services = nodes.filter(n => n.kind === "service");
+        const references = nodes.length - services.length;
+        const streaming = services.filter(n => n.instrumentation === "stream").length;
+        const health = services.filter(n => n.instrumentation === "health").length;
+        const listed = services.filter(n => n.instrumentation === "listed").length;
+        this.setHud(this.countsEl,
+            `<b>${services.length}</b> services <i>·</i> <b>${streaming}</b> streaming `
+            + `<i>·</i> <b>${health}</b> health-checked <i>·</i> <b>${listed}</b> listed only `
+            + `<i>·</i> <b>${references}</b> links &amp; files`);
+
+        // What they report, dated by the sweep clock (the line above). While
+        // the first sweep of the registry's services is in flight there is
+        // nothing to count yet; once one has settled with nothing, "all
+        // unmeasured" is the result, and later sweeps must not blank it for
+        // as long as each takes. A stale reading is counted but dated, so its
+        // "ok"s never read as current.
+        if (!f || (f.state === "none" && f.sweeping && !f.settled)) {
+            this.setHud(this.tallyEl, "");
+            this.setHud(this.namesEl, "");
+            return;
+        }
+        const tally = tallyServices(nodes);
+        this.setHud(this.tallyEl, (f.state === "stale" && f.checkedAt !== null
+            ? `<span class="hud-asof">as of ${shortClock(f.checkedAt)}</span> <i>·</i> ` : "")
+            + tallyHtml(tally));
+        this.setHud(this.namesEl, namesHtml(tally, HUD_NAMES));
+    }
+
+    private rebuild(nodes: EcosystemNode[]): void {
         const signature = nodes
             .map(n => JSON.stringify([
                 n.service.id, n.kind, n.instrumentation, n.health?.status,
@@ -439,29 +605,17 @@ export class HubMap {
         // A rebuild can land while a belt zone is showing; new objects default to
         // visible, so re-apply the current state.
         this.setMapVisible(!this.hudEl?.hidden);
-
-        // Count services against services. Folding the files and the exchange
-        // links into "listed only" made the ecosystem look far less observed than
-        // it is — they are not unobserved services, they are not services.
-        const services = nodes.filter(n => n.kind === "service");
-        const references = nodes.length - services.length;
-        const streaming = services.filter(n => n.instrumentation === "stream").length;
-        const health = services.filter(n => n.instrumentation === "health").length;
-        const listed = services.filter(n => n.instrumentation === "listed").length;
-        if (this.countsEl) {
-            this.countsEl.innerHTML =
-                `<b>${services.length}</b> services <i>·</i> <b>${streaming}</b> streaming `
-                + `<i>·</i> <b>${health}</b> health-checked <i>·</i> <b>${listed}</b> listed only `
-                + `<i>·</i> <b>${references}</b> links &amp; files`;
-        }
     }
 
     private makeBody(node: EcosystemNode, r: number, a: number, index: number): Body {
         const { service, health, instrumentation, kind } = node;
-        const archived = service.lifecycle === "archive" || service.status === "deprecated";
+        const archived = isArchived(service);
         // Colour carries the health claim, and only a real verdict earns a
         // verdict colour. No measurement means the neutral star — present, lit,
-        // and making no claim either way.
+        // and making no claim either way. An archived body takes the archived
+        // colour *instead* of its health colour (README says so); its health
+        // stays in the tooltip, the sidebar, and — when down or degraded — on
+        // its label below.
         const statusColor = health?.status === "ok" ? COLOR.ok
             : health?.status === "degraded" ? COLOR.degraded
                 : health?.status === "down" ? COLOR.down : COLOR.unmeasured;
@@ -508,6 +662,18 @@ export class HubMap {
         label.className = "hub-label " + (reference ? "reference" : instrumentation)
             + (archived ? " archived" : "");
         label.textContent = service.name;
+        // The verdict in words, for the two colours that make one a viewer
+        // could misread: red and amber next to green are near-identical to a
+        // red-green colour-blind eye. Built as a node, not markup — the name
+        // beside it is registry data. The signature includes the status, so a
+        // change of verdict rebuilds the body and this with it.
+        const bucket = kind === "service" ? healthBucket(health) : null;
+        if (bucket === "down" || bucket === "degraded") {
+            const tag = document.createElement("span");
+            tag.className = `hub-label-status ${bucket}`;
+            tag.textContent = bucket;
+            label.append(" ", tag);
+        }
         this.labelLayer?.appendChild(label);
 
         // Generous hit area — the dots are small, the targets should not be.
@@ -529,7 +695,15 @@ export class HubMap {
         const el = this.tipEl;
         if (!el || !this.mapVisible) return;
         // The markup is built outside this Phaser module so it can be tested.
-        el.innerHTML = hubTooltipHtml(b.node, { isSelf: b.node.service.id === SELF_ID, archived: b.archived });
+        // It carries the reading's age, so setHealthStatus re-renders it every
+        // 500 ms; it is written only when that changed the text.
+        const html = hubTooltipHtml(b.node, {
+            isSelf: b.node.service.id === SELF_ID, archived: b.archived, freshness: this.freshness,
+        });
+        if (el.hidden || html !== this.tipHtml) {
+            this.tipHtml = html;
+            el.innerHTML = html;
+        }
         el.hidden = false;
         this.placeTooltip();
     }
@@ -672,15 +846,32 @@ export class HubMap {
             // Only bodies we can actually observe are allowed to breathe.
             // Breathing is a claim that something is being watched, so only
             // measured bodies do it. The rest hold a steady light rather than
-            // going dark.
+            // going dark. A stale reading is not being watched either: every
+            // measured body, streaming ones included — their ring comes from a
+            // fixed list, not from a reading — stops and dims until a sweep lands.
+            //
+            // For the same reason a streaming body breathes only on evidence
+            // of its own: its data API answered this poll, or it carries a
+            // health reading (non-null only once a sweep has landed; stale is
+            // the rule above). With neither — no sweep has ever landed and its
+            // data API does not answer — it holds a steady light like a listed
+            // body. Its ring stays: that it is polled is still true.
             const reference = b.kind !== "service";
-            const observed = !reference && b.instrumentation !== "listed" && !b.archived && !this.reducedMotion;
+            const measured = !reference && b.instrumentation !== "listed";
+            const stale = measured && this.healthStale;
+            const evidence = b.instrumentation !== "stream" || b.node.health !== null
+                || this.dataUp[b.node.service.id as keyof ServiceFlags] === true;
+            const observed = measured && evidence && !b.archived && !this.reducedMotion && !stale;
             const pulse = observed ? 0.78 + 0.22 * Math.sin(t * 1.8 + b.phase) : 1;
-            const rest = reference ? 0.5 : b.archived ? 0.55 : b.instrumentation === "listed" ? 0.85 : 1;
+            const rest = (reference ? 0.5 : b.archived ? 0.55 : b.instrumentation === "listed" ? 0.85 : 1)
+                * (stale ? STALE_DIM : 1);
             b.dot.setAlpha(rest * pulse);
             b.glow?.setAlpha(observed ? 0.10 + 0.07 * Math.sin(t * 1.8 + b.phase)
-                : b.instrumentation === "listed" ? 0.09 : 0.08);
-            if (b.halo) b.halo.setScale(0.92 + (observed ? 0.14 * Math.sin(t * 1.8 + b.phase) : 0));
+                : stale ? 0.04 : b.instrumentation === "listed" ? 0.09 : 0.08);
+            if (b.halo) {
+                b.halo.setScale(0.92 + (observed ? 0.14 * Math.sin(t * 1.8 + b.phase) : 0));
+                b.halo.setAlpha(stale ? STALE_DIM : 1);
+            }
 
             const want = b.hovered ? 1.6 : 1;
             b.dot.setScale(b.dot.scaleX + (want - b.dot.scaleX) * Math.min(1, step * 12));

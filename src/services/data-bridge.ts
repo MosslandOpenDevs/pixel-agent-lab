@@ -205,14 +205,39 @@ export class DataBridge {
     /** Per-service reachability, updated every poll. Lets the UI show AO as
      *  OFFLINE while Algora/Bridge stay LIVE, instead of one blanket status. */
     serviceUp: ServiceFlags = { ...NO_SERVICES };
+    /** Whether each service's stats read succeeded this poll. Reachability is
+     *  signals *or* stats, so a service can be LIVE on its signals alone while
+     *  `liveStats` still holds the last stats that ever arrived — kept on
+     *  purpose, since the AO funnel reads it, but not figures to show as live. */
+    statsUp: ServiceFlags = { ...NO_SERVICES };
+    /** When each service's stats last arrived (epoch ms), null before any did:
+     *  what the sidebar dates a missing reading by. */
+    statsAt: Record<keyof ServiceFlags, number | null> = { algora: null, ao: null, bridge: null };
     /** True when the last AO debates fetch failed (distinguishes "erroring"
      *  from "still loading" in the AO panel). */
     debatesErrored = false;
 
-    /** Monotonic count of signals actually ingested, per origin. The hub map
-     *  emits one mote per counted signal, so its motion can never outrun the
-     *  data — an idle service simply produces none. */
+    /** Monotonic count of signals actually ingested, per origin: exactly what
+     *  reached the belt's queue, the first read's backlog included. */
     ingested: Record<"algora" | "ao" | "bridge", number> = { algora: 0, ao: 0, bridge: 0 };
+    /**
+     * Signals that arrived after their origin's first successful read — what
+     * the hub map counts as "ingested this session" and emits one mote each
+     * for, so its motion can never outrun the data and an idle service
+     * produces none.
+     *
+     * The first read of each origin returns that service's history (its latest
+     * 30 or 20), and history is the baseline, not activity. The map used to
+     * take that baseline itself, at its first 500 ms tick — so whether the
+     * backlog counted, and fired a burst of motes, depended on whether the
+     * first poll beat the tick: two viewers of the same page got different
+     * figures. Taken here, per origin, it is the data that decides; a service
+     * that was down at load and recovers later does not count its whole
+     * history either. Starts at zero, and so does the map's own baseline.
+     */
+    newSignals: Record<"algora" | "ao" | "bridge", number> = { algora: 0, ao: 0, bridge: 0 };
+    /** Origins whose signals have been read successfully at least once. */
+    private signalsBaselined = new Set<UnifiedSignal["origin"]>();
 
     liveStats: LiveStats = { algora: null, ao: null, bridge: null };
     debateCache: AODebate[] = [];
@@ -309,6 +334,7 @@ export class DataBridge {
             ao: sig.ao || stat.ao,
             bridge: sig.bridge || stat.bridge,
         };
+        this.statsUp = { ...stat };
         this.connState = (this.serviceUp.algora || this.serviceUp.ao || this.serviceUp.bridge)
             ? "live"
             : "offline";
@@ -331,19 +357,22 @@ export class DataBridge {
             seen.add(s.id);
             unified.push(s);
             this.ingested[s.origin]++;
+            if (this.signalsBaselined.has(s.origin)) this.newSignals[s.origin]++;
         };
         // Row by row, so a row that cannot be converted costs only itself.
         // Counting happens in `ingest`, after conversion succeeded, so
         // `ingested` stays exactly what reaches the queue.
-        const take = <T>(r: PromiseSettledResult<T[]>, convert: (row: T) => UnifiedSignal) => {
+        const take = <T>(r: PromiseSettledResult<T[]>, origin: UnifiedSignal["origin"], convert: (row: T) => UnifiedSignal) => {
             if (r.status !== "fulfilled") return;
             for (const row of r.value) {
                 try { ingest(convert(row)); } catch { /* skip this row only */ }
             }
+            // This read was the baseline if none had succeeded before it.
+            this.signalsBaselined.add(origin);
         };
-        take(a, algoraSignalToUnified);
-        take(ao, aoSignalToUnified);
-        take(b, bridgeSignalToUnified);
+        take(a, "algora", algoraSignalToUnified);
+        take(ao, "ao", aoSignalToUnified);
+        take(b, "bridge", bridgeSignalToUnified);
         // shuffle
         for (let i = unified.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [unified[i], unified[j]] = [unified[j], unified[i]]; }
         this.signalQueue.push(...unified);
@@ -359,11 +388,15 @@ export class DataBridge {
         return { algora: a.status === "fulfilled", ao: ao.status === "fulfilled", bridge: b.status === "fulfilled" };
     }
 
+    /** A failed read keeps that service's previous stats in `liveStats`; the
+     *  flags this returns become `statsUp`, which says whether they are this
+     *  poll's. */
     private async pollStats(signal: AbortSignal): Promise<ServiceFlags> {
         const [a, ao, b] = await Promise.allSettled([fetchAlgoraStats(signal), fetchAOStatus(signal), fetchBridgeStats(signal)]);
-        if (a.status === "fulfilled") this.liveStats.algora = a.value;
-        if (ao.status === "fulfilled") this.liveStats.ao = ao.value;
-        if (b.status === "fulfilled") this.liveStats.bridge = b.value;
+        const now = Date.now();
+        if (a.status === "fulfilled") { this.liveStats.algora = a.value; this.statsAt.algora = now; }
+        if (ao.status === "fulfilled") { this.liveStats.ao = ao.value; this.statsAt.ao = now; }
+        if (b.status === "fulfilled") { this.liveStats.bridge = b.value; this.statsAt.bridge = now; }
         return { algora: a.status === "fulfilled", ao: ao.status === "fulfilled", bridge: b.status === "fulfilled" };
     }
 

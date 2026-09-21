@@ -8,9 +8,14 @@ import { DataBridge } from "../services/data-bridge.ts";
 import { EcosystemFeed } from "../services/ecosystem-feed.ts";
 import { HubMap, HUB_DEPTH } from "../zones/HubMap.ts";
 import { setConnectionStatus, updateSidebar, updateEcosystem } from "../ui/Sidebar.ts";
+import { documentTitle, tallyServices } from "../ui/ecosystem-status.ts";
 
 const W = 1440;
 const H = 760;
+
+/** How often a hidden tab re-checks its title (see refreshTitle). It fetches
+ *  nothing: it re-reads what the feed already holds against the clock. */
+const HIDDEN_TITLE_MS = 15_000;
 
 type ZoneKey = "hub" | "algora" | "ao" | "bridge";
 
@@ -49,6 +54,11 @@ export class SpaceHubScene extends Phaser.Scene {
     private zoneSwitchHandler?: EventListener;
     private resizeHandler?: () => void;
     private visibilityHandler?: () => void;
+    /** index.html's title, which the status prefix is added to and taken off. */
+    private baseTitle = "";
+    /** Set only while the tab is hidden: the one thing that keeps the title
+     *  current then, since no frame runs to do it. */
+    private hiddenTitleTimer?: ReturnType<typeof setInterval>;
 
     constructor() {
         super("SpaceHubScene");
@@ -88,11 +98,8 @@ export class SpaceHubScene extends Phaser.Scene {
         // runs on its own far slower cadence (see EcosystemFeed) and is not part
         // of the LIVE/OFFLINE verdict for the three visualized services.
         this.ecosystem = new EcosystemFeed();
-        this.ecosystem.init().then(() => {
-            updateEcosystem(this.ecosystem);
-            this.hubMap.setNodes(this.ecosystem.nodes());
-            this.hubMap.setActivity(this.dataBridge.ingested, this.ecosystem.healthCheckedAt);
-        });
+        this.baseTitle = document.title;
+        this.ecosystem.init().then(() => this.refreshEcosystem());
 
         // The tab bar drives the camera at every width. This used to no-op above
         // 768px, from when the tabs were hidden outside the mobile breakpoint —
@@ -119,13 +126,29 @@ export class SpaceHubScene extends Phaser.Scene {
         // and polling runs on timers of its own. The services take explicit
         // calls because they are DOM-free; this scene owns the document
         // listeners.
+        //
+        // The paused loop also stops the 500 ms refresh, and with it the page
+        // title — the one surface a hidden tab still shows, in the tab strip.
+        // So while hidden a title-only timer keeps it current: it fetches
+        // nothing, and turns the title stale on the same clock as everything
+        // else once the last reading ages past STALE_AFTER_MS — up to
+        // HIDDEN_TITLE_MS late, or about a minute once the browser throttles a
+        // long-hidden tab's timers. It also picks up a sweep that was in flight
+        // at hide and lands after, and init()'s first one in a tab opened in
+        // the background.
         this.visibilityHandler = () => {
             if (document.hidden) {
                 this.dataBridge.pause();
                 this.ecosystem.pause();
+                this.hiddenTitleTimer ??= setInterval(() => this.refreshTitle(), HIDDEN_TITLE_MS);
             } else {
+                clearInterval(this.hiddenTitleTimer);
+                this.hiddenTitleTimer = undefined;
                 this.dataBridge.resume();
                 this.ecosystem.resume();
+                // At once rather than on the next tick: the sweep resume()
+                // just started reads "refreshing", which drops the stale prefix.
+                this.refreshTitle();
             }
         };
         document.addEventListener("visibilitychange", this.visibilityHandler);
@@ -139,7 +162,48 @@ export class SpaceHubScene extends Phaser.Scene {
         this.events.once(Phaser.Scenes.Events.DESTROY, () => this.teardown());
     }
 
+    /**
+     * Everything that shows the registry and its health: the sidebar panel,
+     * the map and its HUD, and the page title. All of them are diffing calls
+     * — each writes only what changed — so this runs every 500 ms for the
+     * price of a comparison, and once more as soon as init() settles.
+     */
+    private refreshEcosystem(): void {
+        const nodes = this.ecosystem.nodes();
+        const freshness = this.ecosystem.healthFreshness();
+        updateEcosystem(this.ecosystem);
+        // Cheap: HubMap rebuilds bodies only when the registry snapshot changed.
+        this.hubMap.setNodes(nodes, this.ecosystem.registryState());
+        this.hubMap.setHealthStatus(freshness, this.dataBridge.connectionState(), this.dataBridge.serviceUp);
+        // Must follow setNodes, which rebuilds the id->body map a mote spawns
+        // from. setActivity emits only on an ingest delta and restarts the
+        // sweep only on a new health clock. Without this the map's two claims
+        // about motion being real were simply false: the call existed once, at
+        // create(), where it did no more than record the baseline it had
+        // nothing to compare against. The count is newSignals, not ingested:
+        // DataBridge leaves each origin's first read out of it, so this
+        // counts from zero whatever the timing.
+        this.hubMap.setActivity(this.dataBridge.newSignals, this.ecosystem.healthCheckedAt);
+        this.refreshTitle(nodes, freshness);
+    }
+
+    /**
+     * "(1 down) Mossland Space Hub — …" while anything is down or degraded,
+     * or the reading is stale, so the tab strip says so. Set only when it
+     * changes; restored as soon as it is clear. Runs with the rest of
+     * refreshEcosystem while the tab is shown, and on its own timer while it
+     * is hidden (see the visibility handler).
+     */
+    private refreshTitle(nodes = this.ecosystem.nodes(), freshness = this.ecosystem.healthFreshness()): void {
+        const title = documentTitle(this.baseTitle,
+            this.ecosystem.registryState() === "loaded" ? tallyServices(nodes) : null, freshness);
+        if (document.title !== title) document.title = title;
+    }
+
     private teardown(): void {
+        clearInterval(this.hiddenTitleTimer);
+        this.hiddenTitleTimer = undefined;
+        if (this.baseTitle) document.title = this.baseTitle;
         if (this.zoneSwitchHandler) document.removeEventListener("zone-switch", this.zoneSwitchHandler);
         if (this.resizeHandler) this.scale.off("resize", this.resizeHandler);
         if (this.visibilityHandler) document.removeEventListener("visibilitychange", this.visibilityHandler);
@@ -239,17 +303,7 @@ export class SpaceHubScene extends Phaser.Scene {
         if (this.sidebarTimer > 500) {
             this.sidebarTimer = 0;
             updateSidebar(this.dataBridge);
-            updateEcosystem(this.ecosystem);
-            // Cheap: HubMap ignores this unless the registry snapshot changed.
-            this.hubMap.setNodes(this.ecosystem.nodes());
-            // Must follow setNodes, which rebuilds the id->body map a mote spawns
-            // from. Both are diffing calls — setActivity emits only on an
-            // ingest delta and restarts the sweep only on a new health clock —
-            // so re-running them every 500ms costs a comparison and nothing else.
-            // Without this the map's two claims about motion being real were
-            // simply false: the call existed once, at create(), where it did no
-            // more than record the baseline it had nothing to compare against.
-            this.hubMap.setActivity(this.dataBridge.ingested, this.ecosystem.healthCheckedAt);
+            this.refreshEcosystem();
         }
     }
 

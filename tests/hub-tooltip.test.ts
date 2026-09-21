@@ -57,4 +57,28 @@ describe("hubTooltipHtml", () => {
         expect(html).toContain("you are here — click to recentre");
         expect(html).toContain("archived — preserved read-only");
     });
+
+    it("dates a reading by the sweep clock, never by the service's own timestamp", () => {
+        // checkedAt on the entry is the service's `timestamp`: for monitor's
+        // static health.json it is the build time, days old on a healthy page.
+        const at = new Date(2026, 8, 21, 14, 32, 5).getTime();
+        const reading: HealthEntry = { service: "svc", status: "ok", checkedAt: "2026-09-01T00:00:00Z" };
+        const html = hubTooltipHtml(node({}, reading), {
+            ...plain, freshness: { state: "fresh", checkedAt: at, sweeping: false, settled: true }, now: at + 12_000,
+        });
+        expect(html).toContain('<div class="m dim">checked 14:32:05 · 12 s ago</div>');
+        expect(html).not.toContain("2026-09-01");
+    });
+
+    it("says a stale reading is stale, and dates no body that has no reading", () => {
+        const at = new Date(2026, 8, 21, 14, 32, 5).getTime();
+        const freshness = { state: "stale" as const, checkedAt: at, sweeping: false, settled: true };
+        const html = hubTooltipHtml(node({}, { service: "svc", status: "ok" }), { ...plain, freshness, now: at + 4 * 60_000 });
+        expect(html).toContain('<div class="m stale">stale — last reading 14:32:05, 4 min ago</div>');
+        for (const quiet of [node({}, null), node({}, { service: "svc", status: "ok" }, "link")]) {
+            const q = hubTooltipHtml(quiet, { ...plain, freshness, now: at });
+            expect(q).not.toContain("stale");
+            expect(q).not.toContain("checked");
+        }
+    });
 });

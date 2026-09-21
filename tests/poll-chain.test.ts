@@ -70,6 +70,37 @@ describe("PollChain", () => {
         chain.stop();
     });
 
+    it("backs off by how many runs in a row failed, and starts again from a success", async () => {
+        // The registry's retry before it has ever loaded: 1 s, 2 s, 4 s here.
+        const outcomes = [false, false, false, false, true, false];
+        const job = vi.fn(async () => { starts.push(Date.now() - t0); return outcomes.shift() ?? true; });
+        const retryMs = vi.fn((failures: number) => 1_000 * 2 ** Math.min(failures - 1, 2));
+        const chain = new PollChain(job, { everyMs: 60_000, retryMs, label: "t" });
+        await chain.run();
+        await vi.advanceTimersByTimeAsync(80_000);
+        // failed ×4 (1, 2, 4, 4 s), succeeded (60 s), failed once more (1 s).
+        expect(starts).toEqual([0, 1_000, 3_000, 7_000, 11_000, 71_000, 72_000]);
+        expect(retryMs.mock.calls.map(c => c[0])).toEqual([1, 2, 3, 4, 1]);
+        chain.stop();
+    });
+
+    it("reports whether a run is in flight, whoever started it", async () => {
+        const chain = new PollChain(taking(4_000), { everyMs: 10_000, label: "t" });
+        expect(chain.running).toBe(false);
+        void chain.run();
+        expect(chain.running).toBe(true);
+        await vi.advanceTimersByTimeAsync(4_000);
+        expect(chain.running).toBe(false);
+        await vi.advanceTimersByTimeAsync(10_000);          // its own timer
+        expect(chain.running).toBe(true);
+        await vi.advanceTimersByTimeAsync(4_000);
+        chain.pause();
+        await vi.advanceTimersByTimeAsync(30_000);
+        chain.resume();                                     // resume() starts the overdue one
+        expect(chain.running).toBe(true);
+        chain.stop();
+    });
+
     it("stops arming while paused; a run in flight finishes and arms nothing", async () => {
         const job = taking(4_000);
         const chain = new PollChain(job, { everyMs: 10_000, label: "t" });

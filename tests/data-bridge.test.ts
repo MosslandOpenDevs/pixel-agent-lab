@@ -708,6 +708,124 @@ describe("DataBridge signal ingest", () => {
 });
 
 /**
+ * What the map counts as "signals ingested this session", and emits a mote
+ * for. Each origin's first successful read returns its history, and history is
+ * the baseline. The map used to take that baseline itself at its first 500 ms
+ * tick, so whether a load's backlog counted depended on whether the first poll
+ * beat the tick.
+ */
+describe("DataBridge new signals", () => {
+    let bridge: DataBridge;
+    let poll: number;
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+        bridge = new DataBridge();
+        poll = 0;
+    });
+
+    afterEach(() => {
+        bridge.destroy();
+        vi.unstubAllGlobals();
+        vi.useRealTimers();
+    });
+
+    /** `n` ids for poll `p`: everything up to the newest, 2 new per poll. */
+    const window = (origin: Origin, p: number, size: number) =>
+        Array.from({ length: size }, (_, i) => ({ id: `${origin}-${p * 2 + size - 1 - i}`, title: "x", description: "x", summary: "x", metadata: "{}" }));
+
+    it("leaves each origin's first read out, however late it lands, and counts what arrives after", async () => {
+        // Slow on purpose: the first answers land two seconds in, long after
+        // the map's first 500 ms tick used to take its baseline.
+        vi.stubGlobal("fetch", vi.fn((url: string) => {
+            const origin = originOf(url);
+            const body = origin ? { signals: window(origin, poll, 5) } : {};
+            return poll === 0 ? later(2_000, () => Response.json(body)) : Promise.resolve(Response.json(body));
+        }));
+        const init = bridge.init();
+        await vi.advanceTimersByTimeAsync(2_000);
+        expect(bridge.ingested).toEqual({ algora: 5, ao: 5, bridge: 5 });   // on the belt all the same
+        expect(bridge.newSignals).toEqual({ algora: 0, ao: 0, bridge: 0 });
+        await vi.advanceTimersByTimeAsync(2_000);                          // the detail reads, as slow
+        await init;
+        expect(bridge.newSignals).toEqual({ algora: 0, ao: 0, bridge: 0 });
+
+        poll = 1;
+        await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+        expect(bridge.newSignals).toEqual({ algora: 2, ao: 2, bridge: 2 });
+        expect(bridge.ingested).toEqual({ algora: 7, ao: 7, bridge: 7 });
+    });
+
+    it("takes the baseline of a service that was down at load when it first answers", async () => {
+        serveSignals(origin => origin === "algora" && poll === 0 ? null : window(origin, poll, 5));
+        await bridge.init();
+        expect(bridge.newSignals).toEqual({ algora: 0, ao: 0, bridge: 0 });
+
+        poll = 1;                                  // algora's whole history arrives now
+        await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+        expect(bridge.newSignals).toEqual({ algora: 0, ao: 2, bridge: 2 });
+
+        poll = 2;
+        await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+        expect(bridge.newSignals).toEqual({ algora: 2, ao: 4, bridge: 4 });
+    });
+});
+
+/** Answers after `ms` of (fake) time. */
+function later(ms: number, make: () => Response): Promise<Response> {
+    return new Promise(resolve => setTimeout(() => resolve(make()), ms));
+}
+
+/**
+ * Whether the sidebar's figures are this poll's. A service is LIVE when its
+ * signals or its stats answer, and a failed stats read keeps the previous
+ * figures in `liveStats` — which the sidebar then showed beside the LIVE badge
+ * for as long as /stats kept failing.
+ */
+describe("DataBridge stats freshness", () => {
+    let bridge: DataBridge;
+    let failing: Set<string>;
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(2026, 8, 21, 14, 0, 0));
+        bridge = new DataBridge();
+        failing = new Set();
+        vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+            if (failing.has(url)) return new Response("", { status: 500 });
+            return url.includes("/signals?") ? Response.json({ signals: [] }) : Response.json(STATS[url] ?? {});
+        }));
+    });
+
+    afterEach(() => {
+        bridge.destroy();
+        vi.unstubAllGlobals();
+        vi.useRealTimers();
+    });
+
+    it("says which services' stats answered this poll, and when each last did", async () => {
+        await bridge.init();
+        const first = Date.now();
+        expect(bridge.statsUp).toEqual({ algora: true, ao: true, bridge: true });
+        expect(bridge.statsAt).toEqual({ algora: first, ao: first, bridge: first });
+
+        failing.add("/bridge-api/stats");
+        await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+        // Still LIVE on its signals, but these are not this poll's figures.
+        expect(bridge.serviceUp.bridge).toBe(true);
+        expect(bridge.statsUp).toEqual({ algora: true, ao: true, bridge: false });
+        expect(bridge.statsAt.bridge).toBe(first);
+        expect(bridge.statsAt.algora).toBe(Date.now());
+        // Kept, on purpose: the AO funnel and Bridge gauges read the last ones.
+        expect(bridge.liveStats.bridge?.issues?.total).toBe(753);
+
+        failing.clear();
+        await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+        expect(bridge.statsUp.bridge).toBe(true);
+    });
+});
+
+/**
  * Dedupe memory against the upstreams' sliding latest-N windows.
  *
  * Every poll re-fetches each service's newest 30/20/20 signals, so the ids that
