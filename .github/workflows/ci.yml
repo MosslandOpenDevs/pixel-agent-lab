@@ -1,17 +1,30 @@
 name: CI
 
-# Every push to a branch and every PR into main. The monitor has no deploy job
-# here — it ships by hand to its own box — so this gate exists to answer one
-# question before a merge: does the build still typecheck, and do the service
-# readers still conclude what they are supposed to conclude?
+# Every pull request, whatever branch it targets, and main after every merge.
+# The monitor has no deploy job here — it ships by hand to its own box — so
+# this gate exists to answer one question: does the build still typecheck, and
+# do the service readers still conclude what they are supposed to conclude?
+#
+# - pull_request has no branch filter: a stacked PR targets another feature
+#   branch, and needs its answer before it merges just the same. GitHub does
+#   not re-run a PR when only its base changes (as when a stacked parent
+#   merges), so push to it after a retarget. `edited` is not listened for: it
+#   also fires on every title edit, and a job skipped with `if:` would report
+#   success on a commit that may have failed before.
+# - push runs only on main: that tests the tree that actually merged — the one
+#   a deploy builds, and the one the README badge reports.
+# - Not tested: a branch pushed without an open PR (open a draft PR, or use
+#   workflow_dispatch), and a PR with an unresolved merge conflict, which
+#   GitHub runs once the conflict is resolved.
 on:
   push:
-    branches-ignore: [main]
-  pull_request:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 # A new push supersedes the old answer; nothing here is worth finishing twice.
+# The group is the ref under test: a PR's runs share refs/pull/<n>/merge, so a
+# push cancels only that PR's older run, and main's share refs/heads/main.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -37,11 +50,19 @@ jobs:
 
       - run: npm ci
 
+      # Covers vite.config.ts too (tsconfig.json `include`), which is where the
+      # build-time health.json plugin lives.
       - run: npm run typecheck
 
       - run: npm test
 
       # Last, because it is the slowest and the least likely to be the reason a
       # change is wrong. It still has to pass: `tsc && vite build` is what the
-      # deploy actually runs, and it emits health.json.
+      # deploy actually runs.
       - run: npm run build
+
+      # A clean build is not proof that it emitted the monitor's own
+      # /api/health document, so check the file itself: present, parseable,
+      # and still honouring the static-artifact contract (timestamp ===
+      # buildTime, pipeline "none", a real commit).
+      - run: node scripts/check-health-json.mjs

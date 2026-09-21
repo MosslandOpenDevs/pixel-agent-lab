@@ -4,8 +4,11 @@
         "useDefineForClassFields": true,
         "module": "ESNext",
         "lib": ["ES2022", "DOM", "DOM.Iterable"],
-        // `node` is for the test server in tests/ecosystem-client.test.ts —
-        // the app itself never touches a node API.
+        // `node` is for the build config (vite.config.ts: the git lookup and
+        // the chunk-size check) and the tests that run a server or a script
+        // (ecosystem-client, static-serving, check-health-json). Vite's and
+        // Vitest's own types reference it too; the entry says so out loud.
+        // The app itself never touches a node API.
         "types": ["vite/client", "node"],
         "skipLibCheck": true,
 
@@ -28,5 +31,12 @@
     // that no longer compiles is a test that stopped guarding anything, and
     // `npm test` alone would report that as a passing suite of whatever is
     // left.
-    "include": ["src", "tests", "vitest.config.ts"]
+    //
+    // vite.config.ts for the same reason. It holds the only build-time code in
+    // the repo — the plugin that emits health.json — and Vite loads it through
+    // esbuild, which strips types without checking them: a mistyped emitFile
+    // option (`filename` for `fileName`) still builds cleanly and quietly
+    // drops /api/health. `tsc` names that mistake; CI's health.json check
+    // (scripts/check-health-json.mjs) catches whatever typing cannot.
+    "include": ["src", "tests", "vitest.config.ts", "vite.config.ts"]
 }

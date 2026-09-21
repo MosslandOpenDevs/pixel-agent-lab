@@ -67,7 +67,7 @@ Vite prints the local URL, normally `http://localhost:5173`. The registry and he
 | `/ao-api/*` | `http://localhost:3001/*` | Signals, status, debates, ideas, plans, projects |
 | `/bridge-api/*` | `http://localhost:3101/api/*` | Signals, stats, outcomes, agent trust |
 
-API servers are separate projects and are not started by this repository. No frontend API key or `.env` file is required. Registry and fallback health URLs are defined in [ecosystem-client.ts](src/services/ecosystem-client.ts); direct health endpoints must permit browser access with CORS.
+API servers are separate projects and are not started by this repository. No frontend API key or `.env` file is required. Registry and fallback health URLs are defined in [ecosystem-client.ts](src/services/ecosystem-client.ts); direct health endpoints must permit browser access with CORS. In production all of them must also stay inside the page's Content-Security-Policy `connect-src` (see [Deploy](#deploy)).
 
 ### Verify and build
 
@@ -77,7 +77,7 @@ npm test
 npm run build
 ```
 
-These are the same checks run by [GitHub Actions](.github/workflows/ci.yml) for branch pushes and pull requests into `main`. Tests cover health-response interpretation and ecosystem feed behaviour. Use `npm run test:watch` while working on those readers.
+[GitHub Actions](.github/workflows/ci.yml) runs these checks on every pull request, whatever its base branch, and on `main` after each merge, then confirms the build emitted a well-formed `dist/health.json` (`node scripts/check-health-json.mjs`). A branch pushed without an open pull request is not tested automatically; open a draft pull request or run the workflow by hand. Tests cover health-response interpretation, ecosystem feed behaviour, and how the origin serves a build (404 for missing files, no directory listing). Use `npm run test:watch` while working on those readers.
 
 ```bash
 npm run preview       # inspect the production build locally
@@ -91,16 +91,17 @@ Preview and static serving do **not** provide the Vite development API proxies. 
 
 Build the reviewed commit and publish `dist/`. Deployment is manual; GitHub Actions validates the change but does not deploy it. The repository supports static hosting directly or an existing PM2 installation using [ecosystem.config.cjs](ecosystem.config.cjs), which runs the installed local `serve` package on port 6300. Run `npm ci` before starting it.
 
-The app has no pathname-based routes. Static serving deliberately returns **404 for missing files**, including JavaScript assets, instead of substituting `index.html`. Preserve that behaviour when using another host or reverse proxy.
+The app has no pathname-based routes. Static serving deliberately returns **404 for missing files**, including JavaScript assets, instead of substituting `index.html`, and does not list directory contents. [public/serve.json](public/serve.json), which the build copies into `dist/`, turns off `serve`'s default directory index however `serve` is started on `dist/`. `serve` reads it at startup, so restart the process after deploying a build that changes it. Preserve both behaviours when using another host or reverse proxy.
 
 [deploy/nginx.conf.example](deploy/nginx.conf.example) documents the production routes. Adjust domains, certificates, upstream addresses, and disk paths for your host. The deployment must provide:
 
 1. The three same-origin API proxies, preserving the path rewrites in the table above.
 2. An exact `/api/health` route to the generated `health.json`.
-3. Revalidation for HTML and health responses, and immutable caching for content-hashed `/assets/` files.
+3. Revalidation for HTML and health responses, and immutable caching for content-hashed `/assets/` files. Phaser is built as its own chunk, so a deploy that changes only app code leaves it cached.
 4. CORS for intended API consumers. The example reflects an origin allowlist, handles `OPTIONS`, and varies API responses by `Origin` and `Accept-Encoding`. The public health endpoint uses `Access-Control-Allow-Origin: *`.
+5. Security headers on every response (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, HSTS) and a `Content-Security-Policy` on the page. nginx drops inherited `add_header` lines in any location that sets its own, so the example includes them in each location. The policy's `connect-src` allows `moss.land` and its subdomains, which covers the registry and health-aggregate URLs in [ecosystem-client.ts](src/services/ecosystem-client.ts) and every registry `statusUrl`. If any of them moves to another host, add that host first: development and CI send no CSP, so only production would block the request. A blocked read is never shown as an outage; the service just loses that reading.
 
-After deployment, open the map and all three detail tabs at desktop and mobile widths. Check that API responses are JSON, service reachability settles, registry/health data loads, and browser assets load without errors. Verify `/api/health` returns JSON identifying the commit that was built, and a nonexistent `/assets/` file returns 404.
+After deployment, open the map and all three detail tabs at desktop and mobile widths. Check that API responses are JSON, service reachability settles, registry/health data loads, and browser assets load without errors. Verify `/api/health` returns JSON identifying the commit that was built, that a nonexistent `/assets/` file returns 404, and that `/assets/` itself lists no files: `serve` with public/serve.json answers 404, and nginx serving `dist/` directly answers 403. Check the security headers with `curl -sI https://monitor.moss.land/ | grep -i -e x-frame -e content-security`, and that the browser console reports no Content Security Policy violations.
 
 ### Monitor health endpoint
 
