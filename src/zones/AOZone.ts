@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import type { DataBridge } from "../services/data-bridge.ts";
+import { reducedMotion } from "../ui/motion.ts";
 
 const ZONE_X = 650;
 const ZONE_Y = 44;
@@ -22,6 +23,23 @@ const PLAN_AT = 0.55;
 const PROJECT_AT = 0.8;
 /** A point along the belt, as a fraction of its length. */
 const beltX = (frac: number): number => BELT_LEFT + (BELT_RIGHT - BELT_LEFT) * frac;
+
+/** Where a bubble enters the belt, and how far along it each one moves in a
+ *  spawn interval (2.8 s at 0.04 px/ms): the belt's step with motion reduced. */
+const SPAWN_X = BELT_LEFT + 20;
+const STEP_PX = 112;
+
+/**
+ * Where a bubble at `x` is drawn with motion reduced: in steps of STEP_PX
+ * rather than sliding — every bubble spawns STEP_PX behind the one before, so
+ * the belt moves one place at a time — except that a bubble at a threshold
+ * is drawn on its marker, where it changes, never a step short of it.
+ */
+const steppedX = (x: number): number => {
+    const step = SPAWN_X + Math.floor((x - SPAWN_X) / STEP_PX) * STEP_PX;
+    const marker = x >= beltX(PROJECT_AT) ? beltX(PROJECT_AT) : x >= beltX(PLAN_AT) ? beltX(PLAN_AT) : -Infinity;
+    return Math.max(SPAWN_X, step, marker);
+};
 
 /** Placeholder for a figure we do not have, as in the sidebar. */
 const NA = "\u2014";
@@ -155,11 +173,16 @@ export class AOZone {
     }
 
     update(dt: number, dataBridge: DataBridge): void {
+        // With reduced motion (read live) the ambient loops stop — treads, the
+        // loader's animation and hop, the blinking agent rings — and the ideas
+        // step along the belt instead of sliding (steppedX). Where each idea
+        // is, and what it becomes at each threshold, is unchanged.
+        const still = reducedMotion();
         this.spawnTimer += dt;
-        this.beltOffset += dt * 0.035;
+        if (!still) this.beltOffset += dt * 0.035;
 
         // animate bot
-        const frame = Math.floor(this.scene.time.now / 420) % 2;
+        const frame = still ? 0 : Math.floor(this.scene.time.now / 420) % 2;
         this.bot.setTexture(`ao-bot-${frame}`);
 
         // Debate card: a fresh pick every DEBATE_ROTATE_MS of elapsed time, and
@@ -202,13 +225,16 @@ export class AOZone {
             if (idea) {
                 const score = typeof idea.score === "number" && isFinite(idea.score) ? idea.score : 0;
                 this.spawnBubble(idea.title_ko ?? idea.title ?? "Idea", score);
+                // The loader hops as it loads — only when it loads something.
+                // It used to hop every 2.8 s with no idea to load at all.
+                if (!still) {
+                    this.scene.tweens.add({
+                        targets: this.bot, y: BELT_Y - 6, duration: 150,
+                        yoyo: true,
+                    });
+                }
             }
             this.spawnTimer = 0;
-
-            this.scene.tweens.add({
-                targets: this.bot, y: BELT_Y - 6, duration: 150,
-                yoyo: true,
-            });
         }
 
         // move bubbles along belt (left->right)
@@ -240,18 +266,23 @@ export class AOZone {
                     b.phase = "promoted";
                 }
 
-                b.sprite.setPosition(b.x, BELT_Y + BELT_H / 2);
-                b.label.setPosition(b.x, BELT_Y + BELT_H / 2 - 16);
+                const x = still ? steppedX(b.x) : b.x;
+                b.sprite.setPosition(x, BELT_Y + BELT_H / 2);
+                b.label.setPosition(x, BELT_Y + BELT_H / 2 - 16);
             } else if (b.phase === "fading") {
                 b.sprite.setAlpha(Math.max(0, b.sprite.alpha - dt * 0.002));
                 b.label.setAlpha(b.sprite.alpha);
                 b.x += dt * 0.02;
-                b.sprite.setPosition(b.x, BELT_Y + BELT_H / 2 + 20);
-                b.label.setPosition(b.x, BELT_Y + BELT_H / 2 + 6);
+                const x = still ? steppedX(b.x) : b.x;
+                b.sprite.setPosition(x, BELT_Y + BELT_H / 2 + 20);
+                b.label.setPosition(x, BELT_Y + BELT_H / 2 + 6);
                 if (b.sprite.alpha <= 0) b.phase = "done";
             } else if (b.phase === "promoted") {
-                b.sprite.setPosition(b.x, b.sprite.y - dt * 0.03);
-                b.label.setPosition(b.x, b.sprite.y - 14);
+                // Rises off the belt as it fades; with motion reduced it only
+                // fades, where it stands.
+                const x = still ? steppedX(b.x) : b.x;
+                b.sprite.setPosition(x, b.sprite.y - (still ? 0 : dt * 0.03));
+                b.label.setPosition(x, b.sprite.y - 14);
                 b.sprite.setAlpha(Math.max(0, b.sprite.alpha - dt * 0.001));
                 b.label.setAlpha(b.sprite.alpha);
                 if (b.sprite.alpha <= 0) b.phase = "done";
@@ -278,12 +309,12 @@ export class AOZone {
             `Ideas: ${figure(t.ideas)} \u2192 Plans: ${figure(t.plans)} \u2192 Projects: ${figure(t.projects)}`
         );
 
-        this.drawGraphics();
+        this.drawGraphics(still);
         this.drawBelt();
     }
 
     private spawnBubble(title: string, score: number): void {
-        const x = BELT_LEFT + 20;
+        const x = SPAWN_X;
         const y = BELT_Y + BELT_H / 2;
         const sprite = this.scene.add.image(x, y, "idea-bubble")
             .setDepth(20).setDisplaySize(16, 16);
@@ -333,7 +364,7 @@ export class AOZone {
         this.beltG.lineBetween(projectX, BELT_Y + 2, projectX, BELT_Y + BELT_H - 2);
     }
 
-    private drawGraphics(): void {
+    private drawGraphics(still: boolean): void {
         this.g.clear();
 
         // zone background
@@ -344,21 +375,22 @@ export class AOZone {
 
         const now = this.scene.time.now;
 
-        // agent rings
+        // agent rings — decorative: which agents light up is not AO's data.
+        // Held at one steady level while motion is reduced.
         this.divergeRing.forEach((p, i) => {
             const active = Math.sin(now * 0.002 + i * 0.5) > 0;
-            this.g.fillStyle(0xf59e0b, active ? 0.75 : 0.2);
-            this.g.fillCircle(p.x, p.y, active ? 4 : 3);
+            this.g.fillStyle(0xf59e0b, still ? 0.5 : active ? 0.75 : 0.2);
+            this.g.fillCircle(p.x, p.y, still ? 3.5 : active ? 4 : 3);
         });
         this.convergeRing.forEach((p, i) => {
             const active = Math.sin(now * 0.003 + i * 0.8) > 0.2;
-            this.g.fillStyle(0xfbbf24, active ? 0.8 : 0.2);
-            this.g.fillCircle(p.x, p.y, active ? 4 : 3);
+            this.g.fillStyle(0xfbbf24, still ? 0.5 : active ? 0.8 : 0.2);
+            this.g.fillCircle(p.x, p.y, still ? 3.5 : active ? 4 : 3);
         });
         this.planRing.forEach((p, i) => {
             const active = Math.sin(now * 0.004 + i * 0.6) > 0.3;
-            this.g.fillStyle(0xfcd34d, active ? 0.85 : 0.25);
-            this.g.fillCircle(p.x, p.y, active ? 3 : 2);
+            this.g.fillStyle(0xfcd34d, still ? 0.55 : active ? 0.85 : 0.25);
+            this.g.fillCircle(p.x, p.y, still ? 2.5 : active ? 3 : 2);
         });
     }
 }

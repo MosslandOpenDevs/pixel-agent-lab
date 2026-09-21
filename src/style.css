@@ -7,6 +7,19 @@
 body { margin: 0; background: #030712; }
 #app { width: 100vw; height: 100vh; }
 
+/* Read by screen readers, not drawn. */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
 .layout {
     display: grid;
     grid-template-columns: 280px 1fr;
@@ -21,6 +34,10 @@ body { margin: 0; background: #030712; }
 }
 
 h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
+/* The drawer moves focus here when it opens (Sidebar.ts). A ring only when
+   that came from the keyboard, where it shows where focus went. */
+.panel h1:focus { outline: none; }
+.panel h1:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; border-radius: 3px; }
 .sub { margin: 5px 0 10px; color: #b5c7e4; font-size: 0.78rem; line-height: 1.4; }
 
 .stats {
@@ -35,11 +52,16 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 .row, .drow {
     display: flex;
     justify-content: space-between;
+    /* A value long enough to wrap used to run straight into its label:
+       "StreamingAlgora (Sense) | …". */
+    gap: 10px;
     font-size: 0.78rem;
     margin: 4px 0;
     color: #d3e2f8;
 }
-.row b, .drow b { color: #fff; font-size: 0.75rem; }
+.row b, .drow b { color: #fff; font-size: 0.75rem; text-align: right; }
+/* A value that is a list: one item per line, right-aligned under each other. */
+.row b.row-list { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 
 .detail {
     border: 1px solid #314764;
@@ -64,7 +86,7 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 }
 .svc-title {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 10px;
+    font-size: 11px;
     letter-spacing: 0.6px;
     margin-bottom: 3px;
 }
@@ -84,6 +106,10 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 
 #stage {
     position: relative;
+    /* The tabpanel the zone tabs control. It has no focusable content of its
+       own — the canvas takes no focus — so it is one Tab stop itself, as the
+       tabs pattern asks, and says what the keyboard way in is (#stageNote). */
+    outline: none;
     /* Must have real size before Phaser boots. The element used to be sized
        purely by the canvas it was about to receive, so at construction time it
        measured 0x0 — and the mobile RESIZE branch takes that literally and hands
@@ -98,6 +124,8 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
     max-width: 100%;
     max-height: 100%;
 }
+
+#stage:focus-visible { outline: 2px solid #93c5fd; outline-offset: -2px; }
 
 /* Connection status */
 .conn-status {
@@ -137,7 +165,7 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 }
 
 .live-badge {
-    font-size: 8px;
+    font-size: 10px;
     color: #22c55e;
     border: 1px solid #22c55e55;
     border-radius: 3px;
@@ -171,8 +199,10 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
     color: #eaf2ff;
 }
 
-/* Respect users who ask for less motion (the perpetual canvas stays, but the
-   pulsing status dot and sliding panels calm down) */
+/* Respect users who ask for less motion: the pulsing status dot and the
+   sliding panels calm down here, and the canvas follows the same setting in
+   code (ui/motion.ts) — the map stops turning, the belts stop their ambient
+   loops, and the camera cuts instead of panning. */
 @media (prefers-reduced-motion: reduce) {
     .dot.live,
     .dot.connecting {
@@ -196,7 +226,6 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
     bottom: 14px;
     transform: translateX(-50%);
     z-index: 900;
-    gap: 2px;
     padding: 3px;
     border-radius: 999px;
     background: #0c1428ee;
@@ -204,12 +233,22 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
 }
+/* The <nav> is the landmark; the tablist is inside it, since a role on the
+   <nav> itself replaced the landmark. */
+.zone-tablist { display: flex; gap: 2px; }
+/* Beside the sidebar, centred on the stage it controls rather than on the
+   window: centred on the window it sat over the HUD footer's left half. */
+@media (min-width: 1101px) {
+    .zone-tabs { left: calc(50% + 140px); }
+}
 
 .zone-tab {
     background: none;
     border: none;
     border-radius: 999px;
-    color: #64748b;
+    /* 6.5:1 on the bar; #64748b was 3.9:1, under AA for text this size, and
+       these are the controls for three of the four views. */
+    color: #8b9bb3;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 11px;
     font-weight: 600;
@@ -309,7 +348,9 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
         height: 100vh;
         z-index: 1000;
         transform: translateX(-100%);
-        transition: transform 0.25s ease;
+        /* Closing: hidden only once it has slid out (the delay), so it is
+           drawn all the way. */
+        transition: transform 0.25s ease, visibility 0s linear 0.25s;
         border-right: 1px solid #2b3c59;
         border-bottom: 0;
         max-height: none;
@@ -318,6 +359,17 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
     }
     .panel.open {
         transform: translateX(0);
+        /* Opening: visible at once. Transitioned over the slide instead, it
+           stays hidden for the rest of the task that opened it, and the focus
+           Sidebar.ts moves into it went nowhere. */
+        transition: transform 0.25s ease, visibility 0s;
+    }
+    /* Closed, the drawer is off-screen — and was still in the Tab order and
+       the accessibility tree: 28 links took focus out of sight before the
+       zone tabs, and a screen reader read them as if they were on screen.
+       Hidden, it is neither; the backdrop below does the same. */
+    .panel:not(.open) {
+        visibility: hidden;
     }
     .panel-backdrop {
         display: block;
@@ -367,12 +419,13 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
         backdrop-filter: blur(8px);
         -webkit-backdrop-filter: blur(8px);
     }
+    .zone-tablist { flex: 1; gap: 0; }
     .zone-tab {
         flex: 1;
         background: none;
         border: none;
         border-radius: 0;
-        color: #64748b;
+        color: #8b9bb3;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 13px;
         font-weight: 600;
@@ -388,6 +441,17 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
     .zone-tab.active[data-zone="ao"]      { color: #fcd34d; border-top-color: #fcd34d; }
     .zone-tab.active[data-zone="bridge"]  { color: #60a5fa; border-top-color: #60a5fa; }
 }
+/* The reduced-motion rule near the top of this file is written before the
+   rules above, which set their own transitions with the same specificity and
+   so won: the drawer still slid, and the backdrop still faded. */
+@media (max-width: 767px) and (prefers-reduced-motion: reduce) {
+    .panel,
+    .panel.open,
+    .panel-backdrop,
+    .zone-tab {
+        transition: none;
+    }
+}
 
 /* --- Ecosystem panel (links.moss.land registry) -------------------------- */
 /* The visual weight of a row encodes how much this monitor can actually see:
@@ -396,10 +460,11 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 .eco-group { margin-top: 8px; }
 
 .eco-group-title {
-    font-size: 9px;
+    font-size: 10px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: #64748b;
+    /* 5.5:1 on the panel card; #64748b was 3.6:1. */
+    color: #8193ad;
     margin: 6px 0 3px;
 }
 
@@ -408,7 +473,7 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
     align-items: center;
     gap: 6px;
     padding: 2px 0;
-    font-size: 10px;
+    font-size: 11px;
     color: #cbd5e1;
     text-decoration: none;
 }
@@ -451,12 +516,12 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
    dot's colour is all a red-green colour-blind viewer had to go on. */
 .eco-chip {
     flex: 0 0 auto;
-    font-size: 8px;
+    font-size: 10px;
     letter-spacing: 0.04em;
     padding: 0 4px;
     border-radius: 3px;
     border: 1px solid currentColor;
-    line-height: 12px;
+    line-height: 13px;
 }
 .eco-chip.down { color: #f87171; }
 .eco-chip.degraded { color: #fbbf24; }
@@ -490,7 +555,10 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 .eco-tally > span, .hud-tally > span,
 .eco-names .nm, .hud-names .nm { white-space: nowrap; }
 .eco-tally b { color: #fff; }
-.eco-tally .zero, .hud-tally .zero { opacity: 0.6; }
+/* A zero steps back, but stays readable: 0.6 is 4.6:1 on the panel card, and
+   on the map, whose tally text is dimmer, 0.75 keeps it at 4.8:1. */
+.eco-tally .zero { opacity: 0.6; }
+.hud-tally .zero { opacity: 0.75; }
 .eco-names { margin-top: 2px; }
 .eco-note { margin-top: 2px; color: #8fa3bf; }
 .tally-down:not(.zero), .names-down { color: #f87171; }
@@ -508,7 +576,7 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 .eco-health.stale .eco-tally b { color: #b8ccec; }
 
 .eco-life {
-    font-size: 8px;
+    font-size: 10px;
     padding: 1px 4px;
     border-radius: 3px;
     letter-spacing: 0.04em;
@@ -551,6 +619,14 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 .hub-tip .dim { color: #6b7f99; }
 .hub-tip .m.stale { color: #fbbf24; }
 .hub-tip .a { margin-top: 5px; color: #7dd3fc; font-size: 11px; }
+/* On a phone the drawer (1000), its backdrop (999) and ☰ (1010) cover the map,
+   and this tooltip, tied with the drawer and later in the page, was painted
+   over it. The map ends a tap selection when the drawer opens; this is the
+   backstop, for a hover left in place while ☰ is opened from the keyboard.
+   Still above the labels and the tab bar (900). */
+@media (max-width: 767px) {
+    .hub-tip { z-index: 950; }
+}
 
 /* --- Hub map HUD ---------------------------------------------------------- */
 /* DOM rather than Phaser Text, for the same reason as .hub-tip: the scene runs
@@ -581,7 +657,8 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 .hud-title {
     font-size: 11px;
     letter-spacing: 0.22em;
-    color: #64748b;
+    /* 6.1:1 on the map; #64748b was 4.3:1. */
+    color: #7b8fab;
 }
 .hud-counts {
     margin-top: 5px;
@@ -629,9 +706,10 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 }
 .hud-legend .lg { display: flex; flex-direction: column; gap: 5px; }
 .hud-legend .lg-h {
-    font-size: 9px;
+    font-size: 10px;
     letter-spacing: 0.14em;
-    color: #4a5f7d;
+    /* 5.7:1 on the map; #4a5f7d was 3.1:1. */
+    color: #7389a8;
     margin-bottom: 1px;
 }
 .hud-legend span { display: flex; align-items: center; gap: 8px; }
@@ -678,14 +756,31 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 .hud-legend i.c.none     { background: #a9c4e8; }
 .hud-legend i.c.arch     { background: #c08a5e; opacity: 0.65; }
 
+/* The activity line on the left, the hint on the right, and between them a
+   column the width of the tab bar, which sits over the middle of the stage:
+   side by side with space-between, the two ran under it at the widths where
+   the stage is narrow (1101-1300px) or the hint is long. */
 .hud-foot {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
+    display: grid;
+    grid-template-columns: 1fr 264px 1fr;
+    column-gap: 8px;
+    align-items: end;
     font-size: 11px;
-    color: #5b6f8c;
+    /* 6.1:1 on the map; #5b6f8c was 4.0:1. */
+    color: #7b8fab;
 }
-.hud-hint { color: #445972; }
+.hud-foot > #hubActivity { grid-column: 1; }
+.hud-foot > .hud-hint { grid-column: 3; text-align: right; }
+/* 5.3:1 on the map; #445972 was 2.8:1. Where the column is narrow it wraps
+   between its two halves, not inside one. */
+.hud-hint { color: #6f84a3; }
+.hud-hint span span { white-space: nowrap; }
+/* A touch screen has no hover: it taps once to see, again to open. */
+.hint-touch { display: none; }
+@media (hover: none) {
+    .hint-mouse { display: none; }
+    .hint-touch { display: inline; }
+}
 
 @media (max-width: 900px) {
     .hud-legend { display: none; }
@@ -695,12 +790,17 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
     /* Clear the fixed ☰ panel toggle, which sits over the top-left of the stage. */
     .hub-hud { padding: 12px 14px 14px; }
     .hud-top { padding-left: 46px; text-align: left; }
-    .hud-foot .hud-hint { display: none; }
 }
 
 
 @media (max-width: 767px) {
     .hud-conn { display: inline; }
+    /* The tab bar spans the bottom of a phone, 46px and more with the home
+       indicator's inset, and the footer sat entirely behind it: the one
+       place a phone counts the signals behind the motes. Stacked above it. */
+    .hub-hud { padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
+    .hud-foot { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+    .hud-foot > .hud-hint { text-align: left; }
 }
 /* On a short phone the hub, fitted to the width and centred, starts barely
    below the HUD, and a names row of three or four lines overprints the labels
@@ -760,6 +860,15 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 .hub-label.reference { color: #6f8099; font-size: 10px; letter-spacing: 0.02em; }
 .hub-label.archived { color: #c08a5e; opacity: 0.85; }
 .hub-label.hovered { color: #ffffff; }
+/* The self star's click under reduced motion (HubMap.flashSelf): its name lit
+   differently from hover, since a mouse click always lands on a body already
+   hovered. The hub's accent, not a health colour, and underlined, so that the
+   change is not colour alone. It does not move. */
+.hub-label.flash {
+    color: #7dd3fc;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
 /* A down or degraded body says so in words; an archived one too, since its
    colour is the archived one rather than its health.
    On its own centred line under the name. The label is centred on its dot, so
@@ -773,7 +882,7 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
     width: max-content;
     margin: 2px auto 0;
     padding: 1px 3px;
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -795,8 +904,15 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 
 @media (max-width: 900px) {
     .hub-label { font-size: 10px; }
-    .hub-label.reference { font-size: 9px; }
+    .hub-label.reference { font-size: 10px; }
     .hub-label.stream { font-size: 11px; }
+}
+/* A phone reads these at arm's length: nothing under 11px. References keep
+   their place in the hierarchy by colour, services by weight. */
+@media (max-width: 767px) {
+    .hub-label, .hub-label.reference { font-size: 11px; }
+    .hub-label.stream { font-size: 12px; }
+    .hub-label-status { font-size: 11px; }
 }
 
 /* --- Hub map pinned labels (orbit names + core) --------------------------- */
@@ -827,6 +943,102 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
     text-shadow: 0 1px 4px rgba(3, 6, 15, 0.95);
 }
 @media (max-width: 900px) {
-    .hub-pin-ring { font-size: 9px; letter-spacing: 0.12em; }
+    .hub-pin-ring { font-size: 10px; letter-spacing: 0.12em; }
     .hub-pin-core { font-size: 11px; }
 }
+@media (max-width: 767px) {
+    .hub-pin-ring { font-size: 11px; letter-spacing: 0.1em; }
+    .hub-pin-core { font-size: 12px; }
+}
+
+/* --- The drawer's rows on a phone ------------------------------------------ */
+/* Every registry link was a 16px row directly against the next, so a thumb
+   aiming at one opened its neighbour in a new tab. 44px rows are the platform
+   size for a touch target; the drawer scrolls. Nothing under 11px. */
+@media (max-width: 767px) {
+    .eco-row { min-height: 44px; font-size: 13px; }
+    .eco-group-title { font-size: 11px; margin-top: 10px; }
+    .eco-chip, .eco-life, .live-badge { font-size: 11px; }
+    .eco-chip { line-height: 14px; }
+}
+
+/* --- A belt view's text, on a phone (ui/belt-card.ts) ---------------------- */
+/* The canvas is fitted to the phone's width, which draws its text at 3-6 px;
+   this card carries the text that exists nowhere else — the debate, the ideas
+   and their scores, the signals on the belt, the trust average, the outcomes —
+   under the belt, which the scene frames at the top of the screen. It is
+   phone-only because that framing is. Above 767px the whole 1440x760 canvas is
+   fitted into the stage, and its text is only as large as the stage makes it:
+   on a tablet (768-1100px) Bridge's 7-12px labels land at roughly 3.5-7.5 px,
+   no larger than on a phone. That is a known gap there, not a legible canvas;
+   the panel keeps the totals, not these lists. */
+.belt-card { display: none; }
+@media (max-width: 767px) {
+    .belt-card:not([hidden]) {
+        display: block;
+        position: absolute;
+        left: 12px;
+        right: 12px;
+        top: var(--card-top, 50%);
+        /* Scrolls inside itself, and stops short of the tab bar. */
+        max-height: calc(100% - var(--card-top, 50%) - 58px - env(safe-area-inset-bottom));
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 10px 12px;
+        border: 1px solid #2b4a72;
+        border-radius: 8px;
+        background: rgba(6, 12, 26, 0.94);
+        font-size: 13px;
+        line-height: 1.4;
+        color: #dbe6f5;
+        -webkit-font-smoothing: antialiased;
+    }
+}
+.belt-card .bc-h, .belt-card .bc-h2 {
+    margin: 0 0 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.belt-card .bc-h2 { margin-top: 10px; font-size: 11px; }
+.belt-card.algora .bc-h, .belt-card.algora .bc-h2 { color: #86efac; }
+.belt-card.ao .bc-h, .belt-card.ao .bc-h2 { color: #fcd34d; }
+.belt-card.bridge .bc-h, .belt-card.bridge .bc-h2 { color: #93c5fd; }
+.belt-card .bc-dim { font-weight: 400; letter-spacing: 0; text-transform: none; color: #9fb2cc; }
+.belt-card .bc-list { margin: 0; padding: 0; list-style: none; }
+.belt-card .bc-list li { padding: 5px 0; border-top: 1px solid #1c2c45; }
+.belt-card .bc-list li:first-child { border-top: 0; }
+.belt-card .bc-t { color: #f1f5f9; }
+.belt-card .bc-m { display: block; margin-top: 1px; font-size: 12px; color: #9fb2cc; }
+.belt-card .bc-m.bc-inline { display: inline; }
+.belt-card .bc-empty, .belt-card .bc-note { margin: 4px 0 0; font-size: 12px; color: #9fb2cc; }
+.belt-card .bc-note { margin-top: 8px; }
+/* The service did not answer this poll: the lists below are the last ones it
+   sent. The stale amber the map's tooltip uses for an old reading. */
+.belt-card .bc-stale { margin: 0 0 6px; font-size: 12px; color: #fbbf24; }
+.belt-card .bc-total { margin: 8px 0 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #fcd34d; }
+.belt-card .bc-row { display: flex; justify-content: space-between; margin: 0; }
+.belt-card .bc-row b { color: #fff; }
+.belt-card .bc-sev, .belt-card .bc-score, .belt-card .bc-out {
+    display: inline-block;
+    min-width: 3.4em;
+    margin-right: 4px;
+    padding: 0 4px;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    line-height: 16px;
+    text-align: center;
+    text-transform: uppercase;
+    color: #9fb2cc;
+}
+/* The canvas labels' own colours: severity for signals, threshold for scores. */
+.belt-card .bc-sev.critical, .belt-card .bc-sev.high { color: #fca5a5; }
+.belt-card .bc-sev.medium { color: #fcd34d; }
+.belt-card .bc-score.project { color: #4ade80; }
+.belt-card .bc-score.plan { color: #fbbf24; }
+.belt-card .bc-out.ok { color: #4ade80; }
+.belt-card .bc-out.fail { color: #f87171; }

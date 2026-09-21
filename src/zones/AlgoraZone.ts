@@ -1,5 +1,8 @@
 import Phaser from "phaser";
 import type { DataBridge } from "../services/data-bridge.ts";
+import type { UnifiedSignal } from "../services/types.ts";
+import type { BeltItem } from "../ui/belt-card.ts";
+import { reducedMotion } from "../ui/motion.ts";
 
 const ZONE_X = 10;
 const ZONE_Y = 44;
@@ -50,8 +53,11 @@ type FlowItem = {
     sprite: Phaser.GameObjects.Image;
     label: Phaser.GameObjects.Text;
     progress: number;
+    /** In full: the canvas label shows the first 22 characters, the phone's
+     *  belt card (ui/belt-card.ts) the whole title. */
     title: string;
     severity: string;
+    origin: UnifiedSignal["origin"];
 };
 
 export class AlgoraZone {
@@ -144,12 +150,26 @@ export class AlgoraZone {
         });
     }
 
+    /** The signals on the belt now, oldest first, for the phone's belt card:
+     *  on a phone the canvas labels are too small to read. The id is what the
+     *  card keeps each signal's row by, from when it lands until it leaves. */
+    beltItems(): BeltItem[] {
+        return this.items.map(it => ({
+            id: it.id, title: it.title, severity: it.severity, origin: it.origin, stage: STAGES[it.stageIdx] ?? "",
+        }));
+    }
+
     update(dt: number, dataBridge: DataBridge): void {
+        // With reduced motion (read live) the ambient loops stop: no tread
+        // travel, no bot animation or hop, no blinking clusters. The signals
+        // still move through the stages — that is the data — but each is shown
+        // at its stage rather than sliding between them.
+        const still = reducedMotion();
         this.spawnTimer += dt;
-        this.beltOffset += dt * 0.03;
+        if (!still) this.beltOffset += dt * 0.03;
 
         // animate bot
-        const frame = Math.floor(this.scene.time.now / 420) % 2;
+        const frame = still ? 0 : Math.floor(this.scene.time.now / 420) % 2;
         this.bot.setTexture(`algora-bot-${frame}`);
 
         // spawn: bot picks up signal and places on belt
@@ -163,19 +183,23 @@ export class AlgoraZone {
                 // tween used to stop the belt for the life of the page, with
                 // the page still looking alive. (onComplete cannot run inside
                 // tweens.add: a tween starts on the next update.)
-                const title = signal.title.slice(0, 22);
-                const severity = signal.severity;
-                this.scene.tweens.add({
-                    targets: this.bot, y: BELT_TOP - 40, duration: 200,
-                    yoyo: true, onComplete: () => {
-                        try {
-                            this.spawnItem(title, severity);
-                        } finally {
-                            this.botBusy = false;
-                        }
-                    },
-                });
-                this.botBusy = true;
+                const { title, severity, origin } = signal;
+                if (still) {
+                    // No hop to wait for: straight onto the belt.
+                    this.spawnItem(title, severity, origin);
+                } else {
+                    this.scene.tweens.add({
+                        targets: this.bot, y: BELT_TOP - 40, duration: 200,
+                        yoyo: true, onComplete: () => {
+                            try {
+                                this.spawnItem(title, severity, origin);
+                            } finally {
+                                this.botBusy = false;
+                            }
+                        },
+                    });
+                    this.botBusy = true;
+                }
             }
             this.spawnTimer = 0;
         }
@@ -200,31 +224,31 @@ export class AlgoraZone {
             }
 
             const y = STAGE_Y_START + item.stageIdx * (STAGE_H + STAGE_GAP) + STAGE_H / 2
-                + item.progress * (STAGE_H + STAGE_GAP);
+                + (still ? 0 : item.progress * (STAGE_H + STAGE_GAP));
             item.sprite.setPosition(BELT_X + BELT_W / 2, y);
             item.label.setPosition(BELT_X - 4, y - 3);
         }
 
         this.items = this.items.filter(i => i.stageIdx < STAGES.length);
 
-        // cluster pulse
+        // cluster pulse — decorative: no cluster reports what it is doing
         const now = this.scene.time.now;
         this.clusterDots.forEach((cd, i) => {
-            cd.active = Math.sin(now * 0.003 + i * 0.7) > 0.3;
-            this.clusterLabels[i].setAlpha(cd.active ? 1 : 0.4);
+            cd.active = !still && Math.sin(now * 0.003 + i * 0.7) > 0.3;
+            this.clusterLabels[i].setAlpha(still ? 0.8 : cd.active ? 1 : 0.4);
         });
 
-        this.drawGraphics();
+        this.drawGraphics(still);
         this.drawBelt();
     }
 
-    private spawnItem(title: string, severity: string): void {
+    private spawnItem(title: string, severity: string, origin: UnifiedSignal["origin"]): void {
         const x = BELT_X + BELT_W / 2;
         const y = BELT_TOP + 8;
         const sprite = this.scene.add.image(x, y, "signal-orb")
             .setDepth(20).setDisplaySize(18, 18);
         const color = severity === "high" || severity === "critical" ? "#fca5a5" : severity === "medium" ? "#fcd34d" : "#94a3b8";
-        const label = this.scene.add.text(BELT_X - 4, y - 3, title, {
+        const label = this.scene.add.text(BELT_X - 4, y - 3, title.slice(0, 22), {
             fontFamily: "monospace", fontSize: "7px", color,
             backgroundColor: "#0f172aee", padding: { x: 2, y: 1 },
         }).setDepth(21).setOrigin(1, 0.5);
@@ -232,7 +256,7 @@ export class AlgoraZone {
         this.items.push({
             id: `a-${this.itemIdCounter++}`,
             stageIdx: 0, sprite, label,
-            progress: 0, title, severity,
+            progress: 0, title, severity, origin,
         });
     }
 
@@ -263,7 +287,7 @@ export class AlgoraZone {
         }
     }
 
-    private drawGraphics(): void {
+    private drawGraphics(still: boolean): void {
         this.g.clear();
 
         // zone background
@@ -274,8 +298,8 @@ export class AlgoraZone {
 
         // cluster dots
         this.clusterDots.forEach(cd => {
-            this.g.fillStyle(0x34d399, cd.active ? 0.8 : 0.2);
-            this.g.fillCircle(cd.x, cd.y, cd.active ? 7 : 5);
+            this.g.fillStyle(0x34d399, still ? 0.5 : cd.active ? 0.8 : 0.2);
+            this.g.fillCircle(cd.x, cd.y, still ? 6 : cd.active ? 7 : 5);
             if (cd.active) {
                 this.g.lineStyle(1, 0x34d399, 0.3);
                 this.g.strokeCircle(cd.x, cd.y, 11);

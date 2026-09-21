@@ -7,13 +7,14 @@ import { defineConfig } from "vitest/config";
  *
  * `environment: "node"` because what is worth testing here is the service layer
  * — what the monitor concludes from an endpoint's answer — and none of it
- * touches the DOM. The one DOM-facing test, tests/sidebar.test.ts, stubs the
- * handful of `document` calls Sidebar makes instead of pulling in a DOM
- * implementation. The Phaser zones are not unit-testable without a WebGL
- * context and are deliberately out of scope; the pieces of them that build
- * markup from other services' data — HubMap's tooltip, and the status counts
- * its HUD shares with the sidebar — live Phaser-free in src/ui/hub-tooltip.ts
- * and src/ui/ecosystem-status.ts so that they can be tested.
+ * touches the DOM. The DOM-facing tests (sidebar, sidebar-controls,
+ * zone-tabs) stub the handful of `document` calls they make instead of
+ * pulling in a DOM implementation. The Phaser zones are not unit-testable
+ * without a WebGL context and are deliberately out of scope; the pieces of
+ * them worth testing live Phaser-free in src/ui/ so that they can be: the
+ * markup built from other services' data (HubMap's tooltip, the status counts
+ * its HUD shares with the sidebar, the phone's belt card), the map's tap
+ * selection and text placement, and the reduced-motion setting.
  */
 export default defineConfig({
     test: {
