@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { initSidebar, updateEcosystem, updateSidebar } from "../src/ui/Sidebar.ts";
+import { initSidebar, setConnectionStatus, updateEcosystem, updateSidebar } from "../src/ui/Sidebar.ts";
 import type { DataBridge, LiveStats } from "../src/services/data-bridge.ts";
 import type { EcosystemFeed, EcosystemNode } from "../src/services/ecosystem-feed.ts";
 import type { HealthEntry, RegistryService } from "../src/services/types.ts";
@@ -116,6 +116,53 @@ describe("updateSidebar", () => {
         expect(textOf(io)).toContain("Signals —/today Output Issues — open sessions:— · agents:—");
         expect(textOf(io)).toContain("Ideas — · Plans — debates:— · agents:—");
         expect(textOf(io)).toContain("Input — signals Output Issues — · Proofs — proposals:— · success:—");
+    });
+});
+
+/**
+ * The scene refreshes every panel twice a second, and assigning innerHTML
+ * replaces every node even when the string is the same. A figure selected in
+ * Service I/O to be copied was gone within half a second.
+ */
+describe("panel rewrites", () => {
+    let writes: Record<string, string[]>;
+
+    beforeEach(() => {
+        // Panels that record each innerHTML assignment, then a fresh init.
+        writes = {};
+        for (const sel of ["#stats", "#serviceStatus", "#connStatus", "#ecosystem"]) {
+            let html = "";
+            const log: string[] = (writes[sel] = []);
+            els[sel] = {
+                get innerHTML() { return html; },
+                set innerHTML(v: string) { html = v; log.push(v); },
+            } as El;
+        }
+        initSidebar();
+    });
+
+    const feed = { isLoaded: () => false, nodes: () => [] } as unknown as EcosystemFeed;
+
+    it("leaves a panel alone when its markup has not changed", () => {
+        for (let i = 0; i < 5; i++) { updateSidebar(bridgeWith(LIVE)); updateEcosystem(feed); }
+        expect(Object.values(writes).map(w => w.length)).toEqual([1, 1, 1, 1]);
+
+        // And rewrites it the moment something in it does.
+        updateSidebar(bridgeWith({ ...LIVE, algora: { ...LIVE.algora, openIssues: 130 } }));
+        expect(writes["#stats"]).toHaveLength(2);
+        expect(writes["#serviceStatus"]).toHaveLength(2);
+        expect(writes["#connStatus"]).toHaveLength(1);
+    });
+
+    it("shares the memo between both writers of the connection line", () => {
+        // setConnectionStatus writes the line once, when init resolves. Had
+        // it written around the memo, the next updateSidebar would find its
+        // own last markup memoised, skip, and leave this one-off text up.
+        updateSidebar(bridgeWith(LIVE));
+        setConnectionStatus("live");
+        expect(textOf(els["#connStatus"].innerHTML)).toBe("LIVE — Real-time service data");
+        updateSidebar(bridgeWith(LIVE));
+        expect(textOf(els["#connStatus"].innerHTML)).toBe("LIVE — queue: 3");
     });
 });
 

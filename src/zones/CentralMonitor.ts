@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import type { DataBridge } from "../services/data-bridge.ts";
+import { POLL_INTERVAL_MS, DETAIL_INTERVAL_MS, DEBATE_INTERVAL_MS, type DataBridge } from "../services/data-bridge.ts";
 
 const STRIP_X = 10;
 const STRIP_Y = 438;
@@ -38,8 +38,9 @@ export class CentralMonitor {
             }).setDepth(12);
         });
 
-        // aggregation note
-        this.scene.add.text(STRIP_X + 960, STRIP_Y + 14, "Aggregating 3 independent services", {
+        // aggregation note — midway between the Bridge label and the status
+        // text, which is right-aligned and grows leftwards (see update()).
+        this.scene.add.text(STRIP_X + 900, STRIP_Y + 14, "Aggregating 3 independent services", {
             fontFamily: "monospace", fontSize: "8px", color: "#2dd4bf44",
         }).setDepth(10);
 
@@ -54,7 +55,19 @@ export class CentralMonitor {
         const queueSize = dataBridge.queueSize();
         const state = dataBridge.connectionState();
         const label = state === "live" ? "LIVE" : state === "offline" ? "OFFLINE" : "CONNECTING";
-        this.statusText?.setText(`${label} | Queue: ${queueSize} | Polling: 15s`);
+        // Both cadences, read from the constants that set them rather than
+        // restated here. The first is signals and stats — what LIVE and the
+        // queue stand on. The second is the belt views' detail reads: AO ideas,
+        // the project total, Bridge outcomes and trust at the low end, AO
+        // debates at the high end. The strip sits under those views, so a lone
+        // 15 s would claim their data is fresher than it is. Nominal: each read
+        // starts that long after the previous one finished, a failed detail
+        // read retries sooner (DETAIL_RETRY_MS), and nothing is scheduled while
+        // the tab is hidden. The longest state, "CONNECTING" with a queue, is
+        // ~285 world px wide and clears the aggregation note by ~60; keep any
+        // longer wording inside that.
+        const details = `${DETAIL_INTERVAL_MS / 60_000}\u2013${DEBATE_INTERVAL_MS / 60_000}m`;
+        this.statusText?.setText(`${label} | Queue: ${queueSize} | Polling: ${POLL_INTERVAL_MS / 1000}s / ${details}`);
 
         this.drawGraphics();
     }

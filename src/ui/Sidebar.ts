@@ -11,7 +11,26 @@ let statsEl: HTMLDivElement;
 let serviceEl: HTMLDivElement;
 let connEl: HTMLDivElement;
 let ecoEl: HTMLDivElement;
-let ecosystemMarkup = "";
+
+/** The markup each panel was last given. */
+let written = new WeakMap<Element, string>();
+
+/**
+ * Writes a panel's markup only when it has changed. The scene refreshes every
+ * panel twice a second, and assigning innerHTML replaces every child node even
+ * when the string is identical — which drops keyboard focus and text selection
+ * (a figure selected to be copied was gone within half a second) and rebuilds
+ * the panel's accessibility tree, although no data changed.
+ *
+ * Every writer of a panel has to come through here. One that wrote around it
+ * would leave the memo holding markup the panel no longer shows, and the next
+ * identical write would be skipped over it.
+ */
+function setHTML(el: Element, markup: string): void {
+    if (written.get(el) === markup) return;
+    written.set(el, markup);
+    el.innerHTML = markup;
+}
 
 export function initSidebar(): void {
     const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -45,8 +64,8 @@ export function initSidebar(): void {
     statsEl = document.querySelector<HTMLDivElement>("#stats")!;
     serviceEl = document.querySelector<HTMLDivElement>("#serviceStatus")!;
     ecoEl = document.querySelector<HTMLDivElement>("#ecosystem")!;
-    ecosystemMarkup = "";
     connEl = document.querySelector<HTMLDivElement>("#connStatus")!;
+    written = new WeakMap();
 
     // mobile panel toggle
     const toggle = document.getElementById("panelToggle")!;
@@ -76,7 +95,7 @@ export function initSidebar(): void {
 }
 
 export function setConnectionStatus(state: ConnState): void {
-    connEl.innerHTML = connMarkup(state, "Real-time service data");
+    setHTML(connEl, connMarkup(state, "Real-time service data"));
 }
 
 /** Single source of truth for the status line. "connecting" is a real state:
@@ -96,11 +115,8 @@ const SECTION_LABELS: Record<string, string> = {
 };
 
 function renderEcosystem(markup: string): void {
-    // The scene refreshes this panel twice a second. Replacing identical links
-    // drops keyboard focus and text selection even though no data changed.
-    if (markup === ecosystemMarkup) return;
-    ecosystemMarkup = markup;
-    ecoEl.innerHTML = markup;
+    // Replacing identical links drops keyboard focus as well as selection.
+    setHTML(ecoEl, markup);
 }
 
 /**
@@ -197,14 +213,14 @@ export function updateSidebar(dataBridge: DataBridge): void {
     const b = up.bridge ? ls.bridge : null;
 
     // Pipeline summary. These are the services' own totals, not the sizes of our
-    // fetch caches — `issueCache.length` only ever reported the 30-item fetch cap,
-    // and `debateCache.length` the 10-item one.
-    statsEl.innerHTML = `
+    // fetch caches — the issue list's length (no longer fetched) only ever
+    // reported its 30-item cap, and the debate list's its own.
+    setHTML(statsEl, `
     <div class="row"><span>Streaming</span><b>Algora (Sense) | AO (Plan) | Bridge (Execute)</b></div>
     <div class="row"><span>Signal Queue</span><b>${dataBridge.queueSize()}</b></div>
     <div class="row"><span>Open Issues</span><b>${num(a?.openIssues) ?? NA}</b></div>
     <div class="row"><span>Debates Today</span><b>${num(ao?.stats?.debates_today) ?? NA}</b></div>
-    `;
+    `);
 
     // Service I/O — live figures for the services that responded this poll. The
     // rest show NA and lose their LIVE badge, instead of borrowing another number.
@@ -233,7 +249,7 @@ export function updateSidebar(dataBridge: DataBridge): void {
 
     const badge = (ok: boolean) => ok ? ' <span class="live-badge">LIVE</span>' : '';
 
-    serviceEl.innerHTML = `
+    setHTML(serviceEl, `
     <h2>Service I/O</h2>
     <div class="svc algora">
       <div class="svc-title">ALGORA${badge(up.algora)}</div>
@@ -253,8 +269,8 @@ export function updateSidebar(dataBridge: DataBridge): void {
       <div class="drow"><span>Output</span><b>${bOut}</b></div>
       <div class="hint">${bHint} · 5 specialist agents</div>
     </div>
-    `;
+    `);
 
     // connection status update
-    connEl.innerHTML = connMarkup(conn, `queue: ${dataBridge.queueSize()}`);
+    setHTML(connEl, connMarkup(conn, `queue: ${dataBridge.queueSize()}`));
 }
