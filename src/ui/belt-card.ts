@@ -22,10 +22,12 @@ import { lapsed, liveBadge } from "./live-badge.ts";
  * Each card also says whether its service answered this poll, with the
  * sidebar's own badge (live-badge.ts): on a phone the sidebar is a closed
  * drawer and the map's heading is hidden on a belt view, so nothing else on
- * screen would. The lists are what the service last sent, and a failed read
- * keeps them, so once a poll goes unanswered they are called what they then
- * are — the last received, not the latest. The caches carry no times of
- * their own, so the card gives no ages it would have to invent.
+ * screen would. The AO and Bridge lists are what the service last sent, and a
+ * failed read keeps them, so once a poll goes unanswered they are called what
+ * they then are — the last received, not the latest. The Algora belt holds
+ * all three services' signals, so its card only says Algora did not answer
+ * (see algoraHeadHtml). The caches carry no times of their own, so the card
+ * gives no ages it would have to invent.
  *
  * Every string comes from another service's JSON behind an unchecked cast,
  * so each is checked for its type and escaped here, the sink.

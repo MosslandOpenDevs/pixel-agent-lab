@@ -3,6 +3,18 @@ import { getJSON, getJSONWithStatus, isRecord } from "./http.ts";
 
 // Both of these are served with `Access-Control-Allow-Origin: *`, so they are
 // fetched cross-origin directly and need no entry in the monitor's nginx proxy.
+// They must stay inside the page's Content-Security-Policy `connect-src`
+// (deploy/nginx.conf.example, `location /`), though, as must every registry
+// `statusUrl` that fetchServiceHealth reads. Development and CI send no CSP, so
+// an address moved to another host passes every check here and is blocked in
+// production only, where the fetch throws. What that costs depends on which
+// address moved. The registry: it never loads, so nothing is drawn, and the
+// map and the sidebar say "Registry unreachable — retrying" on every retry.
+// The aggregate: city reads as unmeasured, and no other service has city's
+// reading to fall back on. A statusUrl: that service falls back to city's
+// second-hand reading if city probes it, or else reads as unmeasured. None of
+// these shows a service as down, and nothing on the page names the policy as
+// the cause.
 const REGISTRY_URL = "https://links.moss.land/ecosystem-registry.json";
 /** city.moss.land's aggregate — which is also city's own registry `statusUrl`. */
 export const HEALTH_URL = "https://city.moss.land/api/health";

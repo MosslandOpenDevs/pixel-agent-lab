@@ -371,8 +371,9 @@ export class EcosystemFeed {
         // landed for STALE_AFTER_MS the readings are shown as stale — dimmed,
         // still, dated — instead of as current for as long as the network is
         // gone. That happens only when *every* request failed, which is the
-        // viewer's own connection: a service that failed on its own drops to
-        // unmeasured at once, in a sweep that did land.
+        // viewer's own connection: a service that failed on its own falls back
+        // at once, in a sweep that did land, to city's second-hand reading if
+        // city probes it, or else to unmeasured.
         if (firstHand.length === 0 && !aggregate) return false;
 
         const entries = new Map<string, HealthEntry>();

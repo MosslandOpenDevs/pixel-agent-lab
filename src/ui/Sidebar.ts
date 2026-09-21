@@ -170,7 +170,11 @@ export function initSidebar(): void {
 }
 
 export function setConnectionStatus(state: ConnState): void {
-    setHTML(connEl, connMarkup(state, "Real-time service data"));
+    // What LIVE means, in the About text's words. It used to say "Real-time
+    // service data", which this is not: the data is polled, and the belts
+    // only illustrate workflows. The next 500 ms refresh replaces the suffix
+    // with the queue size (updateSidebar).
+    setHTML(connEl, connMarkup(state, "a data API responded"));
 }
 
 /** Single source of truth for the status line. "connecting" is a real state:
@@ -199,8 +203,8 @@ function renderEcosystem(markup: string): void {
  *
  * The rule: a row may only look as alive as the data behind it. `stream`
  * services are ones this monitor actually polls, `health` ones have a reading —
- * first-hand from their own /api/health, or city.moss.land's aggregate as the
- * fallback — and `listed` ones we know nothing about beyond their registry
+ * first-hand from their own registry `statusUrl`, or city.moss.land's aggregate
+ * as the fallback — and `listed` ones we know nothing about beyond their registry
  * entry, so those get a neutral dot, never a reassuring green.
  *
  * First, above the instrumentation counts, what the services report: the same

@@ -1,9 +1,10 @@
 # Example production reverse-proxy for pixel-agent-lab (monitor.moss.land).
 #
-# The app is a static SPA (serve `dist/`) that calls three same-origin API
-# prefixes at runtime. The Vite dev proxy only exists during `npm run dev`, so
-# production MUST provide these three proxies itself. Path rewrites below mirror
-# vite.config.ts. Adjust upstream host:port to match your deployment.
+# The app is a static single-page site (serve `dist/`, with no SPA fallback)
+# that calls three same-origin API prefixes at runtime. Vite's proxies for them
+# exist only under `npm run dev` and `npm run preview`, so production MUST
+# provide these three proxies itself. Path rewrites below mirror vite.config.ts.
+# Adjust upstream host:port to match your deployment.
 #
 # This is a reference configuration for nginx 1.18: the routes, rewrites and
 # headers monitor.moss.land needs, not a byte-for-byte copy of a running vhost.
