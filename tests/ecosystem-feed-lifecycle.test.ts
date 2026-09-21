@@ -6,6 +6,8 @@ vi.mock("../src/services/ecosystem-client.ts", () => ({
     fetchRegistry: vi.fn(),
     fetchEcosystemHealth: vi.fn(),
     fetchServiceHealth: vi.fn(),
+    HEALTH_URL: "https://city.moss.land/api/health",
+    AGGREGATOR_ID: "city",
 }));
 
 describe("EcosystemFeed teardown", () => {
@@ -16,7 +18,7 @@ describe("EcosystemFeed teardown", () => {
         vi.resetAllMocks();
         feed = new EcosystemFeed();
         vi.mocked(fetchRegistry).mockResolvedValue([]);
-        vi.mocked(fetchEcosystemHealth).mockResolvedValue(null);
+        vi.mocked(fetchEcosystemHealth).mockResolvedValue({ aggregate: null, own: null });
     });
 
     afterEach(() => {
@@ -64,5 +66,34 @@ describe("EcosystemFeed teardown", () => {
         expect(requestSignal?.aborted).toBe(true);
         expect(fetchEcosystemHealth).not.toHaveBeenCalled();
         expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("keeps both schedules armed when a sweep throws, including the first", async () => {
+        // The real client drops malformed entries before the feed sees them;
+        // this one does not, so the merge throws. That stands in for any throw
+        // inside a poll: it must cost that sweep, never the polling chain.
+        const error = vi.spyOn(console, "error").mockImplementation(() => {});
+        vi.mocked(fetchEcosystemHealth).mockResolvedValue({
+            aggregate: { services: [null as never] }, own: null,
+        });
+
+        await expect(feed.init()).resolves.toBeUndefined();
+        expect(vi.getTimerCount()).toBe(2);             // registry + health
+        expect(error).toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(fetchEcosystemHealth).toHaveBeenCalledTimes(2);
+        expect(vi.getTimerCount()).toBe(2);
+
+        // And once the answers are sane again, the sweep lands as usual.
+        vi.mocked(fetchEcosystemHealth).mockResolvedValue({
+            aggregate: { services: [{ service: "npc", status: "ok" }] }, own: null,
+        });
+        vi.mocked(fetchRegistry).mockResolvedValue([
+            { id: "npc", name: "npc", owner: "mossland", tier: "showcase" } as never,
+        ]);
+        await vi.advanceTimersByTimeAsync(9 * 60_000);
+        expect(feed.nodes().map(n => [n.service.id, n.health?.status])).toEqual([["npc", "ok"]]);
+        error.mockRestore();
     });
 });

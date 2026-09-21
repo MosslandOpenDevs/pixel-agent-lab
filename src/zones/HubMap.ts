@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import type { EcosystemNode, Instrumentation, NodeKind } from "../services/ecosystem-feed.ts";
+import { hubTooltipHtml } from "../ui/hub-tooltip.ts";
 
 /** This monitor's own id in the registry. Its star is the one place on the map
  *  the viewer is already standing, which changes what a click can usefully do. */
@@ -273,12 +274,6 @@ export class HubMap {
     }
 
     /**
-     * World-anchored text has to stay on the canvas, so make it survive the
-     * downscale: render the glyph texture at 3x and let it filter LINEAR. The
-     * game runs `pixelArt: true`, which sets NEAREST globally — right for the
-     * sprites, ruinous for small text resampled at a non-integer factor.
-     */
-    /**
      * Projection constants for this frame. getBoundingClientRect forces layout,
      * so it is read once per frame rather than once per label — 28 labels at
      * 60fps would otherwise be ~1700 forced layouts a second.
@@ -528,29 +523,8 @@ export class HubMap {
     private showTooltip(b: Body): void {
         const el = this.tipEl;
         if (!el || !this.mapVisible) return;
-        const { service: sv, health, instrumentation, kind } = b.node;
-        const esc = (v: string) => v.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string));
-        const isSelf = sv.id === SELF_ID;
-        const healthClass = health?.status === "ok" || health?.status === "degraded" || health?.status === "down"
-            ? health.status : "unknown";
-        // A file is either served or missing; a link's uptime belongs to whoever
-        // runs it. Neither has a health line, because neither has health.
-        const measured = kind === "artifact"
-            ? `<span class="dim">a published file, not a service</span>`
-            : kind === "link"
-                ? `<span class="dim">an external destination — not ours to measure</span>`
-                : health
-                    ? `<b class="${healthClass}">health ${esc(health.status)}</b>${health.latencyMs != null ? ` · ${health.latencyMs}ms` : ""}`
-                    : `<span class="dim">not measured by this monitor</span>`;
-        const action = isSelf ? "you are here — click to recentre"
-            : instrumentation === "stream" ? "click to open its belt"
-                : kind === "artifact" ? "click to open the file"
-                    : "click to open the service";
-        el.innerHTML = `<div class="t">${esc(sv.name)}</div>`
-            + `<div class="m">${esc(sv.lifecycle ?? "lifecycle unspecified")} · ${esc(kind === "service" ? instrumentation : kind)}</div>`
-            + `<div class="m">${measured}</div>`
-            + (b.archived ? `<div class="m dim">archived — preserved read-only</div>` : "")
-            + `<div class="a">${action}</div>`;
+        // The markup is built outside this Phaser module so it can be tested.
+        el.innerHTML = hubTooltipHtml(b.node, { isSelf: b.node.service.id === SELF_ID, archived: b.archived });
         el.hidden = false;
         this.placeTooltip();
     }

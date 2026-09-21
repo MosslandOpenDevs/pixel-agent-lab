@@ -1,5 +1,6 @@
 import type { ConnState, DataBridge } from "../services/data-bridge.ts";
 import type { EcosystemFeed, EcosystemNode } from "../services/ecosystem-feed.ts";
+import { esc } from "./html.ts";
 
 /** The three values the ecosystem health contract defines. A service that
  *  answers with anything else is answering — we just cannot read its verdict,
@@ -94,9 +95,6 @@ const SECTION_LABELS: Record<string, string> = {
     participation: "Participation",
 };
 
-const esc = (v: unknown) => String(v ?? "").replace(/[&<>"]/g, c =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
-
 function renderEcosystem(markup: string): void {
     // The scene refreshes this panel twice a second. Replacing identical links
     // drops keyboard focus and text selection even though no data changed.
@@ -109,9 +107,10 @@ function renderEcosystem(markup: string): void {
  * Ecosystem panel, driven by the links.moss.land registry.
  *
  * The rule: a row may only look as alive as the data behind it. `stream`
- * services are ones this monitor actually polls, `health` ones are covered by
- * the city.moss.land aggregator, and `listed` ones we know nothing about beyond
- * their registry entry — so those get a neutral dot, never a reassuring green.
+ * services are ones this monitor actually polls, `health` ones have a reading —
+ * first-hand from their own /api/health, or city.moss.land's aggregate as the
+ * fallback — and `listed` ones we know nothing about beyond their registry
+ * entry, so those get a neutral dot, never a reassuring green.
  */
 export function updateEcosystem(feed: EcosystemFeed): void {
     if (!ecoEl) return;
@@ -152,7 +151,7 @@ export function updateEcosystem(feed: EcosystemFeed): void {
         const dot = kind !== "service"
             ? `<span class="eco-dot none" title="${kind === "artifact" ? "a published file, not a service" : "an external destination"}"></span>`
             : health
-                ? `<span class="eco-dot ${CONTRACT_STATUS.has(health.status) ? esc(health.status) : "offcontract"}" title="${esc(health.status)}${CONTRACT_STATUS.has(health.status) ? "" : " \u2014 not one of ok/degraded/down"}${health.latencyMs != null ? " \u00b7 " + health.latencyMs + "ms" : ""}"></span>`
+                ? `<span class="eco-dot ${CONTRACT_STATUS.has(health.status) ? esc(health.status) : "offcontract"}" title="${esc(health.status)}${CONTRACT_STATUS.has(health.status) ? "" : " \u2014 not one of ok/degraded/down"}${health.latencyMs != null ? " \u00b7 " + esc(health.latencyMs) + "ms" : ""}"></span>`
                 : `<span class="eco-dot unknown" title="not health-checked"></span>`;
         const life = sv.lifecycle
             ? `<span class="eco-life ${esc(sv.lifecycle)}">${esc(sv.lifecycle)}</span>`
@@ -186,6 +185,12 @@ export function updateSidebar(dataBridge: DataBridge): void {
     // used to, by falling back to the zones' internal animation counters — reads as
     // live service data when it is nothing of the sort.
     const NA = "\u2014";
+    // The same goes for a figure the service did send but not as a number. Each
+    // of these comes from another service's JSON behind an unchecked cast, and a
+    // renamed field used to render "undefined", a missing one "0", and a numeric
+    // string as if it were a count. Only a finite number is a figure. As defence
+    // in depth it also keeps anything but a number out of this innerHTML.
+    const num = (v: unknown): number | null => typeof v === "number" && Number.isFinite(v) ? v : null;
 
     const a = up.algora ? ls.algora : null;
     const ao = up.ao ? ls.ao : null;
@@ -197,31 +202,34 @@ export function updateSidebar(dataBridge: DataBridge): void {
     statsEl.innerHTML = `
     <div class="row"><span>Streaming</span><b>Algora (Sense) | AO (Plan) | Bridge (Execute)</b></div>
     <div class="row"><span>Signal Queue</span><b>${dataBridge.queueSize()}</b></div>
-    <div class="row"><span>Open Issues</span><b>${a ? a.openIssues ?? 0 : NA}</b></div>
-    <div class="row"><span>Debates Today</span><b>${ao?.stats ? ao.stats.debates_today : NA}</b></div>
+    <div class="row"><span>Open Issues</span><b>${num(a?.openIssues) ?? NA}</b></div>
+    <div class="row"><span>Debates Today</span><b>${num(ao?.stats?.debates_today) ?? NA}</b></div>
     `;
 
     // Service I/O — live figures for the services that responded this poll. The
     // rest show NA and lose their LIVE badge, instead of borrowing another number.
-    const aIn = a ? `${a.signalsToday ?? 0}/today` : NA;
-    const aOut = a ? `${a.openIssues ?? 0} open` : NA;
-    const aHint = a ? `sessions:${a.activeSessions ?? 0} · agents:${a.totalAgents ?? NA}` : "9-stage pipeline";
+    const aIn = a ? `${num(a.signalsToday) ?? NA}/today` : NA;
+    const aOut = a ? `${num(a.openIssues) ?? NA} open` : NA;
+    const aHint = a ? `sessions:${num(a.activeSessions) ?? NA} · agents:${num(a.totalAgents) ?? NA}` : "9-stage pipeline";
 
-    const aoIn = ao?.stats ? `${ao.stats.signals_today}/today` : NA;
-    const aoOut = ao?.stats
-        ? `Ideas ${ao.stats.ideas_generated} · Plans ${ao.stats.plans_created}`
+    const aoStats = ao?.stats;
+    const aoIn = aoStats ? `${num(aoStats.signals_today) ?? NA}/today` : NA;
+    const aoOut = aoStats
+        ? `Ideas ${num(aoStats.ideas_generated) ?? NA} · Plans ${num(aoStats.plans_created) ?? NA}`
         : NA;
-    const aoHint = ao?.stats ? `debates:${ao.stats.debates_today} · agents:${ao.stats.agents_active}` : "3-phase debate";
+    const aoHint = aoStats
+        ? `debates:${num(aoStats.debates_today) ?? NA} · agents:${num(aoStats.agents_active) ?? NA}`
+        : "3-phase debate";
 
-    const bIn = b ? `${(b.signals?.total ?? 0).toLocaleString()} signals` : NA;
+    const bIn = b ? `${num(b.signals?.total)?.toLocaleString() ?? NA} signals` : NA;
     const bOut = b
-        ? `Issues ${b.issues?.total ?? 0} · Proofs ${b.outcomes?.totalProofs ?? 0}`
+        ? `Issues ${num(b.issues?.total) ?? NA} · Proofs ${num(b.outcomes?.totalProofs) ?? NA}`
         : NA;
-    const successRate = b?.outcomes?.successRate;
     // `?? 0` here used to turn "no proofs recorded yet" (null) into "0% success",
     // which reads as every outcome having failed.
-    const bSuccess = typeof successRate === "number" ? `${successRate}%` : NA;
-    const bHint = b ? `proposals:${b.proposals?.total ?? 0} · success:${bSuccess}` : "L0-L4 pipeline";
+    const successRate = num(b?.outcomes?.successRate);
+    const bSuccess = successRate !== null ? `${successRate}%` : NA;
+    const bHint = b ? `proposals:${num(b.proposals?.total) ?? NA} · success:${bSuccess}` : "L0-L4 pipeline";
 
     const badge = (ok: boolean) => ok ? ' <span class="live-badge">LIVE</span>' : '';
 

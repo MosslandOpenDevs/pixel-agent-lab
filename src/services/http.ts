@@ -13,6 +13,15 @@ export async function getJSON<T>(url: string, label: string, signal?: AbortSigna
 }
 
 /**
+ * What every reader here checks before trusting a parsed body's fields. JSON
+ * gives no guarantee of shape — `null`, an array or a bare string all parse —
+ * and the generic in `getJSON<T>` is an assertion, not a check.
+ */
+export function isRecord(v: unknown): v is Record<string, unknown> {
+    return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
  * The same fetch, but the HTTP status comes back with the body instead of
  * replacing it.
  *
@@ -28,22 +37,38 @@ export async function getJSON<T>(url: string, label: string, signal?: AbortSigna
  * service fell back to "not health-checked" — an outage and a service we never
  * looked at drew the same mark. This lets the caller keep the verdict.
  *
- * A *thrown* fetch still propagates. DNS failure, a CORS wall, an abort: those
- * mean we could not see the service, which is a different claim from the
- * service telling us it is unwell, and it must keep reading as unmeasured.
+ * A *thrown* fetch still propagates. DNS failure, a CORS wall, an abort —
+ * before the headers or partway through the body: those mean we could not see
+ * the service, which is a different claim from the service telling us it is
+ * unwell, and it must keep reading as unmeasured.
+ *
+ * Never answered from the HTTP cache. A health reading is a claim about now, so
+ * it has to be a round trip made now. city's aggregate is served cacheable with
+ * stale-while-revalidate, and under the default cache mode the browser answers
+ * that from disk — offline too — handing back an old aggregate as this sweep's
+ * first-hand answer: city "ok" because it seemed to answer, its siblings as they
+ * were, and the sweep dated now. Bypassing the cache makes an unreachable
+ * service throw, which is the unmeasured case above.
  */
 export async function getJSONWithStatus<T>(
     url: string,
     signal?: AbortSignal,
 ): Promise<{ httpCode: number; data: T | null }> {
-    const res = await fetch(url, { signal });
+    const res = await fetch(url, { signal, cache: "no-store" });
+    // Read the whole body before deciding anything, and outside the try. An
+    // abort or a dropped connection *during* the read is the same claim as one
+    // before the headers — we could not see the answer — so it propagates like
+    // one. Catching it with the parse used to turn a 503 whose body was cut
+    // off (by the sweep's own timeout, say) into this service's verdict of
+    // "down", when the part we never received may well have said "degraded".
+    const text = await res.text();
     try {
-        return { httpCode: res.status, data: (await res.json()) as T };
+        return { httpCode: res.status, data: JSON.parse(text) as T };
     } catch {
-        // Reached it and it answered, but not with JSON — an nginx error page,
-        // say. The status code is then the only thing it told us. No `label`
-        // and no throw here, unlike getJSON: there is no error to name, because
-        // an unreadable answer is itself the reading.
+        // Reached it, read all of it, and it was not JSON — an nginx error
+        // page, say. The status code is then the only thing it told us. No
+        // `label` and no throw here, unlike getJSON: there is no error to name,
+        // because an unreadable answer is itself the reading.
         return { httpCode: res.status, data: null };
     }
 }

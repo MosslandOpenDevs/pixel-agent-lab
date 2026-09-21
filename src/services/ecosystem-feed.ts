@@ -1,5 +1,7 @@
 import type { RegistryService, HealthEntry } from "./types.ts";
-import { fetchRegistry, fetchEcosystemHealth, fetchServiceHealth } from "./ecosystem-client.ts";
+import {
+    fetchRegistry, fetchEcosystemHealth, fetchServiceHealth, HEALTH_URL, AGGREGATOR_ID,
+} from "./ecosystem-client.ts";
 
 /**
  * How much this monitor can actually observe about a service. The visualization
@@ -41,9 +43,6 @@ export function kindOf(s: RegistryService): NodeKind {
  *  independently, and claiming we do not read it would be the inaccurate half. */
 const STREAMING_IDS = new Set(["algora", "ao", "bridge"]);
 
-/** The service that publishes the health aggregate (city.moss.land). */
-const AGGREGATOR_ID = "city";
-
 export type EcosystemNode = {
     service: RegistryService;
     health: HealthEntry | null;
@@ -51,9 +50,12 @@ export type EcosystemNode = {
     kind: NodeKind;
 };
 
-// The registry is served with max-age=300 and changes rarely; the health
-// aggregator is cached for 60s upstream. Polling either at the 15s service
-// cadence would just burn requests on unchanged bytes.
+// The registry is served with max-age=300 and changes rarely, so polling it
+// often would only re-fetch unchanged bytes. The health aggregator is the
+// opposite case: it advertises s-maxage=60, but it answers freshly on every
+// request, probing its siblings again each time (see fetchEcosystemHealth).
+// Polling it at the 15s service cadence would therefore add load on city,
+// not freshness.
 const REGISTRY_INTERVAL_MS = 10 * 60_000;
 const HEALTH_INTERVAL_MS = 60_000;
 const TIMEOUT_MS = 10_000;
@@ -103,22 +105,40 @@ export class EcosystemFeed {
         // the sweep now fans out to the statusUrls the registry lists, so racing
         // them sends the first sweep against an empty list and leaves the map
         // claiming nothing is measured until the 60s tick. One cached request.
-        await this.pollRegistry();
-        await this.pollHealth();
+        //
+        // Both schedules are armed whatever the first sweep does. A throw here
+        // used to skip them, and the tab then never refreshed either feed.
+        await this.guarded(() => this.pollRegistry());
+        await this.guarded(() => this.pollHealth());
         this.schedule(() => this.pollRegistry(), REGISTRY_INTERVAL_MS);
         this.schedule(() => this.pollHealth(), HEALTH_INTERVAL_MS);
     }
 
     /** Same chained-timer discipline as DataBridge: never overlap, never
-     *  reschedule after teardown. */
+     *  reschedule after teardown — and always reschedule otherwise. The next
+     *  timer is armed only once a job settles, so a job that threw used to end
+     *  its chain for the life of the tab, and the map kept its last verdicts on
+     *  screen as if they were current. */
     private schedule(job: () => Promise<void>, everyMs: number): void {
         if (this.destroyed) return;
         const timer = setTimeout(async () => {
             this.timers.delete(timer);
-            await job();
+            await this.guarded(job);
             this.schedule(job, everyMs);
         }, everyMs);
         this.timers.add(timer);
+    }
+
+    /** Runs one poll so that a throw costs that poll and nothing else. Nothing
+     *  in either poll is meant to throw — every request already settles on its
+     *  own — so reaching the catch is a bug worth a console line, not a reason
+     *  to stop watching. */
+    private async guarded(job: () => Promise<void>): Promise<void> {
+        try {
+            await job();
+        } catch (err) {
+            console.error("[ecosystem] a poll threw; the next one is still scheduled", err);
+        }
     }
 
     private async withSignal<T>(run: (s: AbortSignal) => Promise<T>): Promise<T | null> {
@@ -159,26 +179,37 @@ export class EcosystemFeed {
      * fresher, and it is the service's own verdict rather than an inference from
      * an unrelated data URL's status code.
      *
+     * city is asked once. Its registry `statusUrl` *is* the aggregate, so it is
+     * left out of the fan-out and its own reading comes from the aggregate read
+     * instead — matched on the address, not on city's id, so that if city ever
+     * publishes a separate health endpoint it is read first-hand like any other.
+     *
      * The whole fan-out shares one AbortSignal, so teardown and the timeout
      * cancel every request in the cycle rather than the last one issued.
      */
     private async pollHealth(): Promise<void> {
         const result = await this.withSignal(async signal => {
-            const targets = this.registry.filter(s => s.statusUrl && kindOf(s) === "service");
-            const [direct, aggregate] = await Promise.all([
+            const targets = this.registry.filter(s =>
+                s.statusUrl && s.statusUrl !== HEALTH_URL && kindOf(s) === "service");
+            const [direct, reading] = await Promise.all([
                 // One slow or unreachable service must not cost us the other
                 // fifteen, so each failure resolves to null on its own.
                 Promise.all(targets.map(s => fetchServiceHealth(s, signal).catch(() => null))),
                 fetchEcosystemHealth(signal).catch(() => null),
             ]);
-            return { direct, aggregate };
+            return { direct, reading };
         });
         if (this.destroyed || !result) return;
-        const { direct, aggregate } = result;
+        const { direct, reading } = result;
+        const aggregate = reading?.aggregate ?? null;
+
+        // city's verdict on itself is as first-hand as any statusUrl read — it
+        // is the same request. It goes first, so that a separate endpoint of
+        // its own, were there one, would be the answer that stands.
+        const firstHand = [reading?.own ?? null, ...direct].filter((h): h is HealthEntry => h !== null);
 
         // Nothing came back at all — keep the previous snapshot rather than
         // blanking the map on one bad cycle.
-        const firstHand = direct.filter((h): h is HealthEntry => h !== null);
         if (firstHand.length === 0 && !aggregate) return;
 
         const entries = new Map<string, HealthEntry>();
@@ -190,6 +221,8 @@ export class EcosystemFeed {
         // an aggregate with no top-level `status` for us to read. A successful
         // response is still first-hand proof that it answered, so record that
         // rather than leaving the one service we demonstrably reached unobserved.
+        // Last, and only where nothing else filed a reading for city, so a
+        // verdict it declared for itself is never overridden.
         if (aggregate && !entries.has(AGGREGATOR_ID)) {
             entries.set(AGGREGATOR_ID, {
                 service: AGGREGATOR_ID,
