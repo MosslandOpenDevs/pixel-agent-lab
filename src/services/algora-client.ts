@@ -5,7 +5,8 @@ const BASE = "/algora-api";
 
 export async function fetchAlgoraSignals(limit = 20, signal?: AbortSignal): Promise<AlgoraSignal[]> {
     const data = await getJSON<{ signals?: AlgoraSignal[] }>(`${BASE}/signals?limit=${limit}`, "Algora signals", signal);
-    return data.signals ?? [];
+    // A list or nothing: anything else here would throw mid-ingest.
+    return Array.isArray(data.signals) ? data.signals : [];
 }
 
 export async function fetchAlgoraIssues(limit = 20, signal?: AbortSignal): Promise<AlgoraIssue[]> {

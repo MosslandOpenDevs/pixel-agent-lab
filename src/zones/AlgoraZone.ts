@@ -156,17 +156,26 @@ export class AlgoraZone {
         if (this.spawnTimer > 2200 && this.items.length < 5 && !this.botBusy) {
             const signal = dataBridge.nextSignal();
             if (signal) {
-                this.botBusy = true;
-
+                // Latch only once nothing left in this block can throw, and
+                // release in `finally`. Only the tween's onComplete ever clears
+                // the flag, and main.ts keeps the loop alive through a throwing
+                // frame — so a throw between setting it and handing over the
+                // tween used to stop the belt for the life of the page, with
+                // the page still looking alive. (onComplete cannot run inside
+                // tweens.add: a tween starts on the next update.)
                 const title = signal.title.slice(0, 22);
                 const severity = signal.severity;
                 this.scene.tweens.add({
                     targets: this.bot, y: BELT_TOP - 40, duration: 200,
                     yoyo: true, onComplete: () => {
-                        this.spawnItem(title, severity);
-                        this.botBusy = false;
+                        try {
+                            this.spawnItem(title, severity);
+                        } finally {
+                            this.botBusy = false;
+                        }
                     },
                 });
+                this.botBusy = true;
             }
             this.spawnTimer = 0;
         }

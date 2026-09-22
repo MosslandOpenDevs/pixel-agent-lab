@@ -5,7 +5,8 @@ const BASE = "/bridge-api";
 
 export async function fetchBridgeSignals(limit = 20, signal?: AbortSignal): Promise<BridgeSignal[]> {
     const data = await getJSON<{ signals?: BridgeSignal[] }>(`${BASE}/signals?limit=${limit}`, "Bridge signals", signal);
-    return data.signals ?? [];
+    // A list or nothing: anything else here would throw mid-ingest.
+    return Array.isArray(data.signals) ? data.signals : [];
 }
 
 export async function fetchBridgeStats(signal?: AbortSignal): Promise<BridgeStats> {

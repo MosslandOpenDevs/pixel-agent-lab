@@ -12,6 +12,9 @@ const BELT_H = 40;
 const BELT_LEFT = ZONE_X + 20;
 const BELT_RIGHT = ZONE_X + ZONE_W - 20;
 
+// How long one debate stays on the card before another is picked.
+const DEBATE_ROTATE_MS = 5_000;
+
 type IdeaBubble = {
     sprite: Phaser.GameObjects.Image;
     label: Phaser.GameObjects.Text;
@@ -28,6 +31,10 @@ export class AOZone {
     private bubbles: IdeaBubble[] = [];
     private spawnTimer = 0;
     private beltOffset = 0;
+    /** Elapsed time since the card last showed a debate. */
+    private debateTimer = 0;
+    /** Whether the card currently shows a debate rather than a placeholder. */
+    private debateShown = false;
     private debateCard?: Phaser.GameObjects.Text;
     private debateSnippet?: Phaser.GameObjects.Text;
     private funnelText?: Phaser.GameObjects.Text;
@@ -147,20 +154,31 @@ export class AOZone {
         const frame = Math.floor(this.scene.time.now / 420) % 2;
         this.bot.setTexture(`ao-bot-${frame}`);
 
-        // update debate card
-        const debate = dataBridge.getRandomDebate();
-        if (debate) {
-            if (this.scene.time.now % 5000 < 50) {
-                this.debateCard?.setText(`DEBATE: ${debate.topic}`);
-                this.debateSnippet?.setText(debate.snippet);
-            }
-        } else {
+        // Debate card: a fresh pick every DEBATE_ROTATE_MS of elapsed time, and
+        // at once when debates first arrive. It used to be gated on
+        // `time.now % 5000 < 50`, which a 60 Hz frame lands in about three
+        // times a window (each picking a different debate), a slow frame can
+        // miss entirely, and which left the placeholder up for up to five
+        // seconds after the data was already here.
+        this.debateTimer += dt;
+        if (dataBridge.debateCache.length === 0) {
             // Distinguish "AO is erroring" from "still loading" instead of
             // leaving the placeholder up forever.
             const msg = dataBridge.debatesErrored ? "AO debates unavailable" : "Awaiting debate data...";
             if (this.debateCard && this.debateCard.text !== msg) {
                 this.debateCard.setText(msg);
                 this.debateSnippet?.setText("");
+            }
+            this.debateShown = false;
+        } else if (!this.debateShown || this.debateTimer >= DEBATE_ROTATE_MS) {
+            // A pick can come back empty (a debate with no topic); then the
+            // card keeps what it has and the next frame tries again.
+            const debate = dataBridge.getRandomDebate();
+            if (debate) {
+                this.debateCard?.setText(`DEBATE: ${debate.topic}`);
+                this.debateSnippet?.setText(debate.snippet);
+                this.debateShown = true;
+                this.debateTimer = 0;
             }
         }
 

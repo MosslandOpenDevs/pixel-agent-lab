@@ -5,16 +5,13 @@ const BASE = "/ao-api";
 
 export async function fetchAOSignals(limit = 20, signal?: AbortSignal): Promise<AOSignal[]> {
     const data = await getJSON<{ signals?: AOSignal[] }>(`${BASE}/signals?limit=${limit}`, "AO signals", signal);
-    return data.signals ?? [];
+    // A list or nothing: anything else here would throw mid-ingest.
+    return Array.isArray(data.signals) ? data.signals : [];
 }
 
 export async function fetchAODebates(limit = 10, signal?: AbortSignal): Promise<AODebate[]> {
     const data = await getJSON<{ debates?: AODebate[] }>(`${BASE}/debates?limit=${limit}`, "AO debates", signal);
     return data.debates ?? [];
-}
-
-export async function fetchAODebateDetail(id: string, signal?: AbortSignal): Promise<AODebate> {
-    return getJSON<AODebate>(`${BASE}/debates/${id}`, `AO debate ${id}`, signal);
 }
 
 export async function fetchAOStatus(signal?: AbortSignal): Promise<AOStatus> {

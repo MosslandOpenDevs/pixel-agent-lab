@@ -10,7 +10,9 @@ export type AlgoraSignal = {
     value: number;
     unit: string;
     description: string;
-    metadata: string;
+    /** JSON text. Nullable upstream: a signal posted without metadata stores
+     *  NULL, so this is not always there to parse. */
+    metadata: string | null;
     created_at: string;
 };
 
@@ -196,16 +198,16 @@ export type BridgeTrustEntry = {
 
 // --- Unified signal for visualization ---
 
+/** What the Algora belt reads from a signal, and nothing more. It used to carry
+ *  source, category, url, description and timestamp as well, filled by
+ *  substring-matching normalizers that nothing read — and that were wrong on
+ *  live data (`moc_blockchain` classified as "ai"). If a view ever needs a
+ *  category, match exact tokens and test it against the live values. */
 export type UnifiedSignal = {
     id: string;
     origin: "algora" | "ao" | "bridge";
-    source: string;
-    category: string;
     severity: "critical" | "high" | "medium" | "low";
     title: string;
-    description: string;
-    url?: string;
-    timestamp: string;
 };
 
 // --- links.moss.land ecosystem registry (MIP-1 source of truth) ---
@@ -249,16 +251,22 @@ export type EcosystemRegistry = {
 
 // --- city.moss.land cross-service health aggregator ---
 
+/** One health reading. Built by ecosystem-client from a first-hand answer or
+ *  from one of city's entries, never cast from a response, so these types hold
+ *  at runtime too. */
 export type HealthEntry = {
     service: string;
-    status: string;      // "ok" | "degraded" | "down"
+    /** "ok" | "degraded" | "down" by the contract; any other string the
+     *  service declared is kept as-is rather than translated. */
+    status: string;
     httpCode?: number;
     latencyMs?: number;
     checkedAt?: string;
 };
 
+/** city's aggregate, reduced to what this monitor reads. Its `summary` counts
+ *  are not carried: nothing here shows them, and the entries are the evidence. */
 export type EcosystemHealth = {
-    checkedAt: string;
-    summary: { ok: number; degraded: number; down: number; total: number };
+    checkedAt?: string;
     services: HealthEntry[];
 };

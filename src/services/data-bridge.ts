@@ -5,64 +5,77 @@ import type {
     AOIdea,
     AOPlan,
     AOProject,
+    AOSignal,
     AlgoraStats,
     AOStatus,
+    BridgeSignal,
     BridgeStats,
     BridgeOutcome,
     BridgeTrustEntry,
     UnifiedSignal,
 } from "./types.ts";
+import { isRecord } from "./http.ts";
 import { fetchAlgoraSignals, fetchAlgoraIssues, fetchAlgoraStats } from "./algora-client.ts";
 import { fetchAOSignals, fetchAODebates, fetchAOStatus, fetchAOIdeas, fetchAOPlans, fetchAOProjects } from "./ao-client.ts";
 import { fetchBridgeSignals, fetchBridgeStats, fetchBridgeOutcomes, fetchBridgeTrustLeaderboard } from "./bridge-client.ts";
 
-// --- Source normalizer ---
-function normalizeSource(raw: string): string {
-    const l = (raw ?? "").toLowerCase();
-    if (l.includes("github")) return "github";
-    if (l.includes("rss") || l.includes("news")) return "rss";
-    if (l.includes("social") || l.includes("mastodon") || l.includes("twitter") || l.includes("reddit")) return "social";
-    if (l.includes("chain") || l.includes("blockchain") || l.includes("etherscan") || l.includes("telemetry")) return "chain";
-    if (l === "api") return "chain";
-    return "rss";
+// --- Row conversion ---
+//
+// Each upstream row becomes the four fields the dedupe and the belt read, and
+// nothing else: id and origin key the dedupe, title and severity are what the
+// belt shows. The rows are other services' JSON behind an unchecked cast, so
+// each field is checked for what it claims to be. A row that cannot be keyed
+// throws, and the caller skips just that row.
+
+/** A row's primary key. A row we cannot key cannot be deduplicated either, so
+ *  it is refused rather than counted under a shared "undefined". */
+function rowId(v: unknown): string {
+    if (typeof v === "string" && v) return v;
+    if (typeof v === "number" && Number.isFinite(v)) return String(v);
+    throw new TypeError("signal row has no usable id");
 }
 
-function normalizeCategory(raw: string): string {
-    const l = (raw ?? "").toLowerCase();
-    if (l.includes("ai") || l.includes("ml") || l.includes("llm")) return "ai";
-    if (l.includes("dev") || l.includes("protocol") || l.includes("github_commit")) return "dev";
-    if (l.includes("security") || l.includes("infosec")) return "security";
-    if (l.includes("crypto") || l.includes("defi") || l.includes("web3") || l.includes("moc") || l.includes("token") || l.includes("market") || l.includes("price") || l.includes("treasury")) return "crypto";
-    return "dev";
-}
+const text = (v: unknown): string => (typeof v === "string" ? v : "");
+
+/** A title only if it is real text. An RSS feed parsed from XML can deliver a
+ *  `<title>` that carries attributes as an object ({_, $}); coercing that with
+ *  String() would put "[object Object]" on the belt, so it falls back instead. */
+const titleOr = (v: unknown, fallback: string): string =>
+    typeof v === "string" && v ? v : fallback.slice(0, 80);
+
+const SEVERITIES: readonly unknown[] = ["critical", "high", "medium", "low"];
+/** A severity only if it is one the belt knows. Anything else — a number, an
+ *  object, a string outside the four — reads as the same "medium" a missing
+ *  severity already gets, never as a stray value behind the union type. */
+const severityOr = (v: unknown): UnifiedSignal["severity"] =>
+    SEVERITIES.includes(v) ? (v as UnifiedSignal["severity"]) : "medium";
 
 function algoraSignalToUnified(s: AlgoraSignal): UnifiedSignal {
-    let meta: { title?: string; link?: string; url?: string } = {};
-    try { meta = JSON.parse(s.metadata); } catch { /* ignore */ }
-    const description = s.description ?? "";
+    // `metadata` is JSON text, and nullable upstream. JSON.parse(null) and
+    // JSON.parse("null") both *return* null rather than throwing, so the catch
+    // alone does not make the read safe: only a parsed object is read. A
+    // property read on that null used to throw and take every origin's signals
+    // down with it.
+    let meta: unknown = null;
+    try { meta = JSON.parse(s.metadata ?? ""); } catch { /* not JSON: titled from the description */ }
+    const title = isRecord(meta) ? meta.title : undefined;
     return {
-        id: s.id, origin: "algora",
-        source: normalizeSource(s.source), category: normalizeCategory(s.category),
-        severity: s.severity ?? "medium", title: meta.title ?? description.slice(0, 80),
-        description, url: meta.link ?? meta.url, timestamp: s.timestamp,
+        id: rowId(s.id), origin: "algora",
+        severity: severityOr(s.severity), title: titleOr(title, text(s.description)),
     };
 }
 
-function aoSignalToUnified(s: { id: string; source: string; category: string; title: string; summary: string; url: string; collected_at: string }): UnifiedSignal {
-    const summary = s.summary ?? "";
+function aoSignalToUnified(s: AOSignal): UnifiedSignal {
     return {
-        id: s.id, origin: "ao",
-        source: normalizeSource(s.source), category: normalizeCategory(s.category),
-        severity: "medium", title: s.title ?? summary.slice(0, 80), description: summary, url: s.url, timestamp: s.collected_at,
+        id: rowId(s.id), origin: "ao",
+        severity: "medium", title: titleOr(s.title, text(s.summary)),
     };
 }
 
-function bridgeSignalToUnified(s: { id: string; source: string; category: string; severity: "critical" | "high" | "medium" | "low"; description: string; timestamp: string }): UnifiedSignal {
-    const description = s.description ?? "";
+function bridgeSignalToUnified(s: BridgeSignal): UnifiedSignal {
     return {
-        id: s.id, origin: "bridge",
-        source: normalizeSource(s.source), category: normalizeCategory(s.category),
-        severity: s.severity ?? "medium", title: description.slice(0, 80), description, timestamp: s.timestamp,
+        id: rowId(s.id), origin: "bridge",
+        severity: severityOr(s.severity), title: text(s.description).slice(0, 80),
     };
 }
 
@@ -82,15 +95,17 @@ export type ServiceFlags = { algora: boolean; ao: boolean; bridge: boolean };
 export type ConnState = "connecting" | "live" | "offline";
 const NO_SERVICES: ServiceFlags = { algora: false, ao: false, bridge: false };
 
-// Cap on the dedupe memory: the signal queue is bounded to 200, so a few
-// thousand remembered ids is plenty to suppress repeats without growing forever.
-const MAX_SEEN_IDS = 2000;
-
-// Primary keys belong to each upstream, not to the combined feed. Keep the
-// original id in the public signal while deduplicating within its origin.
-function signalKey(signal: Pick<UnifiedSignal, "origin" | "id">): string {
-    return `${signal.origin}:${signal.id}`;
-}
+// Dedupe memory, bounded per origin. What decides the bound is not our queue
+// but what the upstreams can send again: every poll re-fetches each service's
+// latest 30/20/20 signals, so any id still inside one of those windows will
+// come back. The memory is kept in order of when each id was last *seen* — an
+// id a response contains is moved to the newest end — so it only ever forgets
+// ids that have stopped being served, even from a source that has gone quiet
+// and returns the same window for hours. It is per origin, so a service whose
+// requests are failing (and whose window is therefore not being refreshed) is
+// not pushed out by the others' churn and replayed when it recovers. The cap
+// is far above any window; it exists only so an always-on tab stays bounded.
+export const MAX_SEEN_IDS_PER_ORIGIN = 1000;
 
 const POLL_INTERVAL_MS = 15_000;
 // Bounds a whole cycle. An in-flight guard alone would let one stuck request
@@ -107,7 +122,13 @@ function settledFlags(r: PromiseSettledResult<unknown>): ServiceFlags {
 // --- Data Bridge ---
 export class DataBridge {
     private signalQueue: UnifiedSignal[] = [];
-    private seenSignalIds = new Set<string>();
+    /** Primary keys belong to each upstream, not to the combined feed, so ids
+     *  are remembered within their origin — the same id from two services is
+     *  two signals. Sets iterate in insertion order, which is what makes the
+     *  oldest-seen end cheap to find. */
+    private seenSignalIds: Record<UnifiedSignal["origin"], Set<string>> = {
+        algora: new Set(), ao: new Set(), bridge: new Set(),
+    };
     private pollTimer: ReturnType<typeof setTimeout> | null = null;
     private inFlight: AbortController | null = null;
     private destroyed = false;
@@ -135,8 +156,7 @@ export class DataBridge {
     trustCache: BridgeTrustEntry[] = [];
 
     async init(): Promise<ConnState> {
-        await this.poll();
-        this.scheduleNext();
+        await this.tick();
         return this.connState;
     }
 
@@ -150,13 +170,21 @@ export class DataBridge {
         this.pollTimer = setTimeout(() => { void this.tick(); }, POLL_INTERVAL_MS);
     }
 
+    /** One cycle, then the next is armed whatever the cycle did. Nothing in a
+     *  cycle is meant to throw — every request settles on its own — but a throw
+     *  would otherwise skip the re-arm and end polling for the life of the tab,
+     *  leaving the last numbers on screen as if they were current. */
     private async tick(): Promise<void> {
-        await this.poll();
-        this.scheduleNext();
+        try {
+            await this.poll();
+        } catch (err) {
+            console.error("[data] a poll threw; the next one is still scheduled", err);
+        } finally {
+            this.scheduleNext();
+        }
     }
 
     connectionState(): ConnState { return this.connState; }
-    isConnected(): boolean { return this.connState === "live"; }
     queueSize(): number { return this.signalQueue.length; }
 
     private async poll(): Promise<void> {
@@ -210,23 +238,41 @@ export class DataBridge {
         ]);
         const unified: UnifiedSignal[] = [];
         const ingest = (s: UnifiedSignal) => {
-            const key = signalKey(s);
-            if (this.seenSignalIds.has(key)) return;
-            this.seenSignalIds.add(key);
+            const seen = this.seenSignalIds[s.origin];
+            if (seen.has(s.id)) {
+                // Still being served: move it to the newest end, so it outlives
+                // every id that has stopped being served.
+                seen.delete(s.id);
+                seen.add(s.id);
+                return;
+            }
+            seen.add(s.id);
             unified.push(s);
             this.ingested[s.origin]++;
         };
-        if (a.status === "fulfilled") for (const s of a.value) ingest(algoraSignalToUnified(s));
-        if (ao.status === "fulfilled") for (const s of ao.value) ingest(aoSignalToUnified(s));
-        if (b.status === "fulfilled") for (const s of b.value) ingest(bridgeSignalToUnified(s));
+        // Row by row, so a row that cannot be converted costs only itself.
+        // Counting happens in `ingest`, after conversion succeeded, so
+        // `ingested` stays exactly what reaches the queue.
+        const take = <T>(r: PromiseSettledResult<T[]>, convert: (row: T) => UnifiedSignal) => {
+            if (r.status !== "fulfilled") return;
+            for (const row of r.value) {
+                try { ingest(convert(row)); } catch { /* skip this row only */ }
+            }
+        };
+        take(a, algoraSignalToUnified);
+        take(ao, aoSignalToUnified);
+        take(b, bridgeSignalToUnified);
         // shuffle
         for (let i = unified.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [unified[i], unified[j]] = [unified[j], unified[i]]; }
         this.signalQueue.push(...unified);
         if (this.signalQueue.length > 200) this.signalQueue = this.signalQueue.slice(-200);
-        // Bound the dedupe memory: keep only ids still in the queue so it never
-        // grows without limit on an always-on monitor.
-        if (this.seenSignalIds.size > MAX_SEEN_IDS) {
-            this.seenSignalIds = new Set(this.signalQueue.map(signalKey));
+        // Forget from the least recently seen end once past the cap. Anything
+        // a window returned this poll was just touched, so it is never here.
+        for (const seen of Object.values(this.seenSignalIds)) {
+            for (const id of seen) {
+                if (seen.size <= MAX_SEEN_IDS_PER_ORIGIN) break;
+                seen.delete(id);
+            }
         }
         return { algora: a.status === "fulfilled", ao: ao.status === "fulfilled", bridge: b.status === "fulfilled" };
     }

@@ -169,11 +169,6 @@ export class BridgeZone {
         this.spawnTimer += dt;
         this.beltOffset += dt * 0.035;
 
-        // update stats
-        const bs = dataBridge.liveStats.bridge;
-        if (bs) {
-        }
-
         // animate bots
         const frame = Math.floor(this.scene.time.now / 500) % 2;
         this.agentSprites.forEach(s => s.setTexture(`bridge-bot-${frame}`));
@@ -226,6 +221,7 @@ export class BridgeZone {
         } else {
             this.trustLabels[0]?.setText("Agent Trust\n\u2014");
         }
+        const bs = dataBridge.liveStats.bridge;
         if (bs) {
             this.trustLabels[1]?.setText(`Proposals\n${bs.proposals?.total ?? 0}`);
             // null means no proof recorded yet; 0% would claim every outcome failed.
