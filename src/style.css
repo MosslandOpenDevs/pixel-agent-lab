@@ -144,6 +144,13 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
     padding: 0 3px;
     margin-left: 3px;
 }
+/* A service whose signals and stats both failed this poll. It used to lose its
+   LIVE badge and nothing else, which looked exactly like the card before the
+   first poll. Same red as the status line's OFFLINE dot. */
+.live-badge.off { color: #f87171; border-color: #ef444466; }
+/* Before the first verdict: the status line's amber, not a claim either way. */
+.live-badge.wait { color: #fbbf24; border-color: #f59e0b55; }
+.svc.offline { border-color: #7f1d1d; }
 
 .detail-desc {
     font-size: 0.72rem;
@@ -269,10 +276,16 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
         flex-basis: 100%;
         margin: 0;
     }
+    /* #ecosystem too: left to size by its content, its one-line tally and
+       names made it hundreds of pixels wide, so it wrapped onto a second row
+       below the fold of the 35vh strip — out of sight exactly when something
+       was down. */
     #stats,
     #serviceStatus,
+    #ecosystem,
     .detail {
         flex: 1 1 240px;
+        min-width: 0;
         margin: 0;
     }
 }
@@ -434,6 +447,66 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 .eco-dot.offcontract { background: #a9c4e8; }
 .eco-row.reference .eco-name { color: #7b8ca6; }
 
+/* The verdict in words beside the dot, for every reading that is not ok — the
+   dot's colour is all a red-green colour-blind viewer had to go on. */
+.eco-chip {
+    flex: 0 0 auto;
+    font-size: 8px;
+    letter-spacing: 0.04em;
+    padding: 0 4px;
+    border-radius: 3px;
+    border: 1px solid currentColor;
+    line-height: 12px;
+}
+.eco-chip.down { color: #f87171; }
+.eco-chip.degraded { color: #fbbf24; }
+.eco-chip.offcontract { color: #a9c4e8; border-style: dashed; }
+
+/* Reported health: the tally, the non-ok names, and how archived ones count.
+   It leads the Ecosystem block, so the rule sits under it. */
+.eco-health {
+    margin: 0 0 6px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #22334d;
+}
+.eco-health .eco-clock { font-weight: 500; color: #b8ccec; }
+.eco-health.stale .eco-clock { color: #fbbf24; }
+/* "checked 14:32:05 · refreshing…" is wider than the 280px sidebar leaves
+   beside its label. Let the clock move under the label in one piece, instead
+   of both breaking into a 2x2 block. */
+.eco-health .row { flex-wrap: wrap; column-gap: 8px; }
+.eco-health .row > span, .eco-health .eco-clock { white-space: nowrap; }
+.eco-health .eco-clock { margin-left: auto; }
+.eco-tally, .eco-names, .eco-note {
+    font-size: 0.72rem;
+    line-height: 1.45;
+    color: #b8ccec;
+}
+.eco-tally i, .eco-names i { color: #40536e; font-style: normal; }
+/* Wrap between items, never inside one: "0 / down" across two lines reads as
+   a count with no bucket, and a name split across lines ("Mossland" /
+   "Signal") reads as a different service. Each name is its own unit, with
+   its bucket label or comma attached (see namesHtml). */
+.eco-tally > span, .hud-tally > span,
+.eco-names .nm, .hud-names .nm { white-space: nowrap; }
+.eco-tally b { color: #fff; }
+.eco-tally .zero, .hud-tally .zero { opacity: 0.6; }
+.eco-names { margin-top: 2px; }
+.eco-note { margin-top: 2px; color: #8fa3bf; }
+.tally-down:not(.zero), .names-down { color: #f87171; }
+.tally-degraded:not(.zero), .names-degraded { color: #fbbf24; }
+.tally-down:not(.zero) b, .tally-degraded:not(.zero) b { color: inherit; }
+.row b.eco-warn { color: #fbbf24; }
+/* While stale the dots keep their colours — they are the last reading — but
+   step back, as the map's bodies do. The chips and the names are the same
+   verdicts in words, the one cue that is not colour, so they step back less:
+   0.8 keeps the red down text above 4.5:1 on the panel. */
+.eco-list.stale .eco-dot { opacity: 0.5; }
+.eco-list.stale .eco-chip,
+.eco-health.stale .eco-names { opacity: 0.8; }
+/* A stale tally is dated; its counts step back so none reads as current. */
+.eco-health.stale .eco-tally b { color: #b8ccec; }
+
 .eco-life {
     font-size: 8px;
     padding: 1px 4px;
@@ -476,6 +549,7 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 .hub-tip .m b.down { color: #f87171; }
 .hub-tip .m b.unknown { color: #9fb2cc; }
 .hub-tip .dim { color: #6b7f99; }
+.hub-tip .m.stale { color: #fbbf24; }
 .hub-tip .a { margin-top: 5px; color: #7dd3fc; font-size: 11px; }
 
 /* --- Hub map HUD ---------------------------------------------------------- */
@@ -516,6 +590,31 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 }
 .hud-counts b { color: #f1f5f9; font-weight: 700; }
 .hud-counts i { color: #40536e; font-style: normal; margin: 0 2px; }
+
+/* Under the counts: when the readings were taken, what they say, and which
+   services are not ok. Empty rows take no space. */
+.hud-status, .hud-tally, .hud-names {
+    margin-top: 3px;
+    font-size: 12px;
+    color: #8fa3bf;
+}
+.hud-status:empty, .hud-tally:empty, .hud-names:empty { display: none; }
+.hud-tally b { color: #f1f5f9; font-weight: 700; }
+.hud-tally i, .hud-names i { color: #40536e; font-style: normal; margin: 0 2px; }
+.hud-names { color: #a8bcd6; }
+.hud-warn { color: #fbbf24; }
+.hub-hud.stale .hud-clock,
+.hud-asof { color: #fbbf24; }
+/* A stale tally is dated; its counts step back so none reads as current. The
+   names keep their colours (the last reading) but step back with it; 0.8, not
+   lower, so the red down names still clear 4.5:1 on the canvas. */
+.hub-hud.stale .hud-tally b { color: #a8bcd6; }
+.hub-hud.stale .hud-names { opacity: 0.8; }
+/* The data-API state, for phones only: there the sidebar that carries it is a
+   closed drawer. */
+.hud-conn { display: none; }
+.hud-conn .dot { margin-right: 5px; vertical-align: 1px; }
+.hud-conn i { color: #40536e; font-style: normal; margin: 0 4px; }
 
 .hud-legend {
     position: absolute;
@@ -558,6 +657,10 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 .hud-legend i.f.health::after  { width: 9px;  height: 9px;  animation: legend-breathe 2.4s ease-in-out infinite; }
 .hud-legend i.f.listed::after  { width: 6px;  height: 6px;  opacity: 0.7; }
 .hud-legend i.f.reference::after { width: 4px; height: 4px; opacity: 0.5; }
+/* Only while the readings are stale does this row describe anything on the map. */
+.hud-legend .lg-stale { display: none; }
+.hub-hud.stale .hud-legend .lg-stale { display: flex; color: #fbbf24; }
+.hud-legend i.f.stale::after   { width: 9px;  height: 9px;  opacity: 0.4; }
 
 @keyframes legend-breathe {
     0%, 100% { opacity: 1; }
@@ -587,11 +690,40 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 @media (max-width: 900px) {
     .hud-legend { display: none; }
     .hud-counts { font-size: 11px; line-height: 1.5; }
+    .hud-status, .hud-tally, .hud-names { font-size: 11px; line-height: 1.5; margin-top: 1px; }
     .hud-title { display: none; }
     /* Clear the fixed ☰ panel toggle, which sits over the top-left of the stage. */
     .hub-hud { padding: 12px 14px 14px; }
     .hud-top { padding-left: 46px; text-align: left; }
     .hud-foot .hud-hint { display: none; }
+}
+
+
+@media (max-width: 767px) {
+    .hud-conn { display: inline; }
+}
+/* On a short phone the hub, fitted to the width and centred, starts barely
+   below the HUD, and a names row of three or four lines overprints the labels
+   at the top of the outer orbit. The tally still counts every bucket, a down
+   or degraded body says so on its own label, and the drawer names them all,
+   so the HUD drops only the names. */
+@media (max-width: 767px) and (max-height: 700px) {
+    .hud-names { display: none; }
+}
+/* Between 768 and 1100px the panel is a 35vh strip above the stage, and the
+   1440x760 canvas is fitted into what is left. Unless the window is clearly
+   portrait, that stage is short and the hub fills its height, so rows stacked
+   over the top of it cover the outer orbit. There the HUD keeps only the
+   counts and the one-line reading clock: no title (as at <=900px), and the
+   counts move up into its place, so the clock sits where the counts line sat
+   before and the outer ring's top labels clear it by the same margin. The
+   tally and names are left to the panel, whose Ecosystem block leads with
+   them so they sit inside the strip's visible area (Sidebar.updateEcosystem).
+   A portrait tablet (4:5 or narrower) has a letterbox above the canvas with
+   room for them, so its HUD keeps them. */
+@media (min-width: 768px) and (max-width: 1100px) and (min-aspect-ratio: 4/5) {
+    .hud-title, .hud-tally, .hud-names { display: none; }
+    .hud-counts { margin-top: 0; }
 }
 
 
@@ -628,6 +760,34 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 .hub-label.reference { color: #6f8099; font-size: 10px; letter-spacing: 0.02em; }
 .hub-label.archived { color: #c08a5e; opacity: 0.85; }
 .hub-label.hovered { color: #ffffff; }
+/* A down or degraded body says so in words; an archived one too, since its
+   colour is the archived one rather than its health.
+   On its own centred line under the name. The label is centred on its dot, so
+   a tag appended inline pushed the verdict past the right edge of a phone
+   screen while the name stayed readable; stacked, it stays under the dot and
+   never reaches further than half its own width from it. `text-align` keeps
+   a name shorter than its tag centred too. */
+.hub-label { text-align: center; }
+.hub-label-status {
+    display: block;
+    width: max-content;
+    margin: 2px auto 0;
+    padding: 1px 3px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    background: rgba(3, 6, 15, 0.8);
+}
+.hub-label-status.down { color: #f87171; }
+.hub-label-status.degraded { color: #fbbf24; }
+/* While stale the verdict is the last reading kept, so it steps back like the
+   bodies do — only steps back, though: this word is the one cue for down and
+   degraded that is not colour. 0.8 keeps DOWN about 5:1 on the map; 0.55 left
+   it about 3:1. */
+.hub-labels.stale .hub-label-status { opacity: 0.8; }
 
 @media (prefers-reduced-motion: reduce) {
     .hud-legend i.f::after { animation: none !important; }

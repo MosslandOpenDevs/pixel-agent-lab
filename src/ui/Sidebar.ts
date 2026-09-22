@@ -1,6 +1,10 @@
 import type { ConnState, DataBridge } from "../services/data-bridge.ts";
 import type { EcosystemFeed, EcosystemNode } from "../services/ecosystem-feed.ts";
 import { esc } from "./html.ts";
+import {
+    BUCKET_LABEL, clockTime, freshnessText, healthBucket, isArchived, namesHtml, shortClock,
+    tallyHtml, tallyServices,
+} from "./ecosystem-status.ts";
 
 /** The three values the ecosystem health contract defines. A service that
  *  answers with anything else is answering — we just cannot read its verdict,
@@ -46,7 +50,7 @@ export function initSidebar(): void {
     <div id="ecosystem" class="stats eco"></div>
     <div class="detail">
       <h2>About</h2>
-      <div class="detail-desc">Explore the Mossland service registry and governance activity. Map colours show reported health; rings mark services whose data is read here. Links and files are references, and archived services remain dimmed. Map particles follow newly received signals, while a sweep marks a health refresh. Detail belts illustrate workflows, not confirmed execution. LIVE means a data API responded; cached details can remain visible when a later request fails.</div>
+      <div class="detail-desc">Explore the Mossland service registry and governance activity. Map colours show reported health, and a down or degraded body is also named on its label; rings mark services whose data is read here. Links and files are references. Archived services are drawn in their own dimmed colour instead of a health colour; their health is in the tooltip and this panel. A health reading no sweep has refreshed for about 150 s is marked stale and stops pulsing. Map particles follow newly received signals, while a sweep marks a health refresh. Detail belts illustrate workflows, not confirmed execution. LIVE means a data API responded, OFFLINE that it did not; cached details can remain visible when a later request fails.</div>
     </div>
   </aside>
   <div class="panel-backdrop"></div>
@@ -127,11 +131,22 @@ function renderEcosystem(markup: string): void {
  * first-hand from their own /api/health, or city.moss.land's aggregate as the
  * fallback — and `listed` ones we know nothing about beyond their registry
  * entry, so those get a neutral dot, never a reassuring green.
+ *
+ * First, above the instrumentation counts, what the services report: the same
+ * tally the map's HUD shows (see ecosystem-status.ts), dated by the sweep
+ * clock, and a text chip on every row whose reading is not ok — the dot's
+ * colour alone is what a red-green colour-blind viewer cannot read.
  */
 export function updateEcosystem(feed: EcosystemFeed): void {
     if (!ecoEl) return;
-    if (!feed.isLoaded()) {
-        renderEcosystem(`<h2>Ecosystem</h2><div class="row"><span>Registry</span><b>loading\u2026</b></div>`);
+    const registry = feed.registryState();
+    if (registry !== "loaded") {
+        // "loading" only while the first read is in flight. A read that
+        // failed used to say "loading…" too, for the ten minutes until the
+        // next attempt; it is retried within seconds now, and says so.
+        renderEcosystem(registry === "failed"
+            ? `<h2>Ecosystem</h2><div class="row"><span>Registry</span><b class="eco-warn">unreachable \u2014 retrying</b></div>`
+            : `<h2>Ecosystem</h2><div class="row"><span>Registry</span><b>loading\u2026</b></div>`);
         return;
     }
 
@@ -140,6 +155,8 @@ export function updateEcosystem(feed: EcosystemFeed): void {
         renderEcosystem(`<h2>Ecosystem</h2><div class="row"><span>Registry</span><b>unavailable</b></div>`);
         return;
     }
+    const freshness = feed.healthFreshness();
+    const stale = freshness.state === "stale";
 
     // Count the disjoint instrumentation tiers, so these agree with the map's
     // own summary. Counting "anything with health data" would double-count the
@@ -161,7 +178,7 @@ export function updateEcosystem(feed: EcosystemFeed): void {
 
     const row = (n: EcosystemNode) => {
         const { service: sv, health, instrumentation, kind } = n;
-        const archived = sv.lifecycle === "archive" || sv.status === "deprecated";
+        const archived = isArchived(sv);
         // A file has no status dot and a third-party listing's uptime is not our
         // claim; an empty slot keeps the names aligned without asserting one.
         const dot = kind !== "service"
@@ -169,10 +186,16 @@ export function updateEcosystem(feed: EcosystemFeed): void {
             : health
                 ? `<span class="eco-dot ${CONTRACT_STATUS.has(health.status) ? esc(health.status) : "offcontract"}" title="${esc(health.status)}${CONTRACT_STATUS.has(health.status) ? "" : " \u2014 not one of ok/degraded/down"}${health.latencyMs != null ? " \u00b7 " + esc(health.latencyMs) + "ms" : ""}"></span>`
                 : `<span class="eco-dot unknown" title="not health-checked"></span>`;
+        // The same verdict in words, for every reading that is not ok. The
+        // class comes from the fixed bucket, never from the status string.
+        const bucket = kind === "service" ? healthBucket(health) : null;
+        const chip = bucket === "down" || bucket === "degraded" || bucket === "offcontract"
+            ? `<span class="eco-chip ${bucket}">${BUCKET_LABEL[bucket]}</span>`
+            : "";
         const life = sv.lifecycle
             ? `<span class="eco-life ${esc(sv.lifecycle)}">${esc(sv.lifecycle)}</span>`
             : `<span class="eco-life none" title="no MIP-1 lifecycle recorded">\u2014</span>`;
-        return `<a class="eco-row${archived ? " archived" : ""}${instrumentation === "stream" ? " streaming" : ""}${kind !== "service" ? " reference" : ""}" href="${esc(sv.url)}" target="_blank" rel="noopener noreferrer">${dot}<span class="eco-name">${esc(sv.name)}</span>${life}</a>`;
+        return `<a class="eco-row${archived ? " archived" : ""}${instrumentation === "stream" ? " streaming" : ""}${kind !== "service" ? " reference" : ""}" href="${esc(sv.url)}" target="_blank" rel="noopener noreferrer">${dot}<span class="eco-name">${esc(sv.name)}</span>${chip}${life}</a>`;
     };
 
     const sections = [...groups.entries()].map(([key, list]) => `
@@ -181,19 +204,48 @@ export function updateEcosystem(feed: EcosystemFeed): void {
       ${list.map(row).join("")}
     </div>`).join("");
 
+    // Nothing to count until the first sweep of the registry's services has
+    // settled: "15 unmeasured" for the second it takes would claim a result
+    // the sweep has not given. A first sweep that got nothing does show it —
+    // that is the result — and so do the sweeps after it, rather than the
+    // block vanishing for as long as each is in flight.
+    // While stale the counts are dated rather than hidden — they are the last
+    // thing known — but never presented as now.
+    const tally = tallyServices(nodes);
+    const names = namesHtml(tally);
+    const at = freshness.checkedAt;
+    const clock = at === null ? freshnessText(freshness)
+        : stale ? `stale \u00b7 as of ${shortClock(at)}`
+            : `checked ${clockTime(at)}${freshness.state === "refreshing" ? " \u00b7 refreshing\u2026" : ""}`;
+    const reported = freshness.state === "none" && freshness.sweeping && !freshness.settled
+        ? ""
+        : `
+    <div class="eco-health${stale ? " stale" : ""}">
+      <div class="row"><span>Reported health</span><b class="eco-clock">${clock}</b></div>
+      <div class="eco-tally">${tallyHtml(tally)}</div>
+      ${names ? `<div class="eco-names">${names}</div>` : ""}
+      ${tally.archived ? `<div class="eco-note">${tally.archived} archived, counted by ${tally.archived === 1 ? "its" : "their"} reading like any other service</div>` : ""}
+    </div>`;
+
+    // The verdicts lead, ahead of how much is instrumented. Between 768 and
+    // 1100px this panel is a 35vh strip over the map, and in landscape the
+    // map's heading leaves the tally and names to it: after the four count
+    // rows they sat below the strip's fold, visible nowhere without scrolling.
     renderEcosystem(`
     <h2>Ecosystem</h2>
+    ${reported}
     <div class="row"><span>Services</span><b>${services.length}</b></div>
     <div class="row"><span>Streaming here</span><b>${streaming}</b></div>
     <div class="row"><span>Health-checked</span><b>${checked}</b></div>
     <div class="row"><span>Listed only</span><b>${listed}</b></div>
-    ${sections}
+    <div class="eco-list${stale ? " stale" : ""}">${sections}</div>
     `);
 }
 
 export function updateSidebar(dataBridge: DataBridge): void {
     const ls = dataBridge.liveStats;
     const up = dataBridge.serviceUp;
+    const statsUp = dataBridge.statsUp;
     const conn = dataBridge.connectionState();
 
     // Placeholder for a figure this poll could not obtain. A service that did not
@@ -208,9 +260,14 @@ export function updateSidebar(dataBridge: DataBridge): void {
     // in depth it also keeps anything but a number out of this innerHTML.
     const num = (v: unknown): number | null => typeof v === "number" && Number.isFinite(v) ? v : null;
 
-    const a = up.algora ? ls.algora : null;
-    const ao = up.ao ? ls.ao : null;
-    const b = up.bridge ? ls.bridge : null;
+    // This poll's stats, or nothing. A service is LIVE when its signals *or*
+    // its stats answered, and `liveStats` keeps the last stats that ever
+    // arrived — so gating on LIVE put hours-old figures beside a LIVE badge
+    // whenever /stats failed and /signals did not. They show a dash instead,
+    // and the card says the stats did not answer (see `note` below).
+    const a = statsUp.algora ? ls.algora : null;
+    const ao = statsUp.ao ? ls.ao : null;
+    const b = statsUp.bridge ? ls.bridge : null;
 
     // Pipeline summary. These are the services' own totals, not the sizes of our
     // fetch caches — the issue list's length (no longer fetched) only ever
@@ -222,11 +279,29 @@ export function updateSidebar(dataBridge: DataBridge): void {
     <div class="row"><span>Debates Today</span><b>${num(ao?.stats?.debates_today) ?? NA}</b></div>
     `);
 
-    // Service I/O — live figures for the services that responded this poll. The
-    // rest show NA and lose their LIVE badge, instead of borrowing another number.
+    // Service I/O — figures from the stats each service returned this poll.
+    // The rest show NA instead of borrowing another number, and the card says
+    // why: OFFLINE when neither its signals nor its stats answered, LIVE with
+    // "no stats this poll" when only the signals did. Before the first verdict
+    // every card reads CONNECTING, as the status line does — a missing badge
+    // used to look the same before the first poll as after an outage.
+    type Svc = "algora" | "ao" | "bridge";
+    const verdict = conn !== "connecting";
+    const badge = (s: Svc) => !verdict
+        ? ' <span class="live-badge wait">CONNECTING</span>'
+        : up[s] ? ' <span class="live-badge">LIVE</span>' : ' <span class="live-badge off">OFFLINE</span>';
+    const note = (s: Svc): string | null => {
+        if (!verdict) return null;
+        if (!up[s]) return "no response this poll";
+        if (statsUp[s]) return null;
+        const at = dataBridge.statsAt[s];
+        return at !== null ? `no stats this poll \u00b7 last read ${clockTime(at)}` : "no stats answer yet";
+    };
+    const cls = (s: Svc) => `svc ${s}${verdict && !up[s] ? " offline" : ""}`;
+
     const aIn = a ? `${num(a.signalsToday) ?? NA}/today` : NA;
     const aOut = a ? `${num(a.openIssues) ?? NA} open` : NA;
-    const aHint = a ? `sessions:${num(a.activeSessions) ?? NA} · agents:${num(a.totalAgents) ?? NA}` : "9-stage pipeline";
+    const aHint = a ? `sessions:${num(a.activeSessions) ?? NA} · agents:${num(a.totalAgents) ?? NA}` : note("algora") ?? "9-stage pipeline";
 
     const aoStats = ao?.stats;
     const aoIn = aoStats ? `${num(aoStats.signals_today) ?? NA}/today` : NA;
@@ -235,7 +310,7 @@ export function updateSidebar(dataBridge: DataBridge): void {
         : NA;
     const aoHint = aoStats
         ? `debates:${num(aoStats.debates_today) ?? NA} · agents:${num(aoStats.agents_active) ?? NA}`
-        : "3-phase debate";
+        : note("ao") ?? "3-phase debate";
 
     const bIn = b ? `${num(b.signals?.total)?.toLocaleString() ?? NA} signals` : NA;
     const bOut = b
@@ -245,29 +320,30 @@ export function updateSidebar(dataBridge: DataBridge): void {
     // which reads as every outcome having failed.
     const successRate = num(b?.outcomes?.successRate);
     const bSuccess = successRate !== null ? `${successRate}%` : NA;
-    const bHint = b ? `proposals:${num(b.proposals?.total) ?? NA} · success:${bSuccess}` : "L0-L4 pipeline";
-
-    const badge = (ok: boolean) => ok ? ' <span class="live-badge">LIVE</span>' : '';
+    const bNote = b ? null : note("bridge");
+    const bHint = b
+        ? `proposals:${num(b.proposals?.total) ?? NA} · success:${bSuccess} · 5 specialist agents`
+        : bNote ?? "L0-L4 pipeline · 5 specialist agents";
 
     setHTML(serviceEl, `
     <h2>Service I/O</h2>
-    <div class="svc algora">
-      <div class="svc-title">ALGORA${badge(up.algora)}</div>
+    <div class="${cls("algora")}">
+      <div class="svc-title">ALGORA${badge("algora")}</div>
       <div class="drow"><span>Input</span><b>Signals ${aIn}</b></div>
       <div class="drow"><span>Output</span><b>Issues ${aOut}</b></div>
       <div class="hint">${aHint}</div>
     </div>
-    <div class="svc ao">
-      <div class="svc-title">AO${badge(up.ao)}</div>
+    <div class="${cls("ao")}">
+      <div class="svc-title">AO${badge("ao")}</div>
       <div class="drow"><span>Input</span><b>Signals ${aoIn}</b></div>
       <div class="drow"><span>Output</span><b>${aoOut}</b></div>
       <div class="hint">${aoHint}</div>
     </div>
-    <div class="svc bridge">
-      <div class="svc-title">BRIDGE${badge(up.bridge)}</div>
+    <div class="${cls("bridge")}">
+      <div class="svc-title">BRIDGE${badge("bridge")}</div>
       <div class="drow"><span>Input</span><b>${bIn}</b></div>
       <div class="drow"><span>Output</span><b>${bOut}</b></div>
-      <div class="hint">${bHint} · 5 specialist agents</div>
+      <div class="hint">${bHint}</div>
     </div>
     `);
 

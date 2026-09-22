@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { initSidebar, setConnectionStatus, updateEcosystem, updateSidebar } from "../src/ui/Sidebar.ts";
 import type { DataBridge, LiveStats } from "../src/services/data-bridge.ts";
-import type { EcosystemFeed, EcosystemNode } from "../src/services/ecosystem-feed.ts";
+import type { EcosystemFeed, EcosystemNode, HealthFreshness, RegistryState } from "../src/services/ecosystem-feed.ts";
 import type { HealthEntry, RegistryService } from "../src/services/types.ts";
+import { clockTime, shortClock } from "../src/ui/ecosystem-status.ts";
 
 /**
  * What the sidebar writes into its markup from other services' JSON.
@@ -40,10 +41,17 @@ afterEach(() => { vi.unstubAllGlobals(); });
 
 const textOf = (html: string) => html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 
-const bridgeWith = (liveStats: unknown): DataBridge => ({
+type Flags = { algora: boolean; ao: boolean; bridge: boolean };
+const ALL: Flags = { algora: true, ao: true, bridge: true };
+
+const bridgeWith = (liveStats: unknown, o: {
+    up?: Flags; statsUp?: Flags; conn?: string; statsAt?: Record<string, number | null>;
+} = {}): DataBridge => ({
     liveStats: liveStats as LiveStats,
-    serviceUp: { algora: true, ao: true, bridge: true },
-    connectionState: () => "live",
+    serviceUp: o.up ?? ALL,
+    statsUp: o.statsUp ?? o.up ?? ALL,
+    statsAt: o.statsAt ?? { algora: 1, ao: 1, bridge: 1 },
+    connectionState: () => o.conn ?? "live",
     queueSize: () => 3,
 }) as unknown as DataBridge;
 
@@ -95,6 +103,43 @@ describe("updateSidebar", () => {
             "BRIDGE LIVE Input — signals Output Issues 753 · Proofs — proposals:— · success:—");
     });
 
+    it("reads CONNECTING on every card before the first verdict, and OFFLINE on one that did not answer after it", () => {
+        // Before: no badge at all, on a card identical to one whose service
+        // had gone — the missing badge was the whole difference.
+        const NONE = { algora: false, ao: false, bridge: false };
+        updateSidebar(bridgeWith({ algora: null, ao: null, bridge: null }, { up: NONE, conn: "connecting" }));
+        let io = els["#serviceStatus"].innerHTML;
+        expect(io.match(/live-badge wait">CONNECTING/g)).toHaveLength(3);
+        expect(io).not.toContain("OFFLINE");
+        expect(textOf(io)).toContain("9-stage pipeline");
+
+        updateSidebar(bridgeWith(LIVE, { up: { algora: true, ao: false, bridge: true }, conn: "live" }));
+        io = els["#serviceStatus"].innerHTML;
+        expect(io).toContain('<div class="svc ao offline">');
+        expect(textOf(io)).toContain("AO OFFLINE Input Signals — Output — no response this poll");
+        expect(textOf(io)).toContain("ALGORA LIVE");
+        expect(textOf(io)).toContain("BRIDGE LIVE");
+        expect(io.match(/class="live-badge off"/g)).toHaveLength(1);
+    });
+
+    it("shows a dash, not the last stats that arrived, for a service live on its signals alone", () => {
+        // `liveStats` keeps the last stats ever read. A service is LIVE on its
+        // signals or its stats, so gating the figures on LIVE put hours-old
+        // numbers beside the badge whenever only /stats was failing.
+        const at = new Date(2026, 8, 21, 14, 31, 20).getTime();
+        updateSidebar(bridgeWith(LIVE, {
+            up: ALL, statsUp: { algora: false, ao: true, bridge: false },
+            statsAt: { algora: at, ao: at, bridge: null },
+        }));
+        const stats = textOf(els["#stats"].innerHTML);
+        const io = textOf(els["#serviceStatus"].innerHTML);
+        expect(stats).toContain("Open Issues — Debates Today 2");
+        expect(io).toContain(`ALGORA LIVE Input Signals — Output Issues — no stats this poll · last read ${clockTime(at)}`);
+        expect(io).toContain("BRIDGE LIVE Input — Output — no stats answer yet");
+        expect(io).not.toContain("835");
+        expect(io).toContain("Ideas 4402 · Plans 80");
+    });
+
     it("keeps every figure out of the markup unless it is a number", () => {
         // Every figure the panel shows, each one hostile — so no single sink can
         // go back to raw interpolation without this failing. The case above
@@ -141,7 +186,7 @@ describe("panel rewrites", () => {
         initSidebar();
     });
 
-    const feed = { isLoaded: () => false, nodes: () => [] } as unknown as EcosystemFeed;
+    const feed = { isLoaded: () => false, registryState: () => "loading", nodes: () => [] } as unknown as EcosystemFeed;
 
     it("leaves a panel alone when its markup has not changed", () => {
         for (let i = 0; i < 5; i++) { updateSidebar(bridgeWith(LIVE)); updateEcosystem(feed); }
@@ -167,12 +212,18 @@ describe("panel rewrites", () => {
 });
 
 describe("updateEcosystem", () => {
-    const node = (id: string, health: HealthEntry | null): EcosystemNode => ({
-        service: { id, name: id, url: `https://${id}.moss.land`, section: "ecosystem", tier: "labs", owner: "mossland" } as RegistryService,
-        health, instrumentation: health ? "health" : "listed", kind: "service",
+    const node = (id: string, health: HealthEntry | null, o: Partial<RegistryService> = {}, kind: EcosystemNode["kind"] = "service"): EcosystemNode => ({
+        service: { id, name: id, url: `https://${id}.moss.land`, section: "ecosystem", tier: "labs", owner: "mossland", ...o } as RegistryService,
+        health, instrumentation: health ? "health" : "listed", kind,
     });
-    const feedOf = (nodes: EcosystemNode[]) =>
-        ({ isLoaded: () => true, nodes: () => nodes }) as unknown as EcosystemFeed;
+    const CHECKED = new Date(2026, 8, 21, 14, 32, 5).getTime();
+    const FRESH: HealthFreshness = { state: "fresh", checkedAt: CHECKED, sweeping: false, settled: true };
+    const feedOf = (nodes: EcosystemNode[], freshness: HealthFreshness = FRESH, registry: RegistryState = "loaded") =>
+        ({
+            isLoaded: () => registry === "loaded", registryState: () => registry,
+            nodes: () => nodes, healthFreshness: () => freshness,
+        }) as unknown as EcosystemFeed;
+    const eco = () => els["#ecosystem"].innerHTML;
 
     it("escapes every health field it puts in an attribute", () => {
         // The ingest already drops a latency that is not a number; this is the
@@ -193,5 +244,87 @@ describe("updateEcosystem", () => {
     it("titles an ordinary reading with its status and latency", () => {
         updateEcosystem(feedOf([node("npc", { service: "npc", status: "ok", latencyMs: 21 })]));
         expect(els["#ecosystem"].innerHTML).toContain('class="eco-dot ok" title="ok · 21ms"');
+    });
+
+    it("tells a registry still loading from one that could not be read, and from one that was empty", () => {
+        // A failed first read used to say "loading…" for the ten minutes until
+        // the next attempt; it is retried within seconds, and says so.
+        updateEcosystem(feedOf([], FRESH, "loading"));
+        expect(textOf(eco())).toBe("Ecosystem Registry loading…");
+        updateEcosystem(feedOf([], FRESH, "failed"));
+        expect(textOf(eco())).toBe("Ecosystem Registry unreachable — retrying");
+        updateEcosystem(feedOf([], FRESH, "loaded"));
+        expect(textOf(eco())).toBe("Ecosystem Registry unavailable");
+    });
+
+    const ecosystem = [
+        node("moss", { service: "moss", status: "ok" }, { name: "Mossland" }),
+        node("npc", { service: "npc", status: "ok" }, { name: "NPC" }),
+        node("signalmap", { service: "signalmap", status: "down", httpCode: 503 }, { name: "Signal Map" }),
+        node("passport", { service: "passport", status: "degraded" }, { name: "Passport" }),
+        node("algora", { service: "algora", status: "running" }, { name: "Algora", lifecycle: "archive" }),
+        node("recipe", null, { name: "Recipe" }),
+        // Not services: never counted, never chipped, whatever turned up.
+        node("upbit", { service: "upbit", status: "down" }, { name: "Upbit", owner: "third-party" }, "link"),
+        node("llms-txt", null, { name: "llms.txt", artifact: true }, "artifact"),
+    ];
+
+    it("counts what the services report, one bucket each, and names every reading that is not ok", () => {
+        updateEcosystem(feedOf(ecosystem));
+        const text = textOf(eco());
+        expect(text).toContain(`Reported health checked ${clockTime(CHECKED)}`);
+        // Off-contract is not ok and unmeasured is not down; the link and
+        // the file are in no bucket at all.
+        expect(text).toContain("2 ok · 1 off-contract · 1 degraded · 1 down · 1 unmeasured");
+        expect(text).toContain("down: Signal Map · degraded: Passport · off-contract: Algora (archived)");
+        expect(text).toContain("1 archived, counted by its reading like any other service");
+    });
+
+    it("puts the verdict in words on every row that is not ok", () => {
+        updateEcosystem(feedOf(ecosystem));
+        const html = eco();
+        const rowOf = (name: string) => html.match(new RegExp(`<a [^>]*>(?:(?!</a>).)*${name}(?:(?!</a>).)*</a>`))?.[0] ?? "";
+        expect(rowOf("Signal Map")).toContain('<span class="eco-chip down">down</span>');
+        expect(rowOf("Passport")).toContain('<span class="eco-chip degraded">degraded</span>');
+        expect(rowOf("Algora")).toContain('<span class="eco-chip offcontract">off-contract</span>');
+        for (const quiet of ["Mossland", "Recipe", "Upbit", "llms.txt"]) expect(rowOf(quiet)).not.toContain("eco-chip");
+    });
+
+    it("dates a stale tally instead of presenting it as current", () => {
+        updateEcosystem(feedOf(ecosystem, { state: "stale", checkedAt: CHECKED, sweeping: false, settled: true }));
+        const html = eco();
+        expect(textOf(html)).toContain(`Reported health stale · as of ${shortClock(CHECKED)}`);
+        expect(html).toContain('class="eco-health stale"');
+        expect(html).toContain('class="eco-list stale"');
+        // Kept: they are the last thing known.
+        expect(textOf(html)).toContain("1 down");
+    });
+
+    it("has no tally while the first sweep is under way, and an all-unmeasured one if it found nothing", () => {
+        updateEcosystem(feedOf(ecosystem.map(n => ({ ...n, health: null })), { state: "none", checkedAt: null, sweeping: true, settled: false }));
+        expect(eco()).not.toContain("Reported health");
+        updateEcosystem(feedOf(ecosystem.map(n => ({ ...n, health: null })), { state: "none", checkedAt: null, sweeping: false, settled: true }));
+        expect(textOf(eco())).toContain("Reported health no health reading yet");
+        expect(textOf(eco())).toContain("0 ok · 0 off-contract · 0 degraded · 0 down · 6 unmeasured");
+    });
+
+    it("keeps that result on screen through the sweeps after it", () => {
+        // Every later sweep also reads "none" while it is out. The block used
+        // to vanish for as long as each took — up to the 10 s timeout, once a
+        // minute — which is the churn an always-shown tally exists to avoid.
+        updateEcosystem(feedOf(ecosystem.map(n => ({ ...n, health: null })), { state: "none", checkedAt: null, sweeping: true, settled: true }));
+        expect(textOf(eco())).toContain("Reported health checking health…");
+        expect(textOf(eco())).toContain("0 ok · 0 off-contract · 0 degraded · 0 down · 6 unmeasured");
+    });
+
+    it("leads with what the services report, ahead of how much is instrumented", () => {
+        // At tablet widths this panel is a 35vh strip over the map, whose
+        // heading leaves the tally to it; after the count rows it was below
+        // the fold.
+        updateEcosystem(feedOf(ecosystem));
+        const text = textOf(eco());
+        expect(text.indexOf("Reported health")).toBeGreaterThan(text.indexOf("Ecosystem"));
+        expect(text.indexOf("Reported health")).toBeLessThan(text.indexOf("Services"));
+        expect(text.indexOf("down: Signal Map")).toBeLessThan(text.indexOf("Services"));
     });
 });

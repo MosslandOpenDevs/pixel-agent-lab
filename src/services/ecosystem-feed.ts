@@ -57,9 +57,63 @@ export type EcosystemNode = {
 // request, probing its siblings again each time (see fetchEcosystemHealth).
 // Polling it at the 15s service cadence would therefore add load on city,
 // not freshness.
-const REGISTRY_INTERVAL_MS = 10 * 60_000;
-const HEALTH_INTERVAL_MS = 60_000;
+export const REGISTRY_INTERVAL_MS = 10 * 60_000;
+export const HEALTH_INTERVAL_MS = 60_000;
 const TIMEOUT_MS = 10_000;
+
+/**
+ * Until the registry has loaded once, a failed read is retried after these,
+ * then every minute. The ten-minute cadence is for refreshing a map that has
+ * something on it; used as the retry too, one failed request at page load — a
+ * dropped packet on a phone, the timeout on a slow link — left the default
+ * view an empty galaxy for ten minutes, labelled as if it were still loading.
+ * After the first success a failed refresh keeps the snapshot and waits the
+ * full interval, as before.
+ */
+export const REGISTRY_RETRY_MS: readonly number[] = [5_000, 15_000, 30_000, 60_000];
+const registryRetry = (failures: number): number =>
+    REGISTRY_RETRY_MS[Math.min(failures, REGISTRY_RETRY_MS.length) - 1];
+
+/**
+ * How old the health reading may get before the map stops presenting it as
+ * current. Sweeps start a minute after the previous one settles and are cut
+ * off at ten seconds, so a healthy schedule lands one at least every 70 s; at
+ * 150 s the sweep that should have replaced the reading has come back empty,
+ * and so has the one after it.
+ */
+export const STALE_AFTER_MS = HEALTH_INTERVAL_MS + TIMEOUT_MS + 80_000;
+
+/** "loading" until the first registry read settles, "failed" if it — and every
+ *  retry since — got nothing, "loaded" from the first success on. A failed
+ *  refresh after that keeps the snapshot, so the state stays "loaded". */
+export type RegistryState = "loading" | "failed" | "loaded";
+
+/**
+ * How current the health reading on screen is, from this monitor's own sweep
+ * clock (`healthCheckedAt`) and nothing else. Never from `HealthEntry.checkedAt`:
+ * that is each service's own `timestamp`, which for a static artifact is its
+ * build time (monitor's health.json) and for city's reports is city's clock.
+ *
+ *   none       — no sweep has landed a reading yet.
+ *   fresh      — the last one landed within STALE_AFTER_MS.
+ *   refreshing — older than that, but a sweep that should replace it is under
+ *                way (see healthFreshness for which ones count).
+ *   stale      — older, and nothing is replacing it. The readings are kept —
+ *                they are the last thing known — but must not be shown as now.
+ */
+export type HealthFreshness = {
+    state: "none" | "fresh" | "refreshing" | "stale";
+    /** When the reading on screen was taken, in epoch ms; null before one. */
+    checkedAt: number | null;
+    /** A sweep is in flight right now. */
+    sweeping: boolean;
+    /** A sweep that asked the loaded registry's services has settled, whether
+     *  or not it landed. Before that, "none" means no result yet; after it,
+     *  "none" is the result. init()'s first sweep only counts when the
+     *  registry had loaded as it started — against an empty list it could only
+     *  ask city's aggregate, and the registry's services have not been asked. */
+    settled: boolean;
+};
 
 export class EcosystemFeed {
     private registry: RegistryService[] = [];
@@ -69,22 +123,71 @@ export class EcosystemFeed {
 
     /** Same chained-timer discipline as DataBridge (see PollChain): never
      *  overlap, never reschedule after teardown or while paused — and
-     *  otherwise always reschedule, including after a sweep that threw. */
+     *  otherwise always reschedule, including after a sweep that threw. The
+     *  registry backs off from 5 s while it has never loaded (see
+     *  REGISTRY_RETRY_MS): pollRegistry reports failure only then. */
     private readonly registryChain = new PollChain(() => this.pollRegistry(),
-        { everyMs: REGISTRY_INTERVAL_MS, label: "ecosystem" });
+        { everyMs: REGISTRY_INTERVAL_MS, retryMs: registryRetry, label: "ecosystem" });
     private readonly healthChain = new PollChain(() => this.pollHealth(),
         { everyMs: HEALTH_INTERVAL_MS, label: "ecosystem" });
 
-    /** Null until the first registry fetch settles — distinct from "empty". */
+    /** False until a registry read succeeds — distinct from "loaded, empty". */
     private loaded = false;
+    /** A registry read has settled with nothing, and none has succeeded yet.
+     *  Without it, a first read that failed looked exactly like one still in
+     *  flight, and both surfaces said "loading…" for the ten minutes until the
+     *  next attempt. */
+    private registryFailed = false;
+    /** init() has started the health schedule. Before that, a registry that
+     *  loads leaves the first sweep to init(), which runs it next anyway. */
+    private sweepStarted = false;
+
+    /** Whether the last sweep to settle landed a reading. A sweep in flight
+     *  after one that did is replacing a reading that only aged because the
+     *  clock ran on without us — see healthFreshness. */
+    private lastSweepLanded = false;
+    /** The sweep in flight is the one showing the tab started, for a reading
+     *  that was not yet stale when the tab was hidden. */
+    private resumedSweep = false;
+    private staleWhenHidden = false;
+    /** See HealthFreshness.settled. */
+    private sweptRegistry = false;
 
     /** When this monitor last completed a health sweep. It used to be the
      *  aggregator's clock, which was the honest choice while the aggregate was
      *  the only source; now that most readings are our own first-hand fetches,
-     *  ours is. Drives the map's sweep animation, which claims exactly this. */
+     *  ours is. Drives the map's sweep animation, which claims exactly this,
+     *  and the age every surface shows for the readings (healthFreshness). */
     healthCheckedAt: string | null = null;
 
     isLoaded(): boolean { return this.loaded; }
+
+    registryState(): RegistryState {
+        return this.loaded ? "loaded" : this.registryFailed ? "failed" : "loading";
+    }
+
+    /**
+     * How current the health reading is — see HealthFreshness.
+     *
+     * A reading past STALE_AFTER_MS counts as refreshing, not stale, while a
+     * sweep is in flight that is expected to replace it: one that follows a
+     * sweep that landed, because then the reading only aged while nothing
+     * could run — a hidden tab, a sleeping laptop — and not because sweeps
+     * failed; or the one showing the tab started, when the reading was not
+     * yet stale as the tab was hidden. Without that, every tab shown after a
+     * while hidden flashed "stale" for the moment its first sweep took. A
+     * sweep after one that came back empty is not exempt, so a failing
+     * schedule reads stale throughout rather than flickering at each attempt.
+     */
+    healthFreshness(now: number = Date.now()): HealthFreshness {
+        const sweeping = this.healthChain.running;
+        const settled = this.sweptRegistry;
+        const checkedAt = this.healthCheckedAt ? Date.parse(this.healthCheckedAt) : null;
+        if (checkedAt === null) return { state: "none", checkedAt, sweeping, settled };
+        if (now - checkedAt <= STALE_AFTER_MS) return { state: "fresh", checkedAt, sweeping, settled };
+        const replacing = sweeping && (this.lastSweepLanded || this.resumedSweep);
+        return { state: replacing ? "refreshing" : "stale", checkedAt, sweeping, settled };
+    }
 
     /** Registry entries with their health, in registry order. */
     nodes(): EcosystemNode[] {
@@ -118,6 +221,7 @@ export class EcosystemFeed {
         // does. A throw here used to skip them, and the tab then never
         // refreshed either feed.
         await this.registryChain.run();
+        this.sweepStarted = true;
         await this.healthChain.run();
     }
 
@@ -131,6 +235,7 @@ export class EcosystemFeed {
      * `visibilitychange` — this layer is DOM-free.
      */
     pause(): void {
+        this.staleWhenHidden = this.healthFreshness().state === "stale";
         this.registryChain.pause();
         this.healthChain.pause();
     }
@@ -141,10 +246,15 @@ export class EcosystemFeed {
      * run side by side, which is fine once the registry is loaded. Before
      * that, the health chain is not started, and resume() leaves it for init()
      * — the sweep reads its targets from the registry, so it must not go first.
+     *
+     * A sweep this starts is marked as replacing the reading on screen, so the
+     * tab does not open on "stale" while it is under way (healthFreshness).
      */
     resume(): void {
         this.registryChain.resume();
+        const wasSweeping = this.healthChain.running;
         this.healthChain.resume();
+        if (!wasSweeping && this.healthChain.running && !this.staleWhenHidden) this.resumedSweep = true;
     }
 
     private async withSignal<T>(run: (s: AbortSignal) => Promise<T>): Promise<T | null> {
@@ -164,11 +274,36 @@ export class EcosystemFeed {
         }
     }
 
-    private async pollRegistry(): Promise<void> {
+    /** True unless the registry has still never loaded — which is the one
+     *  case its chain retries early (REGISTRY_RETRY_MS). */
+    private async pollRegistry(): Promise<boolean> {
         const services = await this.withSignal(s => fetchRegistry(s));
-        if (this.destroyed || !services) return;
+        if (this.destroyed) return true;
+        if (!services) {
+            if (!this.loaded) this.registryFailed = true;
+            return this.loaded;
+        }
+        const first = !this.loaded;
         this.registry = services;
         this.loaded = true;
+        this.registryFailed = false;
+        if (first && this.sweepStarted) this.sweepNewTargets();
+        return true;
+    }
+
+    /**
+     * A registry that loads on a retry arrives after init()'s first sweep,
+     * which could only ask city's aggregate. Sweep again now rather than leave
+     * every other service unmeasured until the next minute. The sweep reads
+     * its targets as it starts, so one already under way was sent against the
+     * empty list: wait for it, then run another. Two sweeps side by side would
+     * be harmless — each owns its controller — but PollChain never runs two.
+     */
+    private sweepNewTargets(): void {
+        const joined = this.healthChain.running;
+        void this.healthChain.run().then(() => {
+            if (joined) return this.healthChain.run();
+        });
     }
 
     /**
@@ -194,6 +329,22 @@ export class EcosystemFeed {
      * cancel every request in the cycle rather than the last one issued.
      */
     private async pollHealth(): Promise<void> {
+        // sweepHealth reads its targets from the registry as it starts,
+        // synchronously, so this is exactly whether this sweep asks them.
+        const withTargets = this.loaded;
+        let landed = false;
+        try {
+            landed = await this.sweepHealth();
+        } finally {
+            // Even when the sweep threw: it is settled, and it landed nothing.
+            this.lastSweepLanded = landed;
+            this.resumedSweep = false;
+            if (withTargets) this.sweptRegistry = true;
+        }
+    }
+
+    /** One sweep. True when it landed a reading. */
+    private async sweepHealth(): Promise<boolean> {
         const result = await this.withSignal(async signal => {
             const targets = this.registry.filter(s =>
                 s.statusUrl && s.statusUrl !== HEALTH_URL && kindOf(s) === "service");
@@ -205,7 +356,7 @@ export class EcosystemFeed {
             ]);
             return { direct, reading };
         });
-        if (this.destroyed || !result) return;
+        if (this.destroyed || !result) return false;
         const { direct, reading } = result;
         const aggregate = reading?.aggregate ?? null;
 
@@ -215,8 +366,14 @@ export class EcosystemFeed {
         const firstHand = [reading?.own ?? null, ...direct].filter((h): h is HealthEntry => h !== null);
 
         // Nothing came back at all — keep the previous snapshot rather than
-        // blanking the map on one bad cycle.
-        if (firstHand.length === 0 && !aggregate) return;
+        // blanking the map on one bad cycle. Nothing here limits that to one
+        // cycle; healthCheckedAt does. It is left alone, so once no sweep has
+        // landed for STALE_AFTER_MS the readings are shown as stale — dimmed,
+        // still, dated — instead of as current for as long as the network is
+        // gone. That happens only when *every* request failed, which is the
+        // viewer's own connection: a service that failed on its own drops to
+        // unmeasured at once, in a sweep that did land.
+        if (firstHand.length === 0 && !aggregate) return false;
 
         const entries = new Map<string, HealthEntry>();
         // Aggregate first, so first-hand answers overwrite it.
@@ -241,6 +398,7 @@ export class EcosystemFeed {
         // Our own sweep, not the aggregator's — most of these readings are now
         // ours, so reporting city's clock would misdate them.
         this.healthCheckedAt = new Date().toISOString();
+        return true;
     }
 
     destroy(): void {

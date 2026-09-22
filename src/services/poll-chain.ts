@@ -30,8 +30,10 @@ export type PollChainOptions = {
     /** Wait after a run settles before the next one starts. */
     everyMs: number;
     /** Wait instead of `everyMs` after a run that failed — its job returned
-     *  `false` or threw. Unset, a failed run waits `everyMs` like any other. */
-    retryMs?: number;
+     *  `false` or threw. Unset, a failed run waits `everyMs` like any other.
+     *  A function is handed how many runs in a row have now failed (1 after
+     *  the first), so a retry can back off; a success starts the count again. */
+    retryMs?: number | ((failures: number) => number);
     /** Prefix for the console line when a job throws, e.g. "data". */
     label: string;
 };
@@ -39,11 +41,13 @@ export type PollChainOptions = {
 export class PollChain {
     private readonly job: () => Promise<boolean | void>;
     private readonly everyMs: number;
-    private readonly retryMs: number | undefined;
+    private readonly retryMs: PollChainOptions["retryMs"];
     private readonly label: string;
 
     private timer: ReturnType<typeof setTimeout> | null = null;
     private current: Promise<void> | null = null;
+    /** Runs in a row that failed, for a `retryMs` that backs off. */
+    private failures = 0;
     /** When the next run is due: set as each run settles, from its outcome. */
     private dueAt = 0;
     /** False until the owner first runs it. resume() must not start a chain
@@ -76,12 +80,20 @@ export class PollChain {
         // below before this clears it — even for a job that throws at once.
         const current = this.execute().then(ok => {
             this.current = null;
-            const wait = ok === false && this.retryMs !== undefined ? this.retryMs : this.everyMs;
+            this.failures = ok === false ? this.failures + 1 : 0;
+            const wait = this.waitAfter(ok !== false);
             this.dueAt = Date.now() + wait;
             this.arm(wait);
         });
         this.current = current;
         return current;
+    }
+
+    /** Whether a run is in flight right now — started by run(), by its timer
+     *  or by resume(). Its owner can read this to tell a reading that is being
+     *  replaced from one that nothing is replacing. */
+    get running(): boolean {
+        return this.current !== null;
     }
 
     /**
@@ -121,6 +133,11 @@ export class PollChain {
             console.error(`[${this.label}] a poll threw; the next one is still scheduled`, err);
             return false;
         }
+    }
+
+    private waitAfter(ok: boolean): number {
+        if (ok || this.retryMs === undefined) return this.everyMs;
+        return typeof this.retryMs === "function" ? this.retryMs(this.failures) : this.retryMs;
     }
 
     private arm(ms: number): void {
