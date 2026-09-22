@@ -37,18 +37,19 @@ The three services are independent. Their stage labels illustrate each service's
 | View | Displays |
 | --- | --- |
 | **Algora · Sense & Detect** | A vertical signal belt, nine workflow stages, and agent clusters. The belt consumes a merged queue of signals fetched from **all three services**, not only Algora. |
-| **AO · Debate & Plan** | Cached AO ideas and scores, debate topics/snippets, and Ideas / Plans / Projects totals. Idea bubbles illustrate score thresholds of 7 for a plan and 8 for a project. |
+| **AO · Debate & Plan** | Cached AO ideas and scores, topics and context snippets from the three latest debates, and AO's own Ideas / Plans / Projects totals. Idea bubbles illustrate score thresholds of 7 for a plan and 8 for a project. |
 | **Bridge · Execute & Verify** | An L0–L4 workflow, specialist agents, proposal totals from stats, agent trust, and recent outcomes. The monitor does not fetch the full proposal collection. |
 
 See [the service overview](docs/mossland-services-overview.md) for responsibilities and the conceptual governance loop. Its cross-service handoff model is a design sketch.
 
 ### Reading the data correctly
 
-- **Polling, not a push stream.** Service APIs refresh 15 seconds after the previous cycle finishes. Health sweeps refresh after 60 seconds; the registry after 10 minutes. Requests have a 10-second cycle timeout.
+- **Polling, not a push stream.** Each read runs again a fixed time after the previous one finishes. Each service's signals and stats, which the `LIVE` badges and sidebar figures come from, refresh after 15 seconds. The detail views' supporting data refreshes after 5 minutes (AO ideas and project total, Bridge outcomes and agent trust) or 10 minutes (the three latest AO debates), and a detail read that fails is retried after 1 minute. Health sweeps refresh after 60 seconds; the registry after 10 minutes. Signals, stats, health and registry requests time out after 10 seconds; detail reads after 30.
+- **Polling pauses while the tab is hidden.** The first load always completes, even in a tab opened in the background or hidden while it runs; after that, a request already under way finishes, but nothing new starts. When the tab is shown again, every read that fell due in the meantime runs at once, and the rest wait out their remaining time. Signals published while the tab was hidden that have already dropped out of each service's newest 30 (Algora) or 20 (AO, Bridge) are never fetched, so "signals ingested this session" counts only what this tab observed.
 - **API reachability and health are different.** A service gets a `LIVE` badge when its signals or stats request succeeds. The aggregate is `LIVE` when any of the three responds, `OFFLINE` when none responds, and `Connecting…` before the first verdict. The ecosystem health feed has its own status readings.
 - **Health comes from evidence.** The browser reads service `statusUrl` addresses from the registry; direct readings override the [city health aggregate](https://city.moss.land/api/health). A declared status survives an HTTP error response. A 5xx without a non-empty string `status` (an HTML error page, or JSON without the field) means `down`; network/CORS failures, reads cut off mid-response, and non-5xx responses without a usable verdict do not by themselves prove an outage. Unknown status strings stay untranslated.
 - **Motion has different meanings.** Map particles are triggered by newly ingested signals and capped for display; a ring sweep follows a completed health refresh. Galaxy rotation is decorative. Belt travel, stage promotion, and Bridge's proposal/proof animation illustrate workflows; they are not execution traces or proof that work completed.
-- **Snapshots can be older than the latest poll.** Detail caches survive individual request failures, and a wholly unsuccessful health sweep retains the previous snapshot. AO can replay cached ideas. Missing trust scores, an absent success rate, and sidebar figures a service did not send as a number display `—`; an unavailable value must not be interpreted as a measured zero. This is an observational viewer, not an uptime or execution audit log.
+- **Snapshots can be older than the latest poll.** Detail caches survive individual request failures, and a wholly unsuccessful health sweep retains the previous snapshot. AO can replay cached ideas. Missing trust scores, an absent success rate, and totals a service did not send as a number, in the sidebar, the AO funnel and the Bridge gauges and outcome line, display `—`; an unavailable value must not be interpreted as a measured zero. This is an observational viewer, not an uptime or execution audit log.
 
 ## Run locally
 
@@ -63,8 +64,8 @@ Vite prints the local URL, normally `http://localhost:5173`. The registry and he
 
 | Browser path | Default development upstream | Data read |
 | --- | --- | --- |
-| `/algora-api/*` | `http://localhost:3201/api/*` | Signals, issues, stats |
-| `/ao-api/*` | `http://localhost:3001/*` | Signals, status, debates, ideas, plans, projects |
+| `/algora-api/*` | `http://localhost:3201/api/*` | Signals, stats |
+| `/ao-api/*` | `http://localhost:3001/*` | Signals, status, debates, ideas, project total |
 | `/bridge-api/*` | `http://localhost:3101/api/*` | Signals, stats, outcomes, agent trust |
 
 API servers are separate projects and are not started by this repository. No frontend API key or `.env` file is required. Registry and fallback health URLs are defined in [ecosystem-client.ts](src/services/ecosystem-client.ts); direct health endpoints must permit browser access with CORS. In production all of them must also stay inside the page's Content-Security-Policy `connect-src` (see [Deploy](#deploy)).
@@ -77,7 +78,7 @@ npm test
 npm run build
 ```
 
-[GitHub Actions](.github/workflows/ci.yml) runs these checks on every pull request, whatever its base branch, and on `main` after each merge, then confirms the build emitted a well-formed `dist/health.json` (`node scripts/check-health-json.mjs`). A branch pushed without an open pull request is not tested automatically; open a draft pull request or run the workflow by hand. Tests cover health-response interpretation; the ecosystem feed's grading, merging and polling; the service-data poller's connection state, polling chain and signal deduplication; the values the sidebar and the map's tooltip write into their markup; and how the origin serves a build (404 for missing files, no directory listing). Use `npm run test:watch` while working on those readers.
+[GitHub Actions](.github/workflows/ci.yml) runs these checks on every pull request, whatever its base branch, and on `main` after each merge, then confirms the build emitted a well-formed `dist/health.json` (`node scripts/check-health-json.mjs`). A branch pushed without an open pull request is not tested automatically; open a draft pull request or run the workflow by hand. Tests cover health-response interpretation; the ecosystem feed's grading, merging and polling; the service-data poller's connection state, polling schedules (including the pause while hidden), signal deduplication and detail-view totals; the values the sidebar and the map's tooltip write into their markup, and the sidebar leaving unchanged panels alone; and how the origin serves a build (404 for missing files, no directory listing). Use `npm run test:watch` while working on those readers.
 
 ```bash
 npm run preview       # inspect the production build locally

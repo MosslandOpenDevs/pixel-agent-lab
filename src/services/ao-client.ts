@@ -1,5 +1,5 @@
-import type { AOSignal, AODebate, AOStatus, AOIdea, AOPlan, AOProject } from "./types.ts";
-import { getJSON } from "./http.ts";
+import type { AOSignal, AODebate, AOStatus, AOIdea } from "./types.ts";
+import { getJSON, finiteOrNull } from "./http.ts";
 
 const BASE = "/ao-api";
 
@@ -9,26 +9,37 @@ export async function fetchAOSignals(limit = 20, signal?: AbortSignal): Promise<
     return Array.isArray(data.signals) ? data.signals : [];
 }
 
-export async function fetchAODebates(limit = 10, signal?: AbortSignal): Promise<AODebate[]> {
+/** The latest debates. `?limit=` is the only size control AO honours here —
+ *  `fields=` and the like are ignored — and each row is ~220 kB, nearly all of
+ *  it `ideas_generated`, so keep the limit to what the card rotates through. */
+export async function fetchAODebates(limit: number, signal?: AbortSignal): Promise<AODebate[]> {
     const data = await getJSON<{ debates?: AODebate[] }>(`${BASE}/debates?limit=${limit}`, "AO debates", signal);
-    return data.debates ?? [];
+    // An answer without its list is a failed read, not an empty one: the
+    // caller then keeps the debates it has and tries again soon, instead of
+    // showing none until the next interval. `{"debates": []}` is a real answer.
+    if (!Array.isArray(data.debates)) throw new Error("AO debates: no list in the answer");
+    return data.debates;
 }
 
 export async function fetchAOStatus(signal?: AbortSignal): Promise<AOStatus> {
     return getJSON<AOStatus>(`${BASE}/status`, "AO status", signal);
 }
 
-export async function fetchAOIdeas(limit = 30, signal?: AbortSignal): Promise<AOIdea[]> {
-    const data = await getJSON<{ ideas?: AOIdea[] }>(`${BASE}/ideas?limit=${limit}`, "AO ideas", signal);
-    return data.ideas ?? [];
+/** The latest ideas, for the belt, and AO's own count of all of them. The list
+ *  is capped at `limit`, so its length is our fetch size, never a total. An
+ *  answer without the list throws, as fetchAODebates does, so the belt keeps
+ *  the ideas and the total it has. */
+export async function fetchAOIdeas(limit = 30, signal?: AbortSignal): Promise<{ ideas: AOIdea[]; total: number | null }> {
+    const data = await getJSON<{ ideas?: AOIdea[]; total?: unknown }>(`${BASE}/ideas?limit=${limit}`, "AO ideas", signal);
+    if (!Array.isArray(data.ideas)) throw new Error("AO ideas: no list in the answer");
+    return { ideas: data.ideas, total: finiteOrNull(data.total) };
 }
 
-export async function fetchAOPlans(limit = 20, signal?: AbortSignal): Promise<AOPlan[]> {
-    const data = await getJSON<{ plans?: AOPlan[] }>(`${BASE}/plans?limit=${limit}`, "AO plans", signal);
-    return data.plans ?? [];
-}
-
-export async function fetchAOProjects(limit = 20, signal?: AbortSignal): Promise<AOProject[]> {
-    const data = await getJSON<{ projects?: AOProject[] }>(`${BASE}/projects?limit=${limit}`, "AO projects", signal);
-    return data.projects ?? [];
+/** AO's count of its projects. Nothing here shows a project itself — the
+ *  funnel shows the count — so one row is asked for (AO refuses `limit=0`) and
+ *  only the envelope's `total` is kept. The list used to be fetched at 20 and
+ *  shown by its length, which would have stuck at 20 once AO passed it. */
+export async function fetchAOProjectTotal(signal?: AbortSignal): Promise<number | null> {
+    const data = await getJSON<{ total?: unknown }>(`${BASE}/projects?limit=1`, "AO projects", signal);
+    return finiteOrNull(data.total);
 }

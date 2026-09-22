@@ -2,6 +2,7 @@ import type { RegistryService, HealthEntry } from "./types.ts";
 import {
     fetchRegistry, fetchEcosystemHealth, fetchServiceHealth, HEALTH_URL, AGGREGATOR_ID,
 } from "./ecosystem-client.ts";
+import { PollChain } from "./poll-chain.ts";
 
 /**
  * How much this monitor can actually observe about a service. The visualization
@@ -38,7 +39,7 @@ export function kindOf(s: RegistryService): NodeKind {
 }
 
 /** Services whose data this monitor actually polls (see DataBridge). DataBridge
- *  fetches signals/issues/stats from algora as well, so it belongs here even
+ *  fetches signals and stats from algora as well, so it belongs here even
  *  though the registry marks it archived — the archived styling is applied
  *  independently, and claiming we do not read it would be the inaccurate half. */
 const STREAMING_IDS = new Set(["algora", "ao", "bridge"]);
@@ -63,9 +64,16 @@ const TIMEOUT_MS = 10_000;
 export class EcosystemFeed {
     private registry: RegistryService[] = [];
     private health = new Map<string, HealthEntry>();
-    private timers = new Set<ReturnType<typeof setTimeout>>();
     private inFlight = new Set<AbortController>();
     private destroyed = false;
+
+    /** Same chained-timer discipline as DataBridge (see PollChain): never
+     *  overlap, never reschedule after teardown or while paused — and
+     *  otherwise always reschedule, including after a sweep that threw. */
+    private readonly registryChain = new PollChain(() => this.pollRegistry(),
+        { everyMs: REGISTRY_INTERVAL_MS, label: "ecosystem" });
+    private readonly healthChain = new PollChain(() => this.pollHealth(),
+        { everyMs: HEALTH_INTERVAL_MS, label: "ecosystem" });
 
     /** Null until the first registry fetch settles — distinct from "empty". */
     private loaded = false;
@@ -106,39 +114,37 @@ export class EcosystemFeed {
         // them sends the first sweep against an empty list and leaves the map
         // claiming nothing is measured until the 60s tick. One cached request.
         //
-        // Both schedules are armed whatever the first sweep does. A throw here
-        // used to skip them, and the tab then never refreshed either feed.
-        await this.guarded(() => this.pollRegistry());
-        await this.guarded(() => this.pollHealth());
-        this.schedule(() => this.pollRegistry(), REGISTRY_INTERVAL_MS);
-        this.schedule(() => this.pollHealth(), HEALTH_INTERVAL_MS);
+        // Each schedule is armed as its first run settles, whatever that run
+        // does. A throw here used to skip them, and the tab then never
+        // refreshed either feed.
+        await this.registryChain.run();
+        await this.healthChain.run();
     }
 
-    /** Same chained-timer discipline as DataBridge: never overlap, never
-     *  reschedule after teardown — and always reschedule otherwise. The next
-     *  timer is armed only once a job settles, so a job that threw used to end
-     *  its chain for the life of the tab, and the map kept its last verdicts on
-     *  screen as if they were current. */
-    private schedule(job: () => Promise<void>, everyMs: number): void {
-        if (this.destroyed) return;
-        const timer = setTimeout(async () => {
-            this.timers.delete(timer);
-            await this.guarded(job);
-            this.schedule(job, everyMs);
-        }, everyMs);
-        this.timers.add(timer);
+    /**
+     * Stops both schedules, for a tab nobody can see: a request a minute to
+     * every service that publishes a health endpoint is not worth spending on a
+     * map that is not drawn. A sweep in flight finishes and lands; nothing
+     * is scheduled after it. init()'s first registry read and sweep are the
+     * exception: they still run to the end, so the map has something to show,
+     * and it is the schedules after them that wait. The scene calls this on
+     * `visibilitychange` — this layer is DOM-free.
+     */
+    pause(): void {
+        this.registryChain.pause();
+        this.healthChain.pause();
     }
 
-    /** Runs one poll so that a throw costs that poll and nothing else. Nothing
-     *  in either poll is meant to throw — every request already settles on its
-     *  own — so reaching the catch is a bug worth a console line, not a reason
-     *  to stop watching. */
-    private async guarded(job: () => Promise<void>): Promise<void> {
-        try {
-            await job();
-        } catch (err) {
-            console.error("[ecosystem] a poll threw; the next one is still scheduled", err);
-        }
+    /**
+     * Picks both up again: a sweep or registry read that fell due while hidden
+     * runs at once, the other waits out its remaining time. The two may then
+     * run side by side, which is fine once the registry is loaded. Before
+     * that, the health chain is not started, and resume() leaves it for init()
+     * — the sweep reads its targets from the registry, so it must not go first.
+     */
+    resume(): void {
+        this.registryChain.resume();
+        this.healthChain.resume();
     }
 
     private async withSignal<T>(run: (s: AbortSignal) => Promise<T>): Promise<T | null> {
@@ -239,8 +245,8 @@ export class EcosystemFeed {
 
     destroy(): void {
         this.destroyed = true;
-        this.timers.forEach(clearTimeout);
-        this.timers.clear();
+        this.registryChain.stop();
+        this.healthChain.stop();
         this.inFlight.forEach(ctrl => ctrl.abort());
         this.inFlight.clear();
     }

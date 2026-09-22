@@ -3,8 +3,8 @@
  *
  * Every client repeated the same fetch / check `res.ok` / parse sequence, so it
  * lives here once. It is also the single place a caller's AbortSignal reaches
- * the network, which is what lets DataBridge bound and cancel a whole poll
- * cycle instead of leaving requests running after teardown.
+ * the network, which is what lets DataBridge bound and cancel each read
+ * instead of leaving requests running after teardown.
  */
 export async function getJSON<T>(url: string, label: string, signal?: AbortSignal): Promise<T> {
     const res = await fetch(url, { signal });
@@ -19,6 +19,15 @@ export async function getJSON<T>(url: string, label: string, signal?: AbortSigna
  */
 export function isRecord(v: unknown): v is Record<string, unknown> {
     return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
+ * A count or a total only if it is one: a finite number. A numeric string, a
+ * null, a renamed field's undefined — none of those is a figure we obtained,
+ * and each has to read as "not obtained" rather than turn into 0 or text.
+ */
+export function finiteOrNull(v: unknown): number | null {
+    return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
 /**

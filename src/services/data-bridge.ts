@@ -1,10 +1,7 @@
 import type {
     AlgoraSignal,
-    AlgoraIssue,
     AODebate,
     AOIdea,
-    AOPlan,
-    AOProject,
     AOSignal,
     AlgoraStats,
     AOStatus,
@@ -14,9 +11,10 @@ import type {
     BridgeTrustEntry,
     UnifiedSignal,
 } from "./types.ts";
-import { isRecord } from "./http.ts";
-import { fetchAlgoraSignals, fetchAlgoraIssues, fetchAlgoraStats } from "./algora-client.ts";
-import { fetchAOSignals, fetchAODebates, fetchAOStatus, fetchAOIdeas, fetchAOPlans, fetchAOProjects } from "./ao-client.ts";
+import { isRecord, finiteOrNull } from "./http.ts";
+import { PollChain } from "./poll-chain.ts";
+import { fetchAlgoraSignals, fetchAlgoraStats } from "./algora-client.ts";
+import { fetchAOSignals, fetchAODebates, fetchAOStatus, fetchAOIdeas, fetchAOProjectTotal } from "./ao-client.ts";
 import { fetchBridgeSignals, fetchBridgeStats, fetchBridgeOutcomes, fetchBridgeTrustLeaderboard } from "./bridge-client.ts";
 
 // --- Row conversion ---
@@ -107,10 +105,55 @@ const NO_SERVICES: ServiceFlags = { algora: false, ao: false, bridge: false };
 // is far above any window; it exists only so an always-on tab stays bounded.
 export const MAX_SEEN_IDS_PER_ORIGIN = 1000;
 
-const POLL_INTERVAL_MS = 15_000;
-// Bounds a whole cycle. An in-flight guard alone would let one stuck request
-// block every later refresh, so the guard and this timeout have to ship together.
-const POLL_TIMEOUT_MS = 10_000;
+// --- Cadence ---
+//
+// Each read runs on its own schedule, sized to how often its data changes and
+// what it costs to fetch. They used to share one 15 s cycle, and the detail
+// views' reads were ~99% of its bytes — ~807 kB transferred and ~3.5 MB of JSON
+// decoded every 15 s, whether anyone was looking or not:
+//
+//   AO debates   470 kB gzip for ten debates, almost all of it
+//                `ideas_generated`, for a card that shows one topic and 100
+//                characters of context. Debates start about every six hours.
+//   AO plans     237 kB, read only as the list's length — the fetch cap, shown
+//                as a total. /ao-api/status already reports `plans_created`.
+//   AO ideas      92 kB, for belt bubbles. New ideas arrive in bursts, hours
+//                apart.
+//   Algora issues  read by nothing at all.
+//
+// AO sends no validators, so each AO read was a full download every time.
+// Algora's issues were cacheable (max-age=60 plus an ETag), so most polls were
+// answered by the HTTP cache or a 304, but nothing read them at all.
+// Plans and issues are no longer fetched (see types.ts); the rest are below.
+//
+// README.md / README.ko.md ("Reading the data correctly") state these figures.
+// Keep them in step.
+
+/** Reachability — each service's signals and stats, a few kB — is what the
+ *  LIVE badges and the Service I/O figures stand on, so it keeps the fast
+ *  cadence. The CentralMonitor strip shows it beside DETAIL_INTERVAL_MS and
+ *  DEBATE_INTERVAL_MS, the cadences of the belt views' detail reads. */
+export const POLL_INTERVAL_MS = 15_000;
+// Bounds a reachability read. An in-flight guard alone would let one stuck
+// request block every later refresh, so the guard and this timeout have to ship
+// together.
+export const POLL_TIMEOUT_MS = 10_000;
+/** AO ideas and the project total, Bridge outcomes and trust. */
+export const DETAIL_INTERVAL_MS = 5 * 60_000;
+/** AO debates, the largest rows there are. */
+export const DEBATE_INTERVAL_MS = 10 * 60_000;
+/** A detail read that failed tries again this soon, rather than leaving an
+ *  empty panel — or "AO debates unavailable" — up for a whole interval. A
+ *  success waits the full interval. */
+export const DETAIL_RETRY_MS = 60_000;
+/** Longer than reachability's, because these bodies are tens to hundreds of kB
+ *  and read rarely: a slow link gets the time to finish them instead of paying
+ *  for a download that is cut off and repeated. Each read has its own, so a
+ *  slow one can neither cut another short nor hold up the status chain. */
+export const DETAIL_TIMEOUT_MS = 30_000;
+/** How many debates the card rotates through. Each is ~220 kB, and `?limit=` is
+ *  the only size control AO honours. */
+export const DEBATE_LIMIT = 3;
 
 /** Reads the ServiceFlags out of a settled pollSignals/pollStats result. */
 function settledFlags(r: PromiseSettledResult<unknown>): ServiceFlags {
@@ -118,6 +161,17 @@ function settledFlags(r: PromiseSettledResult<unknown>): ServiceFlags {
         ? (r.value as ServiceFlags)
         : NO_SERVICES;
 }
+
+/** A service's own totals, each null when we do not have it. */
+export type AOTotals = { ideas: number | null; plans: number | null; projects: number | null };
+export type BridgeTotals = {
+    proposals: number | null;
+    /** null also when Bridge has recorded no proof yet — not 0%, which would
+     *  claim every recorded outcome failed. */
+    successRate: number | null;
+    signals: number | null;
+    issues: number | null;
+};
 
 // --- Data Bridge ---
 export class DataBridge {
@@ -129,10 +183,24 @@ export class DataBridge {
     private seenSignalIds: Record<UnifiedSignal["origin"], Set<string>> = {
         algora: new Set(), ao: new Set(), bridge: new Set(),
     };
-    private pollTimer: ReturnType<typeof setTimeout> | null = null;
-    private inFlight: AbortController | null = null;
+    /** Every read in flight, whichever schedule started it, so teardown can
+     *  cancel them all. */
+    private inFlight = new Set<AbortController>();
     private destroyed = false;
     private connState: ConnState = "connecting";
+
+    private readonly status = new PollChain(() => this.pollStatus(),
+        { everyMs: POLL_INTERVAL_MS, label: "data" });
+    private readonly details: readonly PollChain[] = [
+        new PollChain(() => this.pollIdeas(),
+            { everyMs: DETAIL_INTERVAL_MS, retryMs: DETAIL_RETRY_MS, label: "data" }),
+        new PollChain(() => this.pollProjectTotal(),
+            { everyMs: DETAIL_INTERVAL_MS, retryMs: DETAIL_RETRY_MS, label: "data" }),
+        new PollChain(() => this.pollBridgeGovernance(),
+            { everyMs: DETAIL_INTERVAL_MS, retryMs: DETAIL_RETRY_MS, label: "data" }),
+        new PollChain(() => this.pollDebates(),
+            { everyMs: DEBATE_INTERVAL_MS, retryMs: DETAIL_RETRY_MS, label: "data" }),
+    ];
 
     /** Per-service reachability, updated every poll. Lets the UI show AO as
      *  OFFLINE while Algora/Bridge stay LIVE, instead of one blanket status. */
@@ -147,68 +215,91 @@ export class DataBridge {
     ingested: Record<"algora" | "ao" | "bridge", number> = { algora: 0, ao: 0, bridge: 0 };
 
     liveStats: LiveStats = { algora: null, ao: null, bridge: null };
-    issueCache: AlgoraIssue[] = [];
     debateCache: AODebate[] = [];
     ideaCache: AOIdea[] = [];
-    planCache: AOPlan[] = [];
-    projectCache: AOProject[] = [];
     outcomeCache: BridgeOutcome[] = [];
     trustCache: BridgeTrustEntry[] = [];
+    /** AO's own counts from the list envelopes, null until one arrives with a
+     *  number in it. Not the lengths of the lists: those are our fetch sizes. */
+    private ideaTotal: number | null = null;
+    private projectTotal: number | null = null;
 
+    /**
+     * One full load, then every read keeps its own schedule.
+     *
+     * Reachability goes first, on its own. The detail reads are tens of times
+     * larger, and on a slow link sharing the bandwidth with them is what would
+     * hold up the first LIVE/OFFLINE verdict — the same reason they are never
+     * awaited before reachability is published.
+     *
+     * resume() does not keep this order: after a long hide, every read that
+     * fell due starts at once, reachability included. That is acceptable
+     * there. The previous verdict is still on screen rather than "connecting",
+     * and the verdict rests on the stats reads (a few hundred bytes each,
+     * OR'ed with the signal reads), which finish long before their timeout
+     * even when they share the link.
+     *
+     * This load runs to the end even if pause() lands while it is under way —
+     * a tab opened in the background — so there is something to show once
+     * the tab is. Only the schedules after it wait.
+     */
     async init(): Promise<ConnState> {
-        await this.tick();
+        await this.status.run();
+        await Promise.all(this.details.map(c => c.run()));
         return this.connState;
     }
 
-    /** Polls are chained, never scheduled on a fixed interval: a cycle slower
-     *  than the period would otherwise overlap the next one, and whichever
-     *  finished last would win — flipping LIVE back to OFFLINE and caches back
-     *  to older data. Chaining also means destroy() during the very first poll
-     *  cannot be undone by init() installing a timer afterwards. */
-    private scheduleNext(): void {
-        if (this.destroyed) return;
-        this.pollTimer = setTimeout(() => { void this.tick(); }, POLL_INTERVAL_MS);
+    /**
+     * Stops polling, for a tab nobody can see. Nothing new is scheduled; a
+     * read already in flight finishes and lands, since its answer is as
+     * current as any, but schedules nothing after it. The first load in
+     * init() is the exception: it runs to the end, detail reads included, so
+     * there is something to show, and only the schedules after it wait. The
+     * scene calls this on `visibilitychange`: this layer is DOM-free, and a
+     * hidden tab was downloading everything above around the clock.
+     */
+    pause(): void {
+        for (const c of this.chains()) c.pause();
     }
 
-    /** One cycle, then the next is armed whatever the cycle did. Nothing in a
-     *  cycle is meant to throw — every request settles on its own — but a throw
-     *  would otherwise skip the re-arm and end polling for the life of the tab,
-     *  leaving the last numbers on screen as if they were current. */
-    private async tick(): Promise<void> {
-        try {
-            await this.poll();
-        } catch (err) {
-            console.error("[data] a poll threw; the next one is still scheduled", err);
-        } finally {
-            this.scheduleNext();
-        }
+    /** Picks every schedule up again: a read that fell due while hidden runs at
+     *  once — reachability included, see init() — and the rest wait out the
+     *  time they had left. See PollChain.resume. */
+    resume(): void {
+        for (const c of this.chains()) c.resume();
+    }
+
+    private chains(): PollChain[] {
+        return [this.status, ...this.details];
     }
 
     connectionState(): ConnState { return this.connState; }
     queueSize(): number { return this.signalQueue.length; }
 
-    private async poll(): Promise<void> {
-        if (this.destroyed) return;
-
-        // One controller per cycle, aborted on timeout or teardown, so a hung
-        // upstream can neither stall the chain nor keep running after destroy().
+    /**
+     * One read, with a controller of its own that its timeout and teardown
+     * abort. So a hung upstream can neither stall a schedule nor keep running
+     * after destroy(), and a slow read cannot cut short one on another
+     * schedule.
+     */
+    private async withSignal<T>(timeoutMs: number, read: (signal: AbortSignal) => Promise<T>): Promise<T> {
         const ctrl = new AbortController();
-        this.inFlight = ctrl;
-        const timeout = setTimeout(() => ctrl.abort(), POLL_TIMEOUT_MS);
+        this.inFlight.add(ctrl);
+        const timeout = setTimeout(() => ctrl.abort(), timeoutMs);
         try {
-            await this.pollOnce(ctrl.signal);
+            return await read(ctrl.signal);
         } finally {
             clearTimeout(timeout);
-            if (this.inFlight === ctrl) this.inFlight = null;
+            this.inFlight.delete(ctrl);
         }
     }
 
-    private async pollOnce(signal: AbortSignal): Promise<void> {
-        // Reachability comes from signals+stats alone (a few KB). The bulk
-        // fetches below are an order of magnitude larger, so awaiting them
-        // before publishing status is what made a healthy board read OFFLINE
-        // for the whole loading window.
-        const status = await Promise.allSettled([this.pollSignals(signal), this.pollStats(signal)]);
+    /** Reachability. One signal across the six requests, so the timeout and
+     *  teardown cancel all of them. */
+    private async pollStatus(): Promise<void> {
+        if (this.destroyed) return;
+        const status = await this.withSignal(POLL_TIMEOUT_MS, signal =>
+            Promise.allSettled([this.pollSignals(signal), this.pollStats(signal)]));
         if (this.destroyed) return;
 
         const sig = settledFlags(status[0]);
@@ -221,15 +312,6 @@ export class DataBridge {
         this.connState = (this.serviceUp.algora || this.serviceUp.ao || this.serviceUp.bridge)
             ? "live"
             : "offline";
-
-        // Supporting detail: never gates the status above. Each of these keeps
-        // its own stale cache on failure, so there is nothing to collect here —
-        // awaiting them only keeps the cycle (and its abort signal) open until
-        // they finish.
-        await Promise.allSettled([
-            this.pollIssues(signal), this.pollDebates(signal),
-            this.pollAOPipeline(signal), this.pollBridgeGovernance(signal),
-        ]);
     }
 
     private async pollSignals(signal: AbortSignal): Promise<ServiceFlags> {
@@ -277,11 +359,6 @@ export class DataBridge {
         return { algora: a.status === "fulfilled", ao: ao.status === "fulfilled", bridge: b.status === "fulfilled" };
     }
 
-    private async pollIssues(signal: AbortSignal): Promise<void> { try { this.issueCache = await fetchAlgoraIssues(30, signal); } catch { /* stale */ } }
-    private async pollDebates(signal: AbortSignal): Promise<void> {
-        try { this.debateCache = await fetchAODebates(10, signal); this.debatesErrored = false; }
-        catch { this.debatesErrored = true; /* keep stale cache */ }
-    }
     private async pollStats(signal: AbortSignal): Promise<ServiceFlags> {
         const [a, ao, b] = await Promise.allSettled([fetchAlgoraStats(signal), fetchAOStatus(signal), fetchBridgeStats(signal)]);
         if (a.status === "fulfilled") this.liveStats.algora = a.value;
@@ -289,20 +366,56 @@ export class DataBridge {
         if (b.status === "fulfilled") this.liveStats.bridge = b.value;
         return { algora: a.status === "fulfilled", ao: ao.status === "fulfilled", bridge: b.status === "fulfilled" };
     }
-    private async pollAOPipeline(signal: AbortSignal): Promise<void> {
-        const [ideas, plans, projects] = await Promise.allSettled([fetchAOIdeas(30, signal), fetchAOPlans(20, signal), fetchAOProjects(20, signal)]);
-        if (ideas.status === "fulfilled") this.ideaCache = ideas.value;
-        if (plans.status === "fulfilled") this.planCache = plans.value;
-        if (projects.status === "fulfilled") this.projectCache = projects.value;
+
+    // Supporting detail for the belt views. None of it gates reachability, and
+    // each read keeps its previous answer when it fails — and an answer that
+    // arrives without its list counts as a failure (the clients throw), not as
+    // an empty success that would blank the panel for a whole interval. Each
+    // returns whether it succeeded, which is what decides between its retry
+    // and its interval.
+
+    /** A detail read with its own timeout. False when it threw — the stale
+     *  cache stays — or when it reports that part of it failed. */
+    private async detail(read: (signal: AbortSignal) => Promise<boolean | void>): Promise<boolean> {
+        if (this.destroyed) return true;
+        try {
+            return (await this.withSignal(DETAIL_TIMEOUT_MS, read)) !== false;
+        } catch {
+            return false;
+        }
     }
-    private async pollBridgeGovernance(signal: AbortSignal): Promise<void> {
+
+    private pollIdeas(): Promise<boolean> {
+        return this.detail(async signal => {
+            const { ideas, total } = await fetchAOIdeas(30, signal);
+            this.ideaCache = ideas;
+            this.ideaTotal = total;
+        });
+    }
+
+    private pollProjectTotal(): Promise<boolean> {
+        return this.detail(async signal => { this.projectTotal = await fetchAOProjectTotal(signal); });
+    }
+
+    private async pollDebates(): Promise<boolean> {
+        const ok = await this.detail(async signal => {
+            this.debateCache = await fetchAODebates(DEBATE_LIMIT, signal);
+        });
+        if (!this.destroyed) this.debatesErrored = !ok;
+        return ok;
+    }
+
+    private pollBridgeGovernance(): Promise<boolean> {
         // Bridge's proposal list is deliberately NOT fetched here: /bridge-api/proposals
         // returns the full collection (~3.3 MB, and the API ignores ?limit), and nothing
         // in the app reads it — the proposal figures shown in the sidebar come from
         // /bridge-api/stats instead. Re-adding it needs a server-side limit first.
-        const [outs, trust] = await Promise.allSettled([fetchBridgeOutcomes(20, signal), fetchBridgeTrustLeaderboard("agent", signal)]);
-        if (outs.status === "fulfilled") this.outcomeCache = outs.value;
-        if (trust.status === "fulfilled") this.trustCache = trust.value;
+        return this.detail(async signal => {
+            const [outs, trust] = await Promise.allSettled([fetchBridgeOutcomes(20, signal), fetchBridgeTrustLeaderboard("agent", signal)]);
+            if (outs.status === "fulfilled") this.outcomeCache = outs.value;
+            if (trust.status === "fulfilled") this.trustCache = trust.value;
+            return outs.status === "fulfilled" && trust.status === "fulfilled";
+        });
     }
 
     nextSignal(): UnifiedSignal | null { return this.signalQueue.shift() ?? null; }
@@ -311,18 +424,44 @@ export class DataBridge {
         if (this.debateCache.length === 0) return null;
         const d = this.debateCache[Math.floor(Math.random() * this.debateCache.length)];
         if (!d) return null;
-        const snippet = d.messages && d.messages.length > 0
-            ? d.messages.slice(0, 2).map(m => `${m.agent ?? "?"}: ${(m.content_ko ?? m.content ?? "").slice(0, 50)}`).join(" | ")
-            : (d.context ?? "").slice(0, 100);
-        const topic = (d.topic ?? "").slice(0, 70);
+        // The list carries no transcript, only `message_count`, so the snippet
+        // is the opening of the debate's context.
+        const topic = text(d.topic).slice(0, 70);
         if (!topic) return null;
-        return { topic, snippet };
+        return { topic, snippet: text(d.context).slice(0, 100) };
+    }
+
+    /**
+     * AO's totals for the funnel: Ideas and Plans as /ao-api/status reports
+     * them, Projects from the projects envelope. Never the length of a list we
+     * fetched — that is our fetch size (30 ideas), and it used to be shown as
+     * the total whenever the status body came without `stats`. The one
+     * fallback is AO's own again: the ideas envelope's `total`.
+     */
+    aoTotals(): AOTotals {
+        const s = this.liveStats.ao?.stats;
+        return {
+            ideas: finiteOrNull(s?.ideas_generated) ?? this.ideaTotal,
+            plans: finiteOrNull(s?.plans_created),
+            projects: this.projectTotal,
+        };
+    }
+
+    /** Bridge's totals from /bridge-api/stats, each null unless it is a number. */
+    bridgeTotals(): BridgeTotals {
+        const b = this.liveStats.bridge;
+        return {
+            proposals: finiteOrNull(b?.proposals?.total),
+            successRate: finiteOrNull(b?.outcomes?.successRate),
+            signals: finiteOrNull(b?.signals?.total),
+            issues: finiteOrNull(b?.issues?.total),
+        };
     }
 
     destroy(): void {
         this.destroyed = true;
-        if (this.pollTimer) { clearTimeout(this.pollTimer); this.pollTimer = null; }
-        this.inFlight?.abort();
-        this.inFlight = null;
+        for (const c of this.chains()) c.stop();
+        this.inFlight.forEach(ctrl => ctrl.abort());
+        this.inFlight.clear();
     }
 }

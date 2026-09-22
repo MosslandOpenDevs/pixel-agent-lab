@@ -97,3 +97,70 @@ describe("EcosystemFeed teardown", () => {
         error.mockRestore();
     });
 });
+
+/**
+ * A hidden tab. The scene pauses the feed on `visibilitychange`; before that,
+ * a background tab kept sweeping every service's health endpoint once a minute
+ * for a map nobody could see.
+ */
+describe("EcosystemFeed while hidden", () => {
+    let feed: EcosystemFeed;
+    const calls = () => [vi.mocked(fetchRegistry).mock.calls.length, vi.mocked(fetchEcosystemHealth).mock.calls.length];
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.resetAllMocks();
+        feed = new EcosystemFeed();
+        vi.mocked(fetchRegistry).mockResolvedValue([]);
+        vi.mocked(fetchEcosystemHealth).mockResolvedValue({ aggregate: null, own: null });
+    });
+
+    afterEach(() => {
+        feed.destroy();
+        vi.useRealTimers();
+    });
+
+    it("polls nothing while paused, and on resume runs at once whatever fell due", async () => {
+        await feed.init();
+        feed.pause();
+        await vi.advanceTimersByTimeAsync(30 * 60_000);
+        expect(calls()).toEqual([1, 1]);
+        expect(vi.getTimerCount()).toBe(0);
+
+        feed.resume();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(calls()).toEqual([2, 2]);             // both were overdue
+        expect(vi.getTimerCount()).toBe(2);           // and each is armed again, once
+    });
+
+    it("on resume, waits out the time a schedule had left", async () => {
+        await feed.init();
+        await vi.advanceTimersByTimeAsync(30_000);
+        feed.pause();
+        await vi.advanceTimersByTimeAsync(10_000);
+        feed.resume();                                // 40 s in: the sweep is due at 60 s
+        await vi.advanceTimersByTimeAsync(19_999);
+        expect(calls()).toEqual([1, 1]);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(calls()).toEqual([1, 2]);
+    });
+
+    it("never sends the first sweep ahead of the registry, however the tab flips during init", async () => {
+        // The sweep reads its targets from the registry. A resume() that
+        // started it on its own would sweep an empty list and leave the map
+        // claiming nothing is measured until the next minute.
+        let answer!: (services: never[]) => void;
+        vi.mocked(fetchRegistry).mockImplementationOnce(() => new Promise(r => { answer = r; }));
+        const init = feed.init();
+        feed.pause();
+        feed.resume();
+        feed.resume();
+        await vi.advanceTimersByTimeAsync(5 * 60_000);
+        expect(fetchEcosystemHealth).not.toHaveBeenCalled();
+
+        answer([]);
+        await init;
+        expect(calls()).toEqual([1, 1]);
+        expect(vi.getTimerCount()).toBe(2);
+    });
+});

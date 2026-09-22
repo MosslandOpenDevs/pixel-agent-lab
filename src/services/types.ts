@@ -16,6 +16,11 @@ export type AlgoraSignal = {
     created_at: string;
 };
 
+// Response shape of /algora-api/issues. Kept as the documented contract even
+// though nothing fetches it today: the list was polled every cycle into a cache
+// that nothing read. The sidebar's Open Issues figure comes from
+// /algora-api/stats instead, which is Algora's own count rather than the size
+// of a 30-item page.
 export type AlgoraIssue = {
     id: string;
     title: string;
@@ -57,13 +62,11 @@ export type AOSignal = {
     collected_at: string;
 };
 
-export type AODebateMessage = {
-    agent: string;
-    role: string;
-    content: string;
-    content_ko: string | null;
-};
-
+/** One row of /ao-api/debates, as the list returns it. The list carries no
+ *  transcript — `message_count` stands in for the messages, and the fields a
+ *  detail view would have (`messages`, `conclusion`) are not in it. Each row also
+ *  carries `ideas_generated` and `final_plan`, about 95% of its ~220 kB, which
+ *  nothing here reads and so are not declared. */
 export type AODebate = {
     id: string;
     idea_id: string | null;
@@ -71,10 +74,9 @@ export type AODebate = {
     context: string;
     status: string;
     phase: string;
-    messages: AODebateMessage[];
-    conclusion: string | null;
-    conclusion_ko: string | null;
-    created_at: string;
+    started_at: string;
+    completed_at: string | null;
+    message_count: number;
 };
 
 export type AOStatus = {
@@ -101,6 +103,11 @@ export type AOIdea = {
     created_at: string;
 };
 
+// Response shape of /ao-api/plans. Kept as the documented contract even though
+// nothing fetches it today: 20 plans are ~237 kB gzip, almost all of it
+// `final_plan` text, and the only thing ever read from them was the list's
+// length — our fetch cap, shown as if it were a total. AO's own count is
+// `stats.plans_created` in /ao-api/status.
 export type AOPlan = {
     id: string;
     idea_id: string;
@@ -112,6 +119,8 @@ export type AOPlan = {
     created_at: string;
 };
 
+// Response rows of /ao-api/projects. Only the envelope's `total` is read (see
+// fetchAOProjectTotal); the rows are kept here as the documented contract.
 export type AOProject = {
     id: string;
     plan_id: string;

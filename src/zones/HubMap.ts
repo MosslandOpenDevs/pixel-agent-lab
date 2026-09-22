@@ -100,11 +100,14 @@ type Body = {
  * ~2000px on a phone. No amount of spacing in world coordinates fixes that;
  * only ordering does.
  */
-const D = 200;
+export const HUB_DEPTH = 200;
+const D = HUB_DEPTH;
 
 const MAX_MOTES = 48;
 const MAX_SPAWN_PER_TICK = 6;
 const STAR_COUNT = 520;
+/** Half the side of a square with the area of a unit circle: √π / 2. */
+const STAR_HALF_SIDE = Math.sqrt(Math.PI) / 2;
 
 /** Cursor influence: wide and soft, like the reference field. */
 const PULL_RADIUS = 260;
@@ -168,7 +171,9 @@ export class HubMap {
      *
      * Selecting by depth rather than keeping a list means dynamically created
      * bodies and motes are covered automatically. Nothing else in the scene uses
-     * this band — the belt zones top out around 12, the header sits at 100.
+     * this band — the belt zones stay far below it (their highest objects sit
+     * at ~30), the header sits at 100. SpaceHubScene hides the belt Graphics by
+     * the same boundary, HUB_DEPTH, from the other side.
      */
     setMapVisible(visible: boolean): void {
         this.mapVisible = visible;
@@ -590,8 +595,14 @@ export class HubMap {
                     x += (px - this.cx) * k;
                     y += (py - this.cy) * k;
                 }
+                // A square of the circle's area, not a circle. Phaser turns
+                // every arc into ~100 points and triangulates it again on each
+                // render, whatever its radius, so 520 stars of 1–4 px were the
+                // costliest thing this map drew. At that size the two look the
+                // same, and matching the area keeps each star's brightness.
+                const h = s.size * STAR_HALF_SIDE;
                 g.fillStyle(s.tint, s.alpha);
-                g.fillCircle(x, y, s.size);
+                g.fillRect(x - h, y - h, 2 * h, 2 * h);
             }
         }
         const og = this.orbitGfx;

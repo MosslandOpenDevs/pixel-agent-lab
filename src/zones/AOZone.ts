@@ -12,6 +12,21 @@ const BELT_H = 40;
 const BELT_LEFT = ZONE_X + 20;
 const BELT_RIGHT = ZONE_X + ZONE_W - 20;
 
+// The scores at which an idea becomes a plan, then a project, and where along
+// the belt each threshold sits. The marker lines, their labels, the point where
+// a bubble is promoted and a bubble's colour all read these, so they cannot
+// drift apart. README.md / README.ko.md state the two scores; keep them in step.
+const PLAN_SCORE = 7;
+const PROJECT_SCORE = 8;
+const PLAN_AT = 0.55;
+const PROJECT_AT = 0.8;
+/** A point along the belt, as a fraction of its length. */
+const beltX = (frac: number): number => BELT_LEFT + (BELT_RIGHT - BELT_LEFT) * frac;
+
+/** Placeholder for a figure we do not have, as in the sidebar. */
+const NA = "\u2014";
+const figure = (n: number | null): string => (n === null ? NA : String(n));
+
 // How long one debate stays on the card before another is picked.
 const DEBATE_ROTATE_MS = 5_000;
 
@@ -44,10 +59,6 @@ export class AOZone {
     private divergeRing: Array<{ x: number; y: number }> = [];
     private convergeRing: Array<{ x: number; y: number }> = [];
     private planRing: Array<{ x: number; y: number }> = [];
-
-    totalIdeas = 0;
-    totalPlans = 0;
-    totalProjects = 0;
 
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
@@ -120,13 +131,10 @@ export class AOZone {
     }
 
     private createBeltLabels(): void {
-        const threshX7 = BELT_LEFT + (BELT_RIGHT - BELT_LEFT) * 0.55;
-        const threshX8 = BELT_LEFT + (BELT_RIGHT - BELT_LEFT) * 0.8;
-
-        this.scene.add.text(threshX7, BELT_Y - 13, "score\u22657\u2192Plan", {
+        this.scene.add.text(beltX(PLAN_AT), BELT_Y - 13, `score\u2265${PLAN_SCORE}\u2192Plan`, {
             fontFamily: "monospace", fontSize: "8px", color: "#fcd34dcc",
         }).setDepth(12);
-        this.scene.add.text(threshX8, BELT_Y - 13, "\u22658\u2192Project", {
+        this.scene.add.text(beltX(PROJECT_AT), BELT_Y - 13, `\u2265${PROJECT_SCORE}\u2192Project`, {
             fontFamily: "monospace", fontSize: "8px", color: "#4ade80cc",
         }).setDepth(12);
 
@@ -140,7 +148,7 @@ export class AOZone {
 
     private createFunnel(): void {
         this.funnelText = this.scene.add.text(ZONE_X + ZONE_W / 2, ZONE_Y + ZONE_H - 35,
-            "Ideas: 0 \u2192 Plans: 0 \u2192 Projects: 0", {
+            `Ideas: ${NA} \u2192 Plans: ${NA} \u2192 Projects: ${NA}`, {
                 fontFamily: "monospace", fontSize: "10px", color: "#fcd34d",
                 backgroundColor: "#0b1226ee", padding: { x: 8, y: 4 },
             }).setOrigin(0.5).setDepth(12);
@@ -182,11 +190,6 @@ export class AOZone {
             }
         }
 
-        // counts from real data
-        this.totalIdeas = dataBridge.ideaCache.length;
-        this.totalPlans = dataBridge.planCache.length;
-        this.totalProjects = dataBridge.projectCache.length;
-
         // spawn idea bubbles on belt
         if (this.spawnTimer > 2800 && this.bubbles.filter(b => b.phase !== "done").length < 8) {
             // Only ever spawn a bubble for an idea that actually came back from
@@ -209,19 +212,18 @@ export class AOZone {
         }
 
         // move bubbles along belt (left->right)
-        const beltLen = BELT_RIGHT - BELT_LEFT;
-        const threshX7 = BELT_LEFT + beltLen * 0.55;
-        const threshX8 = BELT_LEFT + beltLen * 0.8;
+        const planX = beltX(PLAN_AT);
+        const projectX = beltX(PROJECT_AT);
 
         for (const b of this.bubbles) {
             if (b.phase === "belt") {
                 b.x += dt * 0.04;
 
                 // transform at score thresholds
-                if (b.x >= threshX7 && b.score >= 7) {
+                if (b.x >= planX && b.score >= PLAN_SCORE) {
                     b.sprite.setTexture("plan-doc");
                     b.sprite.setDisplaySize(18, 16);
-                    if (b.score >= 8 && b.x >= threshX8) {
+                    if (b.score >= PROJECT_SCORE && b.x >= projectX) {
                         b.sprite.setTexture("project-box");
                         b.sprite.setDisplaySize(20, 18);
                         b.phase = "promoted";
@@ -229,7 +231,7 @@ export class AOZone {
                 }
 
                 // low-score items fade after passing threshold zone
-                if (b.x >= threshX7 && b.score < 7) {
+                if (b.x >= planX && b.score < PLAN_SCORE) {
                     b.phase = "fading";
                 }
 
@@ -263,20 +265,18 @@ export class AOZone {
         });
 
         // funnel
-        // Guard `stats`, not just the envelope: /ao-api/status can answer 200
-        // with a degraded body that omits `stats`, and this runs every frame —
+        // AO's own totals, or a dash for one we do not have — never the length
+        // of a list we fetched, which is our fetch size, not AO's count. That is
+        // the sidebar's rule, and this line used to break it: Projects was the
+        // length of a 20-item page, and whenever /ao-api/status answered without
+        // `stats` all three figures became fetch caps labelled as totals.
+        // aoTotals() also guards that degraded body: this runs every frame, and
         // an unguarded deref would throw on each update and stop the Bridge and
         // CentralMonitor updates that follow it in SpaceHubScene.
-        const ls = dataBridge.liveStats.ao;
-        if (ls?.stats) {
-            this.funnelText?.setText(
-                `Ideas: ${ls.stats.ideas_generated} \u2192 Plans: ${ls.stats.plans_created} \u2192 Projects: ${this.totalProjects}`
-            );
-        } else {
-            this.funnelText?.setText(
-                `Ideas: ${this.totalIdeas} \u2192 Plans: ${this.totalPlans} \u2192 Projects: ${this.totalProjects}`
-            );
-        }
+        const t = dataBridge.aoTotals();
+        this.funnelText?.setText(
+            `Ideas: ${figure(t.ideas)} \u2192 Plans: ${figure(t.plans)} \u2192 Projects: ${figure(t.projects)}`
+        );
 
         this.drawGraphics();
         this.drawBelt();
@@ -289,7 +289,7 @@ export class AOZone {
             .setDepth(20).setDisplaySize(16, 16);
         const safeScore = Number.isFinite(score) ? score : 0;
         const scoreStr = safeScore.toFixed(1);
-        const color = safeScore >= 8 ? "#22c55e" : safeScore >= 7 ? "#fbbf24" : "#94a3b8";
+        const color = safeScore >= PROJECT_SCORE ? "#22c55e" : safeScore >= PLAN_SCORE ? "#fbbf24" : "#94a3b8";
         const label = this.scene.add.text(x, y - 16, `${scoreStr} ${title.slice(0, 15)}`, {
             fontFamily: "monospace", fontSize: "7px", color,
             backgroundColor: "#0f172aee", padding: { x: 2, y: 1 },
@@ -325,13 +325,12 @@ export class AOZone {
         }
 
         // threshold markers
-        const beltLen = BELT_RIGHT - BELT_LEFT;
-        const t7x = BELT_LEFT + beltLen * 0.55;
-        const t8x = BELT_LEFT + beltLen * 0.8;
+        const planX = beltX(PLAN_AT);
+        const projectX = beltX(PROJECT_AT);
         this.beltG.lineStyle(1, 0xfbbf24, 0.4);
-        this.beltG.lineBetween(t7x, BELT_Y + 2, t7x, BELT_Y + BELT_H - 2);
+        this.beltG.lineBetween(planX, BELT_Y + 2, planX, BELT_Y + BELT_H - 2);
         this.beltG.lineStyle(1, 0x22c55e, 0.35);
-        this.beltG.lineBetween(t8x, BELT_Y + 2, t8x, BELT_Y + BELT_H - 2);
+        this.beltG.lineBetween(projectX, BELT_Y + 2, projectX, BELT_Y + BELT_H - 2);
     }
 
     private drawGraphics(): void {

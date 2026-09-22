@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DataBridge, MAX_SEEN_IDS_PER_ORIGIN } from "../src/services/data-bridge.ts";
+import {
+    DataBridge, MAX_SEEN_IDS_PER_ORIGIN, POLL_INTERVAL_MS, POLL_TIMEOUT_MS, DETAIL_INTERVAL_MS,
+    DEBATE_INTERVAL_MS, DETAIL_RETRY_MS, DETAIL_TIMEOUT_MS, DEBATE_LIMIT,
+} from "../src/services/data-bridge.ts";
 import type { UnifiedSignal } from "../src/services/types.ts";
 
 /** Rejects the way real fetch does: at once if already aborted, else on abort. */
@@ -69,14 +72,14 @@ describe("DataBridge signal identity", () => {
 
         // Draining the animation queue must not replay the same signals at
         // the next refresh, even though their ids collide across services.
-        await vi.advanceTimersByTimeAsync(15_000);
+        await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
         expect(bridge.queueSize()).toBe(0);
         expect(bridge.ingested).toEqual({ algora: 1, ao: 1, bridge: 1 });
     });
 });
 
 /**
- * The connection state machine and the poll chain.
+ * The connection state machine and the poll schedules.
  *
  * These are what the LIVE / OFFLINE / Connecting line and the sidebar's
  * numbers stand on, and each assertion is a bug that has already shipped once:
@@ -88,18 +91,22 @@ describe("DataBridge lifecycle", () => {
     let calls: Call[];
     let t0: number;
 
-    /** Status requests answer after `statusMs`; the bulk ones never do. */
-    function serve(statusMs: number, answer: (url: string) => Response = defaultAnswer): void {
+    /** Status requests answer after `statusMs`, detail requests after
+     *  `detailMs`; `null` never answers (until aborted). */
+    function serve(statusMs: number | null, detailMs: number | null = null, answer: (url: string) => Response = defaultAnswer): void {
         vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
             const signal = init?.signal ?? undefined;
             calls.push({ url, at: Date.now() - t0, signal });
-            return isStatusRequest(url) ? after(statusMs, signal, () => answer(url)) : hangUntilAborted(signal);
+            const ms = isStatusRequest(url) ? statusMs : detailMs;
+            return ms === null ? hangUntilAborted(signal) : after(ms, signal, () => answer(url));
         }));
     }
 
     function defaultAnswer(url: string): Response {
         return url.includes("/signals?") ? Response.json({ signals: [] }) : Response.json(STATS[url] ?? {});
     }
+
+    const startsOf = (prefix: string) => calls.filter(c => c.url.startsWith(prefix)).map(c => c.at);
 
     beforeEach(() => {
         vi.useFakeTimers();
@@ -126,16 +133,18 @@ describe("DataBridge lifecycle", () => {
         await vi.advanceTimersByTimeAsync(1);
         expect(bridge.connectionState()).toBe("live");
 
-        await vi.advanceTimersByTimeAsync(2_000);
+        // init() is the first full load, so it waits out the detail reads,
+        // which here never answer and are cut off at their own timeout.
+        await vi.advanceTimersByTimeAsync(DETAIL_TIMEOUT_MS);
         await expect(init).resolves.toBe("live");
     });
 
-    it("publishes reachability while the bulk fetches are still loading", async () => {
+    it("publishes reachability while the detail reads are still loading", async () => {
         serve(1_000);
         void bridge.init();
         await vi.advanceTimersByTimeAsync(1_000);
 
-        // Every bulk request is still hanging here; the badge must not wait.
+        // Every detail request is still hanging here; the badge must not wait.
         expect(calls.some(c => !isStatusRequest(c.url))).toBe(true);
         expect(bridge.connectionState()).toBe("live");
         expect(bridge.serviceUp).toEqual({ algora: true, ao: true, bridge: true });
@@ -159,7 +168,7 @@ describe("DataBridge lifecycle", () => {
             { algora: false, ao: false, bridge: false }, "offline",
         ],
     ])("counts a service reachable from %s", async (_, answer, up, state) => {
-        serve(0, answer);
+        serve(0, 0, answer);
         void bridge.init();
         await vi.advanceTimersByTimeAsync(0);
 
@@ -167,26 +176,51 @@ describe("DataBridge lifecycle", () => {
         expect(bridge.connectionState()).toBe(state);
     });
 
-    it("chains polls 15 s after each cycle ends, with each cycle capped at 10 s", async () => {
-        // Status takes 8 s and the bulk fetches never finish, so every cycle
-        // runs into the 10 s cap: polls start at 0, 10+15 and 35+15. A fixed
-        // 15 s interval would put the third at 40 s, and no cap at all would
-        // never start a second.
-        serve(8_000);
+    it("chains reachability reads 15 s after each one ends, each capped at 10 s", async () => {
+        // Status never answers, so every read runs into its 10 s cap: they
+        // start at 0, 10+15 and 35+15. A fixed 15 s interval would put the
+        // third at 30 s, and no cap at all would never start a second.
+        serve(null, 0);
         void bridge.init();
         await vi.advanceTimersByTimeAsync(60_000);
 
-        const starts = calls.filter(c => c.url.startsWith("/algora-api/signals?")).map(c => c.at);
-        expect(starts).toEqual([0, 25_000, 50_000]);
+        expect(startsOf("/algora-api/signals?")).toEqual([0, 25_000, 50_000]);
+    });
+
+    it("never lets a slow detail read hold up reachability, or a slow reachability read cut one short", async () => {
+        // Detail reads take 20 s: twice the reachability cap, inside their
+        // own. They used to share one 10 s budget with reachability, so a
+        // slow link lost them every cycle — and held the next status read
+        // back until they gave up.
+        serve(1_000, 20_000, url => url.startsWith("/ao-api/ideas?")
+            ? Response.json({ ideas: [{ id: "i-1", title: "An idea", score: 7.5 }], total: 4402 })
+            : defaultAnswer(url));
+        void bridge.init();
+        await vi.advanceTimersByTimeAsync(60_000);
+
+        expect(startsOf("/algora-api/signals?")).toEqual([0, 16_000, 32_000, 48_000]);
+        expect(bridge.ideaCache.map(i => i.id)).toEqual(["i-1"]);
+
+        // And the other way round: status hangs to its cap, detail reads land.
+        bridge.destroy();
+        bridge = new DataBridge();
+        calls = [];
+        t0 = Date.now();
+        serve(null, 12_000, url => url.startsWith("/ao-api/projects?")
+            ? Response.json({ projects: [{}], total: 5 }) : defaultAnswer(url));
+        void bridge.init();
+        await vi.advanceTimersByTimeAsync(POLL_TIMEOUT_MS + 12_000);
+        expect(bridge.aoTotals().projects).toBe(5);
     });
 
     it("shares one signal across the status requests, and destroy() there aborts it and schedules nothing", async () => {
         // Status is still outstanding at 1 s, so only the status requests
-        // have been made; the bulk phase is the next case.
+        // have been made; the detail reads are the next case.
         serve(8_000);
         const init = bridge.init();
         await vi.advanceTimersByTimeAsync(1_000);
 
+        expect(calls.every(c => isStatusRequest(c.url))).toBe(true);
         const signals = new Set(calls.map(c => c.signal));
         expect(signals.size).toBe(1);
 
@@ -200,27 +234,335 @@ describe("DataBridge lifecycle", () => {
         expect(calls.length).toBe(before);
     });
 
-    it("carries the cycle's signal into the bulk fetches, and destroy() there aborts them and schedules nothing", async () => {
-        // Status settles at 1 s, so by 2 s the bulk requests are in flight
+    it("gives each detail read a signal of its own, and destroy() aborts every one and schedules nothing", async () => {
+        // Status settles at 1 s, so by 2 s the detail reads are in flight
         // (and, as served, never finish on their own).
         serve(1_000);
         const init = bridge.init();
         await vi.advanceTimersByTimeAsync(2_000);
 
-        const bulk = calls.filter(c => !isStatusRequest(c.url));
-        expect(bulk.length).toBeGreaterThan(0);
-        expect(new Set(calls.map(c => c.signal)).size).toBe(1);
+        const detail = calls.filter(c => !isStatusRequest(c.url));
+        const statusSignal = calls.find(c => isStatusRequest(c.url))?.signal;
+        expect(detail.length).toBeGreaterThan(0);
+        expect(detail.some(c => c.signal === statusSignal)).toBe(false);
+        // ideas, the project total, debates, and Bridge's outcomes + trust as one
+        expect(new Set(detail.map(c => c.signal)).size).toBe(4);
 
         bridge.destroy();
-        // Checked before awaiting init: a bulk request destroy() cannot abort
+        // Checked before awaiting init: a request destroy() cannot abort
         // would keep init pending forever under fake timers.
-        expect(bulk.every(c => c.signal?.aborted)).toBe(true);
+        expect(detail.every(c => c.signal?.aborted)).toBe(true);
         await init;
         expect(vi.getTimerCount()).toBe(0);
 
         const before = calls.length;
-        await vi.advanceTimersByTimeAsync(60_000);
+        await vi.advanceTimersByTimeAsync(60 * 60_000);
         expect(calls.length).toBe(before);
+    });
+});
+
+/**
+ * What is fetched, and how often. The detail reads used to ride the 15 s
+ * reachability cycle, and were ~99% of its ~807 kB: ten full AO debates, AO's
+ * plans (read only as a count), its ideas, and Algora's issues (read by
+ * nothing, though mostly answered from the HTTP cache). Each assertion here is
+ * a request a tab left open was making for nothing it showed.
+ */
+describe("DataBridge cadence", () => {
+    let bridge: DataBridge;
+    let calls: Call[];
+    let t0: number;
+    let fail: (url: string) => boolean;
+
+    /** Answers every request at once — or, for `status`, after that long. */
+    function serve(statusMs = 0): void {
+        vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+            const signal = init?.signal ?? undefined;
+            calls.push({ url, at: Date.now() - t0, signal });
+            const answer = (): Response => {
+                if (fail(url)) return new Response("", { status: 502 });
+                if (url.includes("/signals?")) return Response.json({ signals: [] });
+                if (url.startsWith("/ao-api/debates?")) return Response.json({ debates: [{ id: "d-1", topic: "A debate", context: "Some context" }] });
+                if (url.startsWith("/ao-api/ideas?")) return Response.json({ ideas: [], total: 4402 });
+                if (url.startsWith("/ao-api/projects?")) return Response.json({ projects: [{}], total: 5 });
+                // Bridge's detail lists, empty as they are live: an answer
+                // without its list is a failed read, and would be retried.
+                if (url.startsWith("/bridge-api/outcomes")) return Response.json({ outcomes: [], count: 0 });
+                if (url.startsWith("/bridge-api/trust/")) return Response.json({ leaderboard: [] });
+                return Response.json(STATS[url] ?? {});
+            };
+            return isStatusRequest(url) && statusMs > 0 ? after(statusMs, signal, answer) : Promise.resolve(answer());
+        }));
+    }
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+        t0 = Date.now();
+        calls = [];
+        fail = () => false;
+        bridge = new DataBridge();
+        serve();
+    });
+
+    afterEach(() => {
+        bridge.destroy();
+        vi.unstubAllGlobals();
+        vi.useRealTimers();
+    });
+
+    const startsOf = (prefix: string) => calls.filter(c => c.url.startsWith(prefix)).map(c => c.at / 1000);
+    const paths = () => new Set(calls.map(c => c.url));
+
+    it("runs each read on its own cadence, and never fetches the issue or plan lists", async () => {
+        await bridge.init();
+        await vi.advanceTimersByTimeAsync(21 * 60_000);
+
+        const every = (ms: number) => Array.from({ length: Math.floor(21 * 60_000 / ms) + 1 }, (_, i) => i * ms / 1000);
+        for (const p of ["/algora-api/signals?", "/ao-api/status", "/bridge-api/stats"]) {
+            expect(startsOf(p)).toEqual(every(POLL_INTERVAL_MS));
+        }
+        for (const p of ["/ao-api/ideas?", "/ao-api/projects?", "/bridge-api/outcomes", "/bridge-api/trust/"]) {
+            expect(startsOf(p)).toEqual(every(DETAIL_INTERVAL_MS));
+        }
+        expect(startsOf("/ao-api/debates?")).toEqual(every(DEBATE_INTERVAL_MS));
+
+        // README.md / README.ko.md state these.
+        expect([POLL_INTERVAL_MS, DETAIL_INTERVAL_MS, DEBATE_INTERVAL_MS]).toEqual([15_000, 5 * 60_000, 10 * 60_000]);
+        expect([POLL_TIMEOUT_MS, DETAIL_TIMEOUT_MS, DETAIL_RETRY_MS]).toEqual([10_000, 30_000, 60_000]);
+        expect([...paths()].filter(u => /\/issues|\/plans/.test(u))).toEqual([]);
+        // Only what is shown: three debates to rotate through, one project row
+        // (AO refuses zero) for its envelope's total.
+        expect(DEBATE_LIMIT).toBe(3);
+        expect(paths()).toContain(`/ao-api/debates?limit=${DEBATE_LIMIT}`);
+        expect(paths()).toContain("/ao-api/projects?limit=1");
+    });
+
+    it("retries a failed detail read after a minute, and waits its full interval once it succeeds", async () => {
+        let debateTries = 0;
+        fail = url => url.startsWith("/ao-api/debates?") && ++debateTries <= 2;
+        await bridge.init();
+        expect(bridge.debatesErrored).toBe(true);
+        expect(bridge.getRandomDebate()).toBeNull();
+
+        await vi.advanceTimersByTimeAsync(2 * DETAIL_RETRY_MS);
+        expect(bridge.debatesErrored).toBe(false);
+        expect(bridge.getRandomDebate()).toEqual({ topic: "A debate", snippet: "Some context" });
+
+        await vi.advanceTimersByTimeAsync(DEBATE_INTERVAL_MS);
+        expect(startsOf("/ao-api/debates?")).toEqual([0, 60, 120, 120 + DEBATE_INTERVAL_MS / 1000]);
+        // A read that succeeded is not dragged along by one that failed.
+        expect(startsOf("/ao-api/ideas?")).toEqual([0, 300, 600]);
+
+        // A later failure keeps what the last success brought.
+        fail = url => url.startsWith("/ao-api/debates?");
+        await vi.advanceTimersByTimeAsync(DEBATE_INTERVAL_MS);
+        expect(bridge.debatesErrored).toBe(true);
+        expect(bridge.getRandomDebate()?.topic).toBe("A debate");
+    });
+
+    it("treats a 200 answer without its list as a failed read, not an empty one", async () => {
+        // An upstream bug, a proxy fault or a renamed field can answer 200
+        // with no list in it. Read as an empty list, that emptied a good
+        // cache, counted as a success, and so held an empty panel — the card
+        // saying it was still loading — for the whole 5 or 10 minutes.
+        vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+            calls.push({ url, at: Date.now() - t0 });
+            if (url.includes("/signals?")) return Response.json({ signals: [] });
+            if (url.startsWith("/ao-api/debates?")) return Response.json({ debates: [{ id: "d-1", topic: "A debate", context: "Some context" }] });
+            if (url.startsWith("/ao-api/ideas?")) return Response.json({ ideas: [{ id: "i-1", title: "An idea", score: 7.5 }], total: 99 });
+            if (url.startsWith("/bridge-api/outcomes")) return Response.json({ outcomes: [{ id: "o-1" }], count: 1 });
+            if (url.startsWith("/bridge-api/trust/")) return Response.json({ leaderboard: [{ entityId: "a-1", entityType: "agent", score: 0.9 }] });
+            if (url.startsWith("/ao-api/projects?")) return Response.json({ projects: [{}], total: 5 });
+            // No `stats`, so the funnel's Ideas figure is the ideas envelope's.
+            if (url === "/ao-api/status") return Response.json({ status: "operational" });
+            return Response.json(STATS[url] ?? {});
+        }));
+        await bridge.init();
+        expect(bridge.aoTotals().ideas).toBe(99);
+
+        calls = [];
+        t0 = Date.now();
+        vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+            calls.push({ url, at: Date.now() - t0 });
+            if (url.includes("/signals?")) return Response.json({ signals: [] });
+            if (/^\/(ao-api\/(debates|ideas)|bridge-api\/(outcomes|trust))/.test(url)) return Response.json({ detail: "db unavailable" });
+            if (url.startsWith("/ao-api/projects?")) return Response.json({ projects: [{}], total: 5 });
+            if (url === "/ao-api/status") return Response.json({ status: "operational" });
+            return Response.json(STATS[url] ?? {});
+        }));
+        await vi.advanceTimersByTimeAsync(DEBATE_INTERVAL_MS);
+
+        // Every cache keeps the last real answer, and the card says the read
+        // failed rather than that it is still loading.
+        expect(bridge.getRandomDebate()?.topic).toBe("A debate");
+        expect(bridge.debatesErrored).toBe(true);
+        expect(bridge.ideaCache.map(i => i.id)).toEqual(["i-1"]);
+        expect(bridge.aoTotals().ideas).toBe(99);
+        expect(bridge.outcomeCache).toHaveLength(1);
+        expect(bridge.trustCache).toHaveLength(1);
+        // And each is retried on the failure cadence, not left for an interval.
+        expect(startsOf("/ao-api/ideas?")).toEqual([300, 360, 420, 480, 540, 600]);
+        expect(startsOf("/ao-api/debates?")).toEqual([600]);
+        await vi.advanceTimersByTimeAsync(DETAIL_RETRY_MS);
+        expect(startsOf("/ao-api/debates?")).toEqual([600, 660]);
+        // A read that did succeed is not dragged onto the retry cadence.
+        expect(startsOf("/ao-api/projects?")).toEqual([300, 600]);
+    });
+
+    it("pauses every schedule while hidden, and on resume runs at once whatever fell due", async () => {
+        await bridge.init();
+        await vi.advanceTimersByTimeAsync(20_000);          // status also ran at 15 s
+        bridge.pause();
+        const before = calls.length;
+        await vi.advanceTimersByTimeAsync(30 * 60_000);
+        expect(calls.length).toBe(before);
+        expect(vi.getTimerCount()).toBe(0);
+
+        bridge.resume();
+        await vi.advanceTimersByTimeAsync(0);
+        const resumed = calls.slice(before).map(c => c.url.replace(/\?.*/, ""));
+        expect([...resumed].sort()).toEqual([
+            "/algora-api/signals", "/algora-api/stats", "/ao-api/debates", "/ao-api/ideas",
+            "/ao-api/projects", "/ao-api/signals", "/ao-api/status", "/bridge-api/outcomes",
+            "/bridge-api/signals", "/bridge-api/stats", "/bridge-api/trust/leaderboard/agent",
+        ]);
+    });
+
+    it("on resume, waits out the remaining time of a read that had not fallen due", async () => {
+        await bridge.init();
+        await vi.advanceTimersByTimeAsync(5_000);
+        bridge.pause();
+        await vi.advanceTimersByTimeAsync(5_000);
+        bridge.resume();                                    // 10 s in: status due at 15 s
+        await vi.advanceTimersByTimeAsync(4_999);
+        expect(startsOf("/ao-api/status")).toEqual([0]);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(startsOf("/ao-api/status")).toEqual([0, 15]);
+        await vi.advanceTimersByTimeAsync(DETAIL_INTERVAL_MS - 15_000);
+        expect(startsOf("/ao-api/ideas?")).toEqual([0, 300]);
+    });
+
+    it("keeps a single chain when the tab is hidden and shown during a read", async () => {
+        // Reachability takes 4 s here, so reads start every 19 s. The hide and
+        // show land inside the second read. Resuming by starting a poll of its
+        // own would leave the old read re-arming beside it: from then on two
+        // chains, double the traffic, and the older answer able to land last.
+        serve(4_000);
+        void bridge.init();
+        await vi.advanceTimersByTimeAsync(20_000);
+        bridge.pause();
+        await vi.advanceTimersByTimeAsync(1_000);
+        bridge.resume();
+        await vi.advanceTimersByTimeAsync(100_000 - 21_000);
+
+        expect(startsOf("/ao-api/status")).toEqual([0, 19, 38, 57, 76, 95]);
+    });
+
+    it("runs its first load in a tab hidden from the start, then waits to be shown", async () => {
+        // The scene pauses straight after init() when the page opens hidden.
+        const init = bridge.init();
+        bridge.pause();
+        await init;
+        const loaded = calls.length;
+        expect(loaded).toBe(11);
+        await vi.advanceTimersByTimeAsync(60 * 60_000);
+        expect(calls.length).toBe(loaded);
+
+        bridge.resume();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(calls.length).toBe(2 * loaded);
+    });
+
+    it("does nothing on resume() after destroy()", async () => {
+        await bridge.init();
+        bridge.pause();
+        bridge.destroy();
+        bridge.resume();
+        const before = calls.length;
+        await vi.advanceTimersByTimeAsync(60 * 60_000);
+        expect(calls.length).toBe(before);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+});
+
+/**
+ * The detail views' figures. The rule is the sidebar's: a service's own total,
+ * or nothing — never the length of a list we fetched, which is our fetch size.
+ * The AO funnel used to print a 20-item page's length as Projects, and when
+ * /ao-api/status answered without `stats`, the 30/20 fetch caps as Ideas and
+ * Plans; Bridge's gauges printed a missing total as 0.
+ */
+describe("DataBridge totals", () => {
+    let bridge: DataBridge;
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+        bridge = new DataBridge();
+    });
+
+    afterEach(() => {
+        bridge.destroy();
+        vi.unstubAllGlobals();
+        vi.useRealTimers();
+    });
+
+    /** Answers each prefix with its body (`null`: a 502); the rest with `{}`. */
+    function serveBodies(bodies: Record<string, unknown>): void {
+        vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+            const key = Object.keys(bodies).find(k => url.startsWith(k));
+            if (key) return bodies[key] === null ? new Response("", { status: 502 }) : Response.json(bodies[key]);
+            return Response.json(url.includes("/signals?") ? { signals: [] } : {});
+        }));
+    }
+
+    const thirtyIdeas = Array.from({ length: 30 }, (_, i) => ({ id: `i-${i}`, title: `Idea ${i}`, score: 7 }));
+
+    it("shows AO's own totals, not the lengths of the lists behind them", async () => {
+        serveBodies({
+            "/ao-api/status": STATS["/ao-api/status"],
+            "/ao-api/ideas?": { ideas: thirtyIdeas, total: 4402 },
+            "/ao-api/projects?": { projects: [{ id: "p-1" }], total: 25 },
+        });
+        await bridge.init();
+
+        expect(bridge.aoTotals()).toEqual({ ideas: 4402, plans: 80, projects: 25 });
+        expect(bridge.ideaCache).toHaveLength(30);          // the belt still gets its bubbles
+    });
+
+    it("falls back to AO's own ideas count when the status body has no stats, and to nothing otherwise", async () => {
+        serveBodies({
+            "/ao-api/status": { status: "degraded" },
+            "/ao-api/ideas?": { ideas: thirtyIdeas, total: 4402 },
+            "/ao-api/projects?": { projects: [{ id: "p-1" }] },
+        });
+        await bridge.init();
+
+        // Not 30, the fetch size; and no Plans figure rather than a page
+        // length, since the plan list is no longer fetched at all.
+        expect(bridge.aoTotals()).toEqual({ ideas: 4402, plans: null, projects: null });
+    });
+
+    it("has no figure before an answer, for one that is not a number, or for a read that failed", async () => {
+        expect(bridge.aoTotals()).toEqual({ ideas: null, plans: null, projects: null });
+        expect(bridge.bridgeTotals()).toEqual({ proposals: null, successRate: null, signals: null, issues: null });
+
+        serveBodies({
+            "/ao-api/status": { stats: { ideas_generated: "4402", plans_created: Number.NaN } },
+            "/ao-api/ideas?": { ideas: thirtyIdeas, total: "4402" },
+            "/ao-api/projects?": null,
+            "/bridge-api/stats": { signals: { total: "835170" }, issues: {}, proposals: { total: null }, outcomes: { successRate: null } },
+        });
+        await bridge.init();
+
+        expect(bridge.aoTotals()).toEqual({ ideas: null, plans: null, projects: null });
+        expect(bridge.bridgeTotals()).toEqual({ proposals: null, successRate: null, signals: null, issues: null });
+    });
+
+    it("reads Bridge's totals from its stats", async () => {
+        serveBodies({ "/bridge-api/stats": STATS["/bridge-api/stats"] });
+        await bridge.init();
+        // successRate stays null — no proof yet — rather than reading as 0%.
+        expect(bridge.bridgeTotals()).toEqual({ proposals: 21, successRate: null, signals: 835170, issues: 753 });
     });
 });
 
@@ -410,7 +752,7 @@ describe("DataBridge dedupe memory", () => {
         await bridge.init();
         drain(bridge);
         for (poll = 1; poll < n; poll++) {
-            await vi.advanceTimersByTimeAsync(15_000);
+            await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
             drain(bridge);
         }
     }
@@ -484,17 +826,18 @@ describe("DataBridge poll chain", () => {
         vi.useFakeTimers();
         const error = vi.spyOn(console, "error").mockImplementation(() => {});
         serveSignals(() => []);
-        const pollOnce = vi.spyOn(
-            DataBridge.prototype as unknown as { pollOnce(signal: AbortSignal): Promise<void> }, "pollOnce",
+        const pollStatus = vi.spyOn(
+            DataBridge.prototype as unknown as { pollStatus(): Promise<void> }, "pollStatus",
         ).mockRejectedValueOnce(new Error("boom"));
         const bridge = new DataBridge();
 
         await expect(bridge.init()).resolves.toBe("connecting");
         expect(error).toHaveBeenCalled();
-        expect(vi.getTimerCount()).toBe(1);
+        // Reachability and the four detail reads, each armed.
+        expect(vi.getTimerCount()).toBe(5);
 
-        await vi.advanceTimersByTimeAsync(15_000);
-        expect(pollOnce).toHaveBeenCalledTimes(2);
+        await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+        expect(pollStatus).toHaveBeenCalledTimes(2);
         expect(bridge.connectionState()).toBe("live");
         bridge.destroy();
     });

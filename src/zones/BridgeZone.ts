@@ -28,6 +28,9 @@ const AGENTS = [
     { name: "Moderator", color: 0xa855f7 },
 ];
 
+/** Placeholder for a figure we do not have, as in the sidebar. */
+const NA = "\u2014";
+
 type ProposalItem = {
     sprite: Phaser.GameObjects.Image;
     label: Phaser.GameObjects.Text;
@@ -150,7 +153,7 @@ export class BridgeZone {
         const gaugePad = mobile ? { x: 6, y: 3 } : { x: 8, y: 6 };
         gaugeNames.forEach((name, i) => {
             const x = gaugeX0 + i * gaugeGap;
-            const label = this.scene.add.text(x, gaugeY, `${name}\n--`, {
+            const label = this.scene.add.text(x, gaugeY, `${name}\n${NA}`, {
                 fontFamily: "monospace", fontSize: "10px", color: gaugeColors[i],
                 backgroundColor: "#0a162866", padding: gaugePad,
                 align: "center",
@@ -219,15 +222,16 @@ export class BridgeZone {
             const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
             this.trustLabels[0]?.setText(`Agent Trust\n${avgScore.toFixed(1)}`);
         } else {
-            this.trustLabels[0]?.setText("Agent Trust\n\u2014");
+            this.trustLabels[0]?.setText(`Agent Trust\n${NA}`);
         }
-        const bs = dataBridge.liveStats.bridge;
-        if (bs) {
-            this.trustLabels[1]?.setText(`Proposals\n${bs.proposals?.total ?? 0}`);
-            // null means no proof recorded yet; 0% would claim every outcome failed.
-            const sr = bs.outcomes?.successRate;
-            this.trustLabels[2]?.setText(`Success Rate\n${typeof sr === "number" ? sr + "%" : "\u2014"}`);
-        }
+        // Bridge's own totals, or a dash for one it did not send as a number —
+        // the sidebar's rule. `?? 0` here used to print a missing total as a
+        // measured zero. The last answer stays up when a later request fails,
+        // as everywhere in the detail views.
+        const bt = dataBridge.bridgeTotals();
+        this.trustLabels[1]?.setText(`Proposals\n${bt.proposals ?? NA}`);
+        // null means no proof recorded yet; 0% would claim every outcome failed.
+        this.trustLabels[2]?.setText(`Success Rate\n${bt.successRate !== null ? bt.successRate + "%" : NA}`);
 
         // outcome log
         const outcomes = dataBridge.outcomeCache;
@@ -237,8 +241,7 @@ export class BridgeZone {
             ).join("\n");
             this.outcomeLog?.setText(`Recent Outcomes:\n${logText}`);
         } else {
-            const issueCount = bs?.issues?.total ?? 0;
-            this.outcomeLog?.setText(`Signals: ${(bs?.signals?.total ?? 0).toLocaleString()} | Issues: ${issueCount} | Awaiting proposals...`);
+            this.outcomeLog?.setText(`Signals: ${bt.signals?.toLocaleString() ?? NA} | Issues: ${bt.issues ?? NA} | Awaiting proposals...`);
         }
 
         this.drawGraphics();

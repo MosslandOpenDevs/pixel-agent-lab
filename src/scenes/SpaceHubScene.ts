@@ -6,7 +6,7 @@ import { BridgeZone } from "../zones/BridgeZone.ts";
 import { CentralMonitor } from "../zones/CentralMonitor.ts";
 import { DataBridge } from "../services/data-bridge.ts";
 import { EcosystemFeed } from "../services/ecosystem-feed.ts";
-import { HubMap } from "../zones/HubMap.ts";
+import { HubMap, HUB_DEPTH } from "../zones/HubMap.ts";
 import { setConnectionStatus, updateSidebar, updateEcosystem } from "../ui/Sidebar.ts";
 
 const W = 1440;
@@ -48,6 +48,7 @@ export class SpaceHubScene extends Phaser.Scene {
     private currentZone: ZoneKey = "hub";
     private zoneSwitchHandler?: EventListener;
     private resizeHandler?: () => void;
+    private visibilityHandler?: () => void;
 
     constructor() {
         super("SpaceHubScene");
@@ -110,6 +111,29 @@ export class SpaceHubScene extends Phaser.Scene {
 
         this.switchZone("hub", false);
 
+        // Polling stops while the tab is hidden, and picks up when it is shown:
+        // whatever fell due in the meantime is fetched at once, the rest waits
+        // out its remaining time. A background tab used to keep every schedule
+        // running around the clock for a page nobody could see. Phaser's own
+        // visibility handling does not help here — it pauses the game loop,
+        // and polling runs on timers of its own. The services take explicit
+        // calls because they are DOM-free; this scene owns the document
+        // listeners.
+        this.visibilityHandler = () => {
+            if (document.hidden) {
+                this.dataBridge.pause();
+                this.ecosystem.pause();
+            } else {
+                this.dataBridge.resume();
+                this.ecosystem.resume();
+            }
+        };
+        document.addEventListener("visibilitychange", this.visibilityHandler);
+        // A tab opened in the background starts hidden, and no event says so.
+        // Its first load still runs, so there is something to show; it is the
+        // schedules after it that wait.
+        if (document.hidden) this.visibilityHandler();
+
         // Tear down listeners + polling when the scene stops (HMR / restart).
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.teardown());
         this.events.once(Phaser.Scenes.Events.DESTROY, () => this.teardown());
@@ -118,6 +142,7 @@ export class SpaceHubScene extends Phaser.Scene {
     private teardown(): void {
         if (this.zoneSwitchHandler) document.removeEventListener("zone-switch", this.zoneSwitchHandler);
         if (this.resizeHandler) this.scale.off("resize", this.resizeHandler);
+        if (this.visibilityHandler) document.removeEventListener("visibilitychange", this.visibilityHandler);
         this.dataBridge?.destroy();
         this.ecosystem?.destroy();
         this.hubMap?.destroy();
@@ -158,6 +183,7 @@ export class SpaceHubScene extends Phaser.Scene {
         // The map HUD is a DOM overlay pinned over the stage, so it has to be
         // hidden when the camera is showing a belt zone instead.
         this.hubMap?.setHudVisible(zone === "hub");
+        this.setBeltGraphicsVisible(zone !== "hub");
 
         if (animate) {
             // force = true: without it a click landing inside the previous 300ms
@@ -168,6 +194,34 @@ export class SpaceHubScene extends Phaser.Scene {
         } else {
             cam.centerOn(cx, cy);
             cam.setZoom(zoom);
+        }
+    }
+
+    /**
+     * Shows or hides the belt zones' Graphics — the zone frames, belts, rings
+     * and the CentralMonitor strip.
+     *
+     * Phaser rebuilds a Graphics' triangles from scratch on every render, arcs
+     * at ~100 points each whatever their radius, and it culls nothing by
+     * bounds. On the map those belts lie under the hub's opaque backdrop and
+     * outside the camera, yet they were tessellated every frame — over a third
+     * of the map's frame time, for nothing on screen. Hidden, they are skipped
+     * at render.
+     *
+     * Only on the map. The belt cameras overlap their neighbours — the Bridge
+     * view shows the lower halves of Algora and AO, and on a phone the Algora
+     * view contains all of Bridge — so in a belt view every zone stays drawn.
+     * Their update() keeps running regardless: AlgoraZone's drains the signal
+     * queue, and each keeps rebuilding its commands, so a Graphics is current
+     * the moment it is shown.
+     *
+     * Selected by depth, the mirror of HubMap.setMapVisible: everything below
+     * the hub's band (HUB_DEPTH, the same constant it selects by) belongs to
+     * the belt zones.
+     */
+    private setBeltGraphicsVisible(visible: boolean): void {
+        for (const o of this.children.list) {
+            if (o instanceof Phaser.GameObjects.Graphics && o.depth < HUB_DEPTH) o.setVisible(visible);
         }
     }
 
