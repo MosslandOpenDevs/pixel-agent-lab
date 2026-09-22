@@ -3,7 +3,8 @@ import { esc } from "./html.ts";
 import { ageText, clockTime } from "./ecosystem-status.ts";
 
 /**
- * The Space Hub map's hover card, as markup.
+ * The Space Hub map's hover card — on a touch screen, the card a first tap
+ * pins to a body (see map-selection.ts) — as markup.
  *
  * It lives here rather than in HubMap because HubMap imports Phaser, which
  * cannot load where the tests run, and this is the map's one innerHTML sink
@@ -14,7 +15,7 @@ import { ageText, clockTime } from "./ecosystem-status.ts";
  */
 export function hubTooltipHtml(
     node: EcosystemNode,
-    opts: { isSelf: boolean; archived: boolean; freshness?: HealthFreshness | null; now?: number },
+    opts: { isSelf: boolean; archived: boolean; freshness?: HealthFreshness | null; now?: number; touch?: boolean },
 ): string {
     const { service: sv, health, instrumentation, kind } = node;
     // The class comes from a fixed set, never from the status string itself:
@@ -40,10 +41,17 @@ export function hubTooltipHtml(
             ? `<div class="m stale">stale — last reading ${clockTime(f.checkedAt)}, ${ageText((opts.now ?? Date.now()) - f.checkedAt)}</div>`
             : `<div class="m dim">checked ${clockTime(f.checkedAt)} · ${ageText((opts.now ?? Date.now()) - f.checkedAt)}${f.state === "refreshing" ? " · refreshing…" : ""}</div>`
         : "";
-    const action = opts.isSelf ? "you are here — click to recentre"
-        : instrumentation === "stream" ? "click to open its belt"
-            : kind === "artifact" ? "click to open the file"
-                : "click to open the service";
+    // What the next click — or, on a touch screen, the next tap on this same
+    // body — does. Our own star opens nothing: the viewer is already here,
+    // and the camera is already where it would go (see HubMap.activate). A
+    // file and a link are not services, and the line above says so, so this
+    // one does not call them one: each gets its own words.
+    const verb = opts.touch ? "tap again" : "click";
+    const action = opts.isSelf ? "you are here — this monitor"
+        : instrumentation === "stream" ? `${verb} to open its belt`
+            : kind === "artifact" ? `${verb} to open the file`
+                : kind === "link" ? `${verb} to open the link`
+                    : `${verb} to open the service`;
     return `<div class="t">${esc(sv.name)}</div>`
         + `<div class="m">${esc(sv.lifecycle ?? "lifecycle unspecified")} · ${esc(kind === "service" ? instrumentation : kind)}</div>`
         + `<div class="m">${measured}</div>`

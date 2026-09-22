@@ -32,6 +32,7 @@ beforeEach(() => {
         querySelector: (sel: string) => (els[sel] ??= el()),
         getElementById: (id: string) => (els[`#${id}`] ??= el()),
         querySelectorAll: () => [],
+        addEventListener() {},
         dispatchEvent() {},
     });
     initSidebar();
@@ -284,10 +285,50 @@ describe("updateEcosystem", () => {
         updateEcosystem(feedOf(ecosystem));
         const html = eco();
         const rowOf = (name: string) => html.match(new RegExp(`<a [^>]*>(?:(?!</a>).)*${name}(?:(?!</a>).)*</a>`))?.[0] ?? "";
-        expect(rowOf("Signal Map")).toContain('<span class="eco-chip down">down</span>');
-        expect(rowOf("Passport")).toContain('<span class="eco-chip degraded">degraded</span>');
-        expect(rowOf("Algora")).toContain('<span class="eco-chip offcontract">off-contract</span>');
+        // Hidden from screen readers only: they hear the verdict in the
+        // row's reading (below), and would otherwise hear it twice.
+        expect(rowOf("Signal Map")).toContain('<span class="eco-chip down" aria-hidden="true">down</span>');
+        expect(rowOf("Passport")).toContain('<span class="eco-chip degraded" aria-hidden="true">degraded</span>');
+        expect(rowOf("Algora")).toContain('<span class="eco-chip offcontract" aria-hidden="true">off-contract</span>');
         for (const quiet of ["Mossland", "Recipe", "Upbit", "llms.txt"]) expect(rowOf(quiet)).not.toContain("eco-chip");
+    });
+
+    it("puts every row's reading in its link's name, which is where the map sends a screen reader", () => {
+        // A title on an empty span is not part of a link's name: a screen
+        // reader heard "Signal Map beta" whatever the row said.
+        updateEcosystem(feedOf([
+            ...ecosystem,
+            node("city", { service: "city", status: "ok", latencyMs: 51 }, { name: "City" }),
+        ]));
+        const html = eco();
+        const heard = (name: string) =>
+            html.match(new RegExp(`<span class="eco-name">${name}</span><span class="sr-only">([^<]*)</span>`))?.[1];
+        expect(heard("City")).toBe(", health ok · 51ms,");
+        expect(heard("Signal Map")).toBe(", health down,");
+        // Off-contract is read as what it said, untranslated — never "ok".
+        expect(heard("Algora")).toBe(", health running — not one of ok/degraded/down,");
+        expect(heard("Recipe")).toBe(", not health-checked,");
+        expect(heard("llms.txt")).toBe(", a published file, not a service,");
+        expect(heard("Upbit")).toBe(", an external destination,");
+        // The same words as the dot's title, which a pointer still gets.
+        expect(html).toContain('class="eco-dot ok" title="ok · 51ms"');
+    });
+
+    it("says a reading is stale in the link's name, where the dimmed list says it only to the eye", () => {
+        updateEcosystem(feedOf(
+            [node("city", { service: "city", status: "ok", latencyMs: 51 }, { name: "City" }), node("recipe", null, { name: "Recipe" })],
+            { state: "stale", checkedAt: CHECKED, sweeping: false, settled: true },
+        ));
+        expect(eco()).toContain('<span class="sr-only">, health ok · 51ms, stale,</span>');
+        // No reading, nothing to be stale.
+        expect(eco()).toContain('<span class="sr-only">, not health-checked,</span>');
+    });
+
+    it("escapes what it reads out as it escapes the title", () => {
+        updateEcosystem(feedOf([node("wa", { service: "wa", status: '<b>"running"</b>' }, { name: "WA" })]));
+        const html = eco();
+        expect(html).not.toContain('<b>"running"');
+        expect(html).toContain('<span class="sr-only">, health &lt;b&gt;&quot;running&quot;&lt;/b&gt; — not one of ok/degraded/down,</span>');
     });
 
     it("dates a stale tally instead of presenting it as current", () => {

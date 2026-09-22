@@ -1,5 +1,7 @@
 import Phaser from "phaser";
 import type { DataBridge } from "../services/data-bridge.ts";
+import { trustAverage } from "../ui/belt-card.ts";
+import { reducedMotion } from "../ui/motion.ts";
 
 const ZONE_X = 10;
 const ZONE_Y = 488;
@@ -169,11 +171,15 @@ export class BridgeZone {
     }
 
     update(dt: number, dataBridge: DataBridge): void {
+        // With reduced motion (read live) the ambient loops stop — treads, the
+        // bots' animation and the loader's hop, the pulsing agent rings — and
+        // each proposal is drawn at its stage rather than sliding between.
+        const still = reducedMotion();
         this.spawnTimer += dt;
-        this.beltOffset += dt * 0.035;
+        if (!still) this.beltOffset += dt * 0.035;
 
         // animate bots
-        const frame = Math.floor(this.scene.time.now / 500) % 2;
+        const frame = still ? 0 : Math.floor(this.scene.time.now / 500) % 2;
         this.agentSprites.forEach(s => s.setTexture(`bridge-bot-${frame}`));
         this.bot.setTexture(`bridge-bot-${frame}`);
 
@@ -181,9 +187,11 @@ export class BridgeZone {
         if (this.spawnTimer > 3200 && this.items.length < 4) {
             this.spawnItem();
             this.spawnTimer = 0;
-            this.scene.tweens.add({
-                targets: this.bot, y: BELT_Y - 6, duration: 180, yoyo: true,
-            });
+            if (!still) {
+                this.scene.tweens.add({
+                    targets: this.bot, y: BELT_Y - 6, duration: 180, yoyo: true,
+                });
+            }
         }
 
         // advance items along horizontal belt (left->right)
@@ -204,26 +212,20 @@ export class BridgeZone {
                 continue;
             }
 
-            const x = BELT_LEFT + item.stageIdx * stageWidth + item.progress * stageWidth + stageWidth / 2;
+            const x = BELT_LEFT + item.stageIdx * stageWidth + (still ? 0 : item.progress * stageWidth) + stageWidth / 2;
             item.sprite.setPosition(x, BELT_Y + BELT_H / 2);
             item.label.setPosition(x, BELT_Y + BELT_H / 2 - 16);
         }
 
         this.items = this.items.filter(i => i.stageIdx < L_STAGES.length);
 
-        // update trust data (migrated from FeedbackArc)
-        const scores = dataBridge.trustCache
-            .map(t => t.score)
-            .filter(n => typeof n === "number" && isFinite(n));
+        // update trust data (migrated from FeedbackArc). The phone's belt
+        // card shows the same average (ui/belt-card.ts), from the same helper.
         // /bridge-api/trust/leaderboard currently returns an empty list for every
         // entity type, so this has to render "no data" rather than hold whatever
         // text the label was created with.
-        if (scores.length > 0) {
-            const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
-            this.trustLabels[0]?.setText(`Agent Trust\n${avgScore.toFixed(1)}`);
-        } else {
-            this.trustLabels[0]?.setText(`Agent Trust\n${NA}`);
-        }
+        const avgScore = trustAverage(dataBridge.trustCache);
+        this.trustLabels[0]?.setText(`Agent Trust\n${avgScore !== null ? avgScore.toFixed(1) : NA}`);
         // Bridge's own totals, or a dash for one it did not send as a number —
         // the sidebar's rule. `?? 0` here used to print a missing total as a
         // measured zero. The last answer stays up when a later request fails,
@@ -244,7 +246,7 @@ export class BridgeZone {
             this.outcomeLog?.setText(`Signals: ${bt.signals?.toLocaleString() ?? NA} | Issues: ${bt.issues ?? NA} | Awaiting proposals...`);
         }
 
-        this.drawGraphics();
+        this.drawGraphics(still);
         this.drawBelt();
     }
 
@@ -303,7 +305,7 @@ export class BridgeZone {
         this.beltG.fillRoundedRect(voteX + 48, BELT_Y + BELT_H + 4, 35, 12, 3);
     }
 
-    private drawGraphics(): void {
+    private drawGraphics(still: boolean): void {
         this.g.clear();
 
         // zone background
@@ -324,8 +326,9 @@ export class BridgeZone {
         AGENTS.forEach((agent, i) => {
             const x = ZONE_X + 55 + i * 80;
             const y = ZONE_Y + 62;
+            // Decorative: no agent reports being busy. Steady with motion reduced.
             const active = Math.sin(now * 0.002 + i * 1.2) > 0;
-            this.g.lineStyle(2, agent.color, active ? 0.6 : 0.15);
+            this.g.lineStyle(2, agent.color, still ? 0.4 : active ? 0.6 : 0.15);
             this.g.strokeCircle(x, y, 18);
         });
 

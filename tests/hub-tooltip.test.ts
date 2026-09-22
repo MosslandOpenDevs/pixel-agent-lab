@@ -54,8 +54,31 @@ describe("hubTooltipHtml", () => {
 
     it("says so when the body is this monitor, or archived", () => {
         const html = hubTooltipHtml(node({}, null), { isSelf: true, archived: true });
-        expect(html).toContain("you are here — click to recentre");
+        expect(html).toContain("you are here — this monitor");
         expect(html).toContain("archived — preserved read-only");
+        // It used to promise a recentre, which moved nothing: the map view is
+        // already framed on the hub, and nothing else moves the camera.
+        expect(html).not.toContain("recentre");
+    });
+
+    it("tells a tap what the next tap on the same body does, and a mouse what a click does", () => {
+        const stream = { ...node({}, null), instrumentation: "stream" as const };
+        const file = node({}, null, "artifact");
+        const svc = node({}, null);
+        const touch = { ...plain, touch: true };
+        expect(hubTooltipHtml(stream, touch)).toContain('<div class="a">tap again to open its belt</div>');
+        expect(hubTooltipHtml(file, touch)).toContain('<div class="a">tap again to open the file</div>');
+        expect(hubTooltipHtml(svc, touch)).toContain('<div class="a">tap again to open the service</div>');
+        // The mouse's words are unchanged.
+        expect(hubTooltipHtml(stream, plain)).toContain('<div class="a">click to open its belt</div>');
+        expect(hubTooltipHtml(svc, plain)).toContain('<div class="a">click to open the service</div>');
+        // The monitor's own star opens nothing, whichever way it is reached.
+        expect(hubTooltipHtml(svc, { ...touch, isSelf: true })).toContain('<div class="a">you are here — this monitor</div>');
+        // A link is a destination, not a service — the line above it says so.
+        const link = node({}, null, "link");
+        expect(hubTooltipHtml(link, touch)).toContain('<div class="a">tap again to open the link</div>');
+        expect(hubTooltipHtml(link, plain)).toContain('<div class="a">click to open the link</div>');
+        expect(hubTooltipHtml(link, plain)).not.toContain("the service");
     });
 
     it("dates a reading by the sweep clock, never by the service's own timestamp", () => {

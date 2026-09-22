@@ -33,6 +33,18 @@ const game = new Phaser.Game({
         : { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
 });
 
+// The canvas has no text of its own, and was exposed as an unnamed image.
+// #stageNote, which the tabpanel (#stage) takes as its description, is its
+// text alternative: it says where every body can be reached from the
+// keyboard. Hidden from screen readers only — pointer and touch are
+// untouched, and the canvas takes no focus. Phaser boots at once when the
+// document is already parsed, as it is for this module script; otherwise
+// the canvas arrives with BOOT, and an optional chain alone would have
+// dropped the attribute silently.
+const hideCanvas = () => game.canvas.setAttribute("aria-hidden", "true");
+if (game.canvas) hideCanvas();
+else game.events.once(Phaser.Core.Events.BOOT, hideCanvas);
+
 /**
  * Keep one bad frame from killing the page.
  *

@@ -9,6 +9,9 @@ import { EcosystemFeed } from "../services/ecosystem-feed.ts";
 import { HubMap, HUB_DEPTH } from "../zones/HubMap.ts";
 import { setConnectionStatus, updateSidebar, updateEcosystem } from "../ui/Sidebar.ts";
 import { documentTitle, tallyServices } from "../ui/ecosystem-status.ts";
+import { BeltCard, beltCardHtml, type BeltCardInput } from "../ui/belt-card.ts";
+import { reducedMotion } from "../ui/motion.ts";
+import { syncZoneTabs } from "../ui/zone-tabs.ts";
 
 const W = 1440;
 const H = 760;
@@ -32,6 +35,15 @@ const MAP_H = 760;
 // the rectangle's unused width.
 const HUB_DIAMETER = 880;
 
+/** On a phone a belt view is framed at the top of the screen, this far down —
+ *  clear of the ☰ button — so its text card fits underneath. */
+const PHONE_BELT_TOP = 56;
+/** The least of the screen that card is left, and the tab bar under it with
+ *  its gap (the stylesheet's 58px). A landscape phone is too short for the
+ *  zone at full width and a card as well, so there the zone gives way. */
+const PHONE_CARD_MIN = 160;
+const PHONE_TAB_BAR = 58;
+
 const ZONE_VIEWS: Record<ZoneKey, { x: number; y: number; w: number; h: number }> = {
     hub:     { x: 0,   y: MAP_Y, w: W,   h: MAP_H },
     algora:  { x: 0,   y: 30,  w: 640, h: 410 },
@@ -50,6 +62,8 @@ export class SpaceHubScene extends Phaser.Scene {
     private ecosystem!: EcosystemFeed;
     private sidebarTimer = 0;
     private hubMap!: HubMap;
+    /** Phones only: the belt views' text, which their canvas cannot show there. */
+    private beltCard?: BeltCard;
     private currentZone: ZoneKey = "hub";
     private zoneSwitchHandler?: EventListener;
     private resizeHandler?: () => void;
@@ -81,6 +95,9 @@ export class SpaceHubScene extends Phaser.Scene {
         this.centralMonitor = new CentralMonitor(this);
         this.hubMap = new HubMap(this, W / 2, MAP_Y + MAP_H / 2, W, MAP_H);
         this.hubMap.onOpenZone = zone => this.switchZone(zone as ZoneKey, true);
+        // Below the 768px breakpoint, which reloads the app when crossed.
+        const stage = document.getElementById("stage");
+        if (window.innerWidth < 768 && stage) this.beltCard = new BeltCard(stage);
 
         this.algoraZone.create();
         this.aoZone.create();
@@ -111,8 +128,12 @@ export class SpaceHubScene extends Phaser.Scene {
         }) as EventListener;
         document.addEventListener("zone-switch", this.zoneSwitchHandler);
 
+        // A phone's camera is the window, so every resize reframes it. On the
+        // desktop layouts the canvas is scaled as a whole, and only the map
+        // view depends on the window: how far it sits from the legend, whose
+        // size is fixed in CSS px (HubMap.viewShift).
         this.resizeHandler = () => {
-            if (window.innerWidth < 768) this.switchZone(this.currentZone, false);
+            if (window.innerWidth < 768 || this.currentZone === "hub") this.switchZone(this.currentZone, false);
         };
         this.scale.on("resize", this.resizeHandler);
 
@@ -210,16 +231,14 @@ export class SpaceHubScene extends Phaser.Scene {
         this.dataBridge?.destroy();
         this.ecosystem?.destroy();
         this.hubMap?.destroy();
+        this.beltCard?.destroy();
     }
 
     private switchZone(zone: ZoneKey, animate: boolean): void {
         this.currentZone = zone;
-        // The map can navigate too, so reflect it in the tab bar.
-        document.querySelectorAll<HTMLButtonElement>(".zone-tab").forEach(b => {
-            const active = b.dataset.zone === zone;
-            b.classList.toggle("active", active);
-            b.setAttribute("aria-selected", String(active));
-        });
+        // The map can navigate too, so reflect it in the tab bar — selection,
+        // the roving tabindex, and the stage's label as the tabpanel.
+        syncZoneTabs(zone);
         // Bridge stacks Trust & Outcomes under its left belt on phones. Fit
         // that compact layout, otherwise the empty desktop column halves its
         // size and makes the mobile labels unreadable.
@@ -233,21 +252,41 @@ export class SpaceHubScene extends Phaser.Scene {
         // "circles in the middle and nothing else" report. The hub is radial, so
         // fit its diameter to the camera's smaller axis and let the wide, empty
         // sides crop instead.
+        const room = this.beltCard ? cam.height - PHONE_BELT_TOP - PHONE_CARD_MIN - PHONE_TAB_BAR : cam.height;
         const zoom = zone === "hub"
             ? (Math.min(cam.width, cam.height) / HUB_DIAMETER) * 0.96
-            : Math.min(cam.width / v.w, cam.height / v.h) * 0.9;
-        const cx = v.x + v.w / 2;
-        const cy = v.y + v.h / 2;
+            : Math.min(cam.width / v.w, Math.max(room, 80) / v.h) * 0.9;
+        let cx = v.x + v.w / 2;
+        let cy = v.y + v.h / 2;
 
         // Honor reduced-motion: jump the camera instead of animating the pan/zoom.
-        if (animate && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-            animate = false;
-        }
+        // Read live, like everything else that moves (ui/motion.ts).
+        if (animate && reducedMotion()) animate = false;
 
         // The map HUD is a DOM overlay pinned over the stage, so it has to be
         // hidden when the camera is showing a belt zone instead.
         this.hubMap?.setHudVisible(zone === "hub");
         this.setBeltGraphicsVisible(zone !== "hub");
+
+        // Where the legend is shown, the map sits right of it rather than
+        // under it; measured after the HUD is shown, at the zoom about to be
+        // used. The camera moves left, so the hub moves right.
+        if (zone === "hub") cx -= this.hubMap?.viewShift(zoom) ?? 0;
+
+        // On a phone a belt zone is fitted to the width, which leaves most of
+        // a portrait screen empty and its canvas text far too small to read.
+        // So the zone goes to the top of the screen and its text goes in a
+        // card below it (ui/belt-card.ts).
+        if (this.beltCard) {
+            let cardTop = 0;
+            if (zone !== "hub") {
+                const zoneTop = PHONE_BELT_TOP;
+                cy += (cam.height / 2 - (zoneTop + (v.h * zoom) / 2)) / zoom;
+                cardTop = zoneTop + v.h * zoom + 8;
+            }
+            this.beltCard.show(zone === "hub" ? null : zone, cardTop);
+            this.refreshBeltCard();
+        }
 
         if (animate) {
             // force = true: without it a click landing inside the previous 300ms
@@ -304,7 +343,31 @@ export class SpaceHubScene extends Phaser.Scene {
             this.sidebarTimer = 0;
             updateSidebar(this.dataBridge);
             this.refreshEcosystem();
+            this.refreshBeltCard();
         }
+    }
+
+    /**
+     * The phone's belt card, for the belt on screen. Writes only what
+     * changed. Each card carries its service's LIVE / OFFLINE / CONNECTING
+     * state, as the sidebar's Service I/O card does: on a phone that card is
+     * in a closed drawer, and nothing else on a belt view says it.
+     */
+    private refreshBeltCard(): void {
+        const zone = this.beltCard?.shownZone;
+        if (!this.beltCard || !zone || !this.dataBridge) return;
+        const d = this.dataBridge;
+        const state = (s: "algora" | "ao" | "bridge") => ({ conn: d.connectionState(), up: d.serviceUp[s] });
+        if (zone === "algora") {
+            this.beltCard.updateAlgora(this.algoraZone.beltItems(), state("algora"));
+            return;
+        }
+        const input: BeltCardInput = zone === "ao" ? {
+            zone, state: state("ao"), debates: d.debateCache, debatesErrored: d.debatesErrored,
+            ideas: d.ideaCache, projects: d.aoTotals().projects,
+        }
+            : { zone: "bridge", state: state("bridge"), trust: d.trustCache, outcomes: d.outcomeCache };
+        this.beltCard.update(beltCardHtml(input));
     }
 
     private drawSpaceBackground(): void {
