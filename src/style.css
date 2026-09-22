@@ -209,10 +209,11 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
         animation: none;
     }
     .panel,
-    .panel-backdrop,
-    .zone-tab {
+    .panel-backdrop {
         transition: none;
     }
+    /* .zone-tab is not here: it declares its own transition further down, at
+       the same specificity, so this would lose. See the block below. */
 }
 
 /* --- Mobile toggle & overlay (hidden on desktop) --- */
@@ -443,8 +444,13 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 }
 /* The reduced-motion rule near the top of this file is written before the
    rules above, which set their own transitions with the same specificity and
-   so won: the drawer still slid, and the backdrop still faded. */
-@media (max-width: 767px) and (prefers-reduced-motion: reduce) {
+   so won: the drawer still slid, and the backdrop still faded. This block is
+   after all of them, so it wins instead.
+   Not scoped to phones: `.zone-tab` sets a transition outside any breakpoint
+   too, so a phone-only fix left the tab bar cross-fading at every width from
+   768px up. `.panel`/`.panel.open`/`.panel-backdrop` declare transitions only
+   inside the mobile block, so naming them here costs nothing above it. */
+@media (prefers-reduced-motion: reduce) {
     .panel,
     .panel.open,
     .panel-backdrop,

@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import type { DataBridge } from "../services/data-bridge.ts";
 import { trustAverage } from "../ui/belt-card.ts";
+import { str } from "../ui/html.ts";
 import { reducedMotion } from "../ui/motion.ts";
 
 const ZONE_X = 10;
@@ -238,8 +239,12 @@ export class BridgeZone {
         // outcome log
         const outcomes = dataBridge.outcomeCache;
         if (outcomes.length > 0) {
+            // `?? ""` only stands in for null and undefined: an id Bridge sent
+            // as a number or an object reaches `.slice` and throws here, inside
+            // the frame, taking every surface drawn after this zone with it for
+            // as long as the row is cached. `str` refuses anything but text.
             const logText = outcomes.slice(0, this.mobile ? 2 : 3).map(o =>
-                `[${o.success ? "OK" : "FAIL"}] ${(o.id ?? "").slice(0, 8)}... ${o.status ?? ""}`
+                `[${o.success ? "OK" : "FAIL"}] ${str(o.id).slice(0, 8)}... ${str(o.status)}`
             ).join("\n");
             this.outcomeLog?.setText(`Recent Outcomes:\n${logText}`);
         } else {

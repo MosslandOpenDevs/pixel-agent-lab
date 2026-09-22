@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import type { DataBridge } from "../services/data-bridge.ts";
+import { str } from "../ui/html.ts";
 import { reducedMotion } from "../ui/motion.ts";
 
 const ZONE_X = 650;
@@ -224,7 +225,12 @@ export class AOZone {
             const idea = ideas.length > 0 ? ideas[Math.floor(Math.random() * ideas.length)] : undefined;
             if (idea) {
                 const score = typeof idea.score === "number" && isFinite(idea.score) ? idea.score : 0;
-                this.spawnBubble(idea.title_ko ?? idea.title ?? "Idea", score);
+                // `??` passes a title AO sent as a number or an object straight
+                // through, and spawnBubble slices it — inside the frame, where
+                // a throw stops every surface drawn after this one for as long
+                // as the row stays in the cache. The belt card already guards
+                // these two fields this way.
+                this.spawnBubble(str(idea.title_ko) || str(idea.title) || "Idea", score);
                 // The loader hops as it loads — only when it loads something.
                 // It used to hop every 2.8 s with no idea to load at all.
                 if (!still) {
