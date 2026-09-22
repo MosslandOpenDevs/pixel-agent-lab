@@ -67,7 +67,7 @@ Vite가 로컬 주소를 출력하며 기본값은 `http://localhost:5173`입니
 | `/ao-api/*` | `http://localhost:3001/*` | 신호, 상태, 토론, 아이디어, 계획, 프로젝트 |
 | `/bridge-api/*` | `http://localhost:3101/api/*` | 신호, 통계, 결과, 에이전트 신뢰도 |
 
-API 서버는 별도 프로젝트이며 이 저장소에서 실행하지 않습니다. 프런트엔드 API 키나 `.env` 파일은 필요하지 않습니다. 레지스트리와 대체 상태 집계 주소는 [ecosystem-client.ts](src/services/ecosystem-client.ts)에 정의되어 있습니다. 직접 조회하는 상태 엔드포인트는 CORS로 브라우저 접근을 허용해야 합니다.
+API 서버는 별도 프로젝트이며 이 저장소에서 실행하지 않습니다. 프런트엔드 API 키나 `.env` 파일은 필요하지 않습니다. 레지스트리와 대체 상태 집계 주소는 [ecosystem-client.ts](src/services/ecosystem-client.ts)에 정의되어 있습니다. 직접 조회하는 상태 엔드포인트는 CORS로 브라우저 접근을 허용해야 합니다. 프로덕션에서는 이 주소들 모두 페이지의 Content-Security-Policy `connect-src` 안에 있어야 합니다([배포](#배포) 참고).
 
 ### 검증 및 빌드
 
@@ -77,7 +77,7 @@ npm test
 npm run build
 ```
 
-브랜치 푸시와 `main` 대상 풀 리퀘스트에 대해 [GitHub Actions](.github/workflows/ci.yml)도 같은 검사를 실행합니다. 테스트는 상태 응답 해석과 생태계 피드 동작을 검증합니다. 해당 코드를 수정할 때는 `npm run test:watch`를 사용할 수 있습니다.
+[GitHub Actions](.github/workflows/ci.yml)는 대상 브랜치와 관계없이 모든 풀 리퀘스트와, 병합이 끝난 `main`에 대해 같은 검사를 실행한 뒤 빌드가 올바른 `dist/health.json`을 생성했는지 확인합니다(`node scripts/check-health-json.mjs`). 풀 리퀘스트 없이 푸시한 브랜치는 자동으로 검사하지 않으므로, 초안 풀 리퀘스트를 열거나 워크플로를 직접 실행하세요. 테스트는 상태 응답 해석, 생태계 피드 동작, 그리고 오리진이 빌드를 서빙하는 방식(없는 파일은 404, 디렉터리 목록 없음)을 검증합니다. 해당 코드를 수정할 때는 `npm run test:watch`를 사용할 수 있습니다.
 
 ```bash
 npm run preview       # 프로덕션 빌드를 로컬에서 확인
@@ -91,16 +91,17 @@ npm run serve         # dist/를 6300 포트에서 서빙
 
 검토한 커밋을 빌드해 `dist/`를 배포합니다. 배포는 수동이며, GitHub Actions는 변경을 검증하지만 배포하지 않습니다. 정적 파일을 직접 서빙하거나, PM2가 이미 설치된 환경에서 [ecosystem.config.cjs](ecosystem.config.cjs)를 사용할 수 있습니다. 이 설정은 설치된 로컬 `serve` 패키지를 6300 포트에서 실행하므로 시작 전에 `npm ci`를 실행하세요.
 
-앱에는 URL 경로 기반 라우팅이 없습니다. 정적 서버는 JavaScript 리소스를 포함해 **없는 파일에 404를 반환**하며 `index.html`로 대체하지 않습니다. 다른 호스트나 리버스 프록시에서도 이 동작을 유지하세요.
+앱에는 URL 경로 기반 라우팅이 없습니다. 정적 서버는 JavaScript 리소스를 포함해 **없는 파일에 404를 반환**하며 `index.html`로 대체하지 않고, 디렉터리 내용도 나열하지 않습니다. 빌드 때 `dist/`로 복사되는 [public/serve.json](public/serve.json)이 `serve`를 어떤 방식으로 실행하든 기본 디렉터리 목록을 끕니다. `serve`는 이 파일을 시작할 때 읽으므로, 이 파일이 바뀐 빌드를 배포한 뒤에는 프로세스를 다시 시작하세요. 다른 호스트나 리버스 프록시에서도 두 동작을 유지하세요.
 
 프로덕션 경로 설정은 [deploy/nginx.conf.example](deploy/nginx.conf.example)에 있습니다. 호스트에 맞게 도메인, 인증서, 업스트림 주소, 파일 경로를 조정하세요. 배포에는 다음 구성이 필요합니다.
 
 1. 위 표의 경로 변환을 유지하는 세 개의 동일 출처 API 프록시.
 2. 생성된 `health.json`을 반환하는 정확한 `/api/health` 경로.
-3. HTML·상태 응답의 재검증과 콘텐츠 해시가 있는 `/assets/` 파일의 immutable 캐싱.
+3. HTML·상태 응답의 재검증과 콘텐츠 해시가 있는 `/assets/` 파일의 immutable 캐싱. Phaser는 별도 청크로 빌드되므로 앱 코드만 바뀐 배포에서는 캐시가 그대로 유지됩니다.
 4. 의도한 API 소비자를 위한 CORS. 예제는 허용된 출처를 반사하고, `OPTIONS`를 처리하며, `Origin`과 `Accept-Encoding`에 따라 응답 캐시를 구분합니다. 공개 상태 엔드포인트에는 `Access-Control-Allow-Origin: *`를 사용합니다.
+5. 모든 응답의 보안 헤더(`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, HSTS)와 페이지의 `Content-Security-Policy`. nginx는 자체 `add_header`가 있는 location에서 상위 수준의 `add_header`를 상속하지 않으므로, 예제는 location마다 헤더를 포함합니다. 정책의 `connect-src`는 `moss.land`와 그 하위 도메인을 허용하며, [ecosystem-client.ts](src/services/ecosystem-client.ts)의 레지스트리·상태 집계 주소와 모든 레지스트리 `statusUrl`이 여기에 해당합니다. 이 중 하나라도 다른 호스트로 옮기면 먼저 그 호스트를 추가하세요. 개발 환경과 CI는 CSP를 보내지 않으므로 프로덕션에서만 요청이 차단됩니다. 차단된 요청은 장애로 표시되지 않고, 해당 조회만 빠집니다.
 
-배포 후 데스크톱·모바일 너비에서 지도와 세 상세 탭을 열어 확인하세요. API가 JSON을 반환하고, 서비스 응답 여부가 결정되며, 레지스트리·상태 데이터와 브라우저 리소스가 오류 없이 로드되는지 확인합니다. `/api/health`가 빌드한 커밋을 식별하는 JSON을 반환하고, 존재하지 않는 `/assets/` 파일은 404를 반환하는지도 검증하세요.
+배포 후 데스크톱·모바일 너비에서 지도와 세 상세 탭을 열어 확인하세요. API가 JSON을 반환하고, 서비스 응답 여부가 결정되며, 레지스트리·상태 데이터와 브라우저 리소스가 오류 없이 로드되는지 확인합니다. `/api/health`가 빌드한 커밋을 식별하는 JSON을 반환하는지, 존재하지 않는 `/assets/` 파일이 404를 반환하는지, `/assets/` 자체가 파일 목록을 보여 주지 않는지도 검증하세요. public/serve.json을 읽은 `serve`는 404를, `dist/`를 직접 제공하는 nginx는 403을 반환합니다. `curl -sI https://monitor.moss.land/ | grep -i -e x-frame -e content-security`로 보안 헤더를 확인하고, 브라우저 콘솔에 Content Security Policy 위반이 보고되지 않는지도 확인하세요.
 
 ### 모니터 상태 엔드포인트
 

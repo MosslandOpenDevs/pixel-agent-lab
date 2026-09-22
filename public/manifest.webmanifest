@@ -1,11 +1,10 @@
 {
     "name": "Mossland Space Hub — Governance Monitor",
     "short_name": "Moss Monitor",
-    "description": "Live pixel-art dashboard of Mossland's three independent governance services: Algora (Sense), AO (Plan), and Bridge (Execute).",
+    "description": "Pixel-art map of the Mossland service ecosystem, with detail views for the governance services Algora (Sense), AO (Plan), and Bridge (Execute).",
     "start_url": "/",
     "scope": "/",
     "display": "standalone",
-    "orientation": "landscape",
     "background_color": "#050b19",
     "theme_color": "#050b19",
     "icons": [

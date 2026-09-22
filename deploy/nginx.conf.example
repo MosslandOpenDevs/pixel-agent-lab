@@ -5,10 +5,15 @@
 # production MUST provide these three proxies itself. Path rewrites below mirror
 # vite.config.ts. Adjust upstream host:port to match your deployment.
 #
-# This mirrors the configuration verified running in front of monitor.moss.land
-# (nginx 1.18). Two deployment shapes are supported below: serving `dist/` from
-# local disk, or proxying to the PM2 `serve` process (ecosystem.config.cjs,
-# port 6300) — which may live on a different host than nginx.
+# This is a reference configuration for nginx 1.18: the routes, rewrites and
+# headers monitor.moss.land needs, not a byte-for-byte copy of a running vhost.
+# Where a simpler shape also works, it takes the more robust one on purpose —
+# e.g. the :80 block serves ACME webroot challenges rather than redirecting
+# them, so `certbot --webroot` works as written (a host that renews through
+# certbot's nginx authenticator can keep a plain redirect there). Two
+# deployment shapes are supported below: serving `dist/` from local disk, or
+# proxying to the PM2 `serve` process (ecosystem.config.cjs, port 6300) — which
+# may live on a different host than nginx.
 #
 # CORS (GitHub issue #1): monitor is ALSO consumed cross-origin — e.g. the
 # moss.land homepage governance widget fetches these endpoints from a different
@@ -27,6 +32,24 @@ map $http_origin $cors_origin {
     "https://www.moss.land"      $http_origin;
     "http://localhost:5173"      $http_origin;   # local dev (omit in production)
 }
+
+# --- Security headers (e.g. /etc/nginx/snippets/monitor-security-headers.conf)
+# nginx inherits add_header from an outer level ONLY into a level that sets
+# none of its own, and 1.18 has no way to merge the two. Every location below
+# sets its own (Cache-Control, CORS), so headers written once at server level
+# would reach no response at all — and adding a single Cache-Control line to a
+# location silently drops them there. So they live in a snippet, and every
+# location in the HTTPS server `include`s it:
+#
+#     add_header X-Frame-Options           "SAMEORIGIN" always;
+#     add_header X-Content-Type-Options    "nosniff" always;
+#     add_header Referrer-Policy           "strict-origin-when-cross-origin" always;
+#     add_header Strict-Transport-Security "max-age=31536000" always;
+#
+# `always`, so 404s and upstream errors carry them too. HSTS is sent without
+# includeSubDomains: this vhost only speaks for its own host name. The page's
+# Content-Security-Policy is not in the snippet; it is a document header and
+# lives in `location /`.
 
 # Recommended: collapse www -> apex so there is a single origin. Note this must
 # cover :443 — the origin that broke in issue #1 was https://www.moss.land, and
@@ -78,9 +101,8 @@ server {
     ssl_session_cache shared:SSL:10m;
     ssl_session_timeout 10m;
 
-    add_header X-Frame-Options        "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header Referrer-Policy        "strict-origin-when-cross-origin" always;
+    # No add_header at this level: no location would inherit it (see the
+    # security-header snippet above). Each location includes the snippet.
 
     # Compress proxied JSON. Debian/Ubuntu ships nginx.conf with `gzip on;` but
     # `gzip_proxied` and `gzip_types` COMMENTED OUT — their defaults (`off` and
@@ -98,12 +120,58 @@ server {
     proxy_read_timeout    60s;
 
     # --- Static SPA ---------------------------------------------------------
-    # Option A (nginx serves the build directly):
+    # Option A (nginx serves the build directly), with the same include and
+    # add_header lines as the Option B locations below:
     #     root /var/www/pixel-agent-lab/dist;
     #     index index.html;
     #     location / { try_files $uri $uri/ =404; }
+    # nginx lists no directory unless `autoindex` is on; a directory with no
+    # index.html, such as /assets/, answers 403. Under Option B, `serve` would
+    # list them by default; public/serve.json (copied into dist/ by the build)
+    # turns that off, so /assets/ itself is a 404 like any missing file.
+    #
     # Option B (proxy to the PM2 `serve` process), as used in production:
+    #
+    # The HTML is only ever served here, at `/`: serve's clean URLs redirect
+    # /index.html to /, so it needs no location of its own. It must never be
+    # cached without revalidation. It carries the hashed asset names, so a
+    # stale copy points the browser at a build that no longer exists, and HTML
+    # with no Cache-Control at all is left to heuristic freshness, which is how
+    # a deployed fix can fail to reach anyone. Keep missing asset requests as
+    # 404s: this app has no pathname routes, so its serve/PM2 configuration
+    # deliberately omits `serve -s`.
     location / {
+        include snippets/monitor-security-headers.conf;
+        # The page may load only what the bundle actually uses:
+        # - script-src 'self': every script is a same-origin module under
+        #   /assets/, with no inline script and no eval. Markup injected
+        #   through an innerHTML sink cannot run an `onerror=` handler or a
+        #   `javascript:` URL — a second line of defence behind escaping, not
+        #   a replacement for it.
+        # - style-src 'unsafe-inline': today the bundle sets every style through
+        #   the CSSOM (`el.style.left = …`), which CSP does not govern, and it
+        #   also runs clean under plain 'self'. The allowance is there so that
+        #   a style="" attribute in UI markup, or a Phaser path that sets one,
+        #   cannot quietly lose its styling in production only. What it leaves
+        #   open to injected markup is cosmetic: no secrets, no forms here.
+        # - img-src data: — Phaser builds its default textures from data: URIs.
+        #   blob: is for its loader, which hands fetched images over as blob:
+        #   URLs; the app loads none today, so this is headroom, not a need.
+        # - connect-src: the registry (links), the health aggregate (city) and
+        #   every registry `statusUrl` the browser reads directly. `*.moss.land`
+        #   does not match the apex, hence moss.land on its own. A statusUrl on
+        #   any other host must be added here first: otherwise the browser
+        #   blocks the request, the fetch throws, and that service falls back
+        #   to city's second-hand reading if city probes it, or else reads as
+        #   not health-checked — never as down, and with nothing on the page
+        #   to say this policy was the cause.
+        # - frame-ancestors 'self' is the modern form of X-Frame-Options.
+        # To roll out a change, send the new value as
+        # `Content-Security-Policy-Report-Only` first: nothing is blocked, and
+        # each violation is printed in the browser console (no report endpoint
+        # is set up). Load the map and all three tabs at desktop and mobile
+        # widths, check the console is clean, then send it under this name.
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://moss.land https://*.moss.land; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'none'" always;
         add_header Cache-Control "no-cache" always;
         proxy_pass http://monitor_web;
         proxy_http_version 1.1;
@@ -114,8 +182,11 @@ server {
     }
 
     # Content-hashed build output: safe to cache hard, and it must be, or every
-    # navigation re-fetches over a megabyte.
+    # navigation re-fetches over a megabyte. Phaser is its own chunk
+    # (vite.config.ts), so its hash — and this cache entry — survives a deploy
+    # that changes only app code.
     location /assets/ {
+        include snippets/monitor-security-headers.conf;
         proxy_pass http://monitor_web;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -124,23 +195,11 @@ server {
         add_header Cache-Control "public, max-age=31536000, immutable";
     }
 
-    # index.html must never be cached without revalidation. It carries the hashed
-    # asset names, so a stale copy points the browser at a build that no longer
-    # exists. Keep missing asset requests as 404s: this app has no pathname
-    # routes, so its serve/PM2 configuration deliberately omits `serve -s`.
-    # Serving HTML with no Cache-Control at all leaves this to
-    # heuristic freshness, which is how a deployed fix can fail to reach anyone.
-    location = /index.html {
-        proxy_pass http://monitor_web/index.html;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        add_header Cache-Control "no-cache" always;
-    }
-
     # Monitor's own health endpoint. `health.json` is emitted into the build by
     # vite.config.ts, so a 200 here proves nginx is up, the origin behind it is
-    # up, and which build is actually deployed. Exact-match so it wins over the
-    # SPA fallback, which would otherwise answer with index.html.
+    # up, and which build is actually deployed. The origin has no /api/health
+    # path of its own (it would answer 404 through `location /`), so this
+    # exact-match location maps it onto the file.
     location = /api/health {
         proxy_hide_header Access-Control-Allow-Origin;
         proxy_hide_header Vary;
@@ -150,8 +209,12 @@ server {
         # The allow-list still guards the *-api/ proxies below, which is where
         # the requesting origin actually matters.
         add_header Access-Control-Allow-Origin "*" always;
+        # Accept-Encoding only: `*` is the same answer for every origin, so
+        # unlike the reflected ACAO on the *-api/ proxies there is nothing to
+        # vary by Origin.
         add_header Vary "Accept-Encoding" always;
         add_header Cache-Control "no-cache" always;
+        include snippets/monitor-security-headers.conf;
         proxy_pass http://monitor_web/health.json;
         proxy_http_version 1.1;
         proxy_set_header Host              $host;
@@ -173,6 +236,11 @@ server {
     # Vary must name BOTH Origin (ACAO is reflected per-origin) and
     # Accept-Encoding (gzip above) — these responses are `public` cacheable, so
     # omitting Origin lets a shared cache serve one origin's ACAO to another.
+    #
+    # The security headers get the same treatment: an upstream may send its
+    # own through its framework's middleware, and nginx's copies would then be
+    # duplicates. Two Referrer-Policy headers merge into one list whose last
+    # token wins, so hide the upstream's and let this host send one policy.
 
     location /algora-api/ {
         proxy_hide_header Access-Control-Allow-Origin;
@@ -180,11 +248,16 @@ server {
         proxy_hide_header Access-Control-Allow-Methods;
         proxy_hide_header Access-Control-Allow-Headers;
         proxy_hide_header Vary;
+        proxy_hide_header Strict-Transport-Security;
+        proxy_hide_header X-Frame-Options;
+        proxy_hide_header X-Content-Type-Options;
+        proxy_hide_header Referrer-Policy;
 
         add_header Access-Control-Allow-Origin  $cors_origin always;
         add_header Access-Control-Allow-Methods "GET, OPTIONS" always;
         add_header Access-Control-Allow-Headers "Content-Type" always;
         add_header Vary "Accept-Encoding, Origin" always;
+        include snippets/monitor-security-headers.conf;
 
         if ($request_method = OPTIONS) { return 204; }
 
@@ -202,11 +275,16 @@ server {
         proxy_hide_header Access-Control-Allow-Methods;
         proxy_hide_header Access-Control-Allow-Headers;
         proxy_hide_header Vary;
+        proxy_hide_header Strict-Transport-Security;
+        proxy_hide_header X-Frame-Options;
+        proxy_hide_header X-Content-Type-Options;
+        proxy_hide_header Referrer-Policy;
 
         add_header Access-Control-Allow-Origin  $cors_origin always;
         add_header Access-Control-Allow-Methods "GET, OPTIONS" always;
         add_header Access-Control-Allow-Headers "Content-Type" always;
         add_header Vary "Accept-Encoding, Origin" always;
+        include snippets/monitor-security-headers.conf;
 
         if ($request_method = OPTIONS) { return 204; }
 
@@ -224,11 +302,16 @@ server {
         proxy_hide_header Access-Control-Allow-Methods;
         proxy_hide_header Access-Control-Allow-Headers;
         proxy_hide_header Vary;
+        proxy_hide_header Strict-Transport-Security;
+        proxy_hide_header X-Frame-Options;
+        proxy_hide_header X-Content-Type-Options;
+        proxy_hide_header Referrer-Policy;
 
         add_header Access-Control-Allow-Origin  $cors_origin always;
         add_header Access-Control-Allow-Methods "GET, OPTIONS" always;
         add_header Access-Control-Allow-Headers "Content-Type" always;
         add_header Vary "Accept-Encoding, Origin" always;
+        include snippets/monitor-security-headers.conf;
 
         if ($request_method = OPTIONS) { return 204; }
 
