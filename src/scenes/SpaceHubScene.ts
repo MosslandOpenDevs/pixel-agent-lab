@@ -24,7 +24,7 @@ type ZoneKey = "hub" | "algora" | "ao" | "bridge";
 
 // The map lives below the three service zones so the existing belts keep their
 // coordinates. It is the default view: the ecosystem is the subject, and a belt
-// is the detail you open for the two services that actually stream.
+// is the detail you open for the three services whose data it reads.
 // Separation only — the hub's own depth band (see HubMap) is what actually
 // keeps the belt zones from painting over it, since Phaser depth is global
 // and the hub overscans this rectangle by far more than any gap could cover.
@@ -83,7 +83,9 @@ export class SpaceHubScene extends Phaser.Scene {
         this.drawSpaceBackground();
 
         // header bar
-        this.add.text(W / 2, 16, "MOSSLAND SPACE HUB  |  ecosystem map  \u00b7  live belts for the services that stream", {
+        // Polled, not streamed, and the belts illustrate workflows (README,
+        // "Reading the data correctly"): the header claims neither.
+        this.add.text(W / 2, 16, "MOSSLAND SPACE HUB  |  ecosystem map  \u00b7  workflow views for the services we read", {
             fontFamily: "monospace", fontSize: "10px", color: "#94a3b8",
             backgroundColor: "#0b1226cc", padding: { x: 10, y: 4 },
         }).setOrigin(0.5).setDepth(100);

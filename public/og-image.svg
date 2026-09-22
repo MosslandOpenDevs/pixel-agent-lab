@@ -34,9 +34,9 @@
   <text x="222" y="168" fill="#eaf2ff" font-size="24" letter-spacing="2">GOVERNANCE MONITOR</text>
 
   <text x="96" y="300" fill="#f1f5f9" font-size="70" font-weight="700">Autonomous governance,</text>
-  <text x="96" y="382" fill="#f1f5f9" font-size="70" font-weight="700">visualized in real time.</text>
+  <text x="96" y="382" fill="#f1f5f9" font-size="70" font-weight="700">mapped from its reports.</text>
 
-  <text x="96" y="450" fill="#9db4d6" font-size="30">Live pixel-art dashboard of three independent services</text>
+  <text x="96" y="450" fill="#9db4d6" font-size="30">Ecosystem health map · illustrative workflow views</text>
 
   <g font-size="24" font-weight="700">
     <rect x="96"  y="488" width="286" height="58" rx="12" fill="#0f2d2a" stroke="#34d399" stroke-width="2"/>

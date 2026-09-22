@@ -483,8 +483,8 @@ h1 { margin: 0; font-size: 1rem; color: #eaf2ff; letter-spacing: 0.2px; }
 
 .eco-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Streaming services are the two with real telemetry — the only ones allowed
-   to look fully "on". */
+/* Streaming services are the three whose data this monitor reads (Algora, AO,
+   Bridge) — the only ones allowed to look fully "on". */
 .eco-row.streaming .eco-name { color: #f1f5f9; font-weight: 600; }
 
 /* Archived: still on the map, visibly not alive. */

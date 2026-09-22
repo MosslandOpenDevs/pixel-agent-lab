@@ -206,7 +206,9 @@ describe("panel rewrites", () => {
         // own last markup memoised, skip, and leave this one-off text up.
         updateSidebar(bridgeWith(LIVE));
         setConnectionStatus("live");
-        expect(textOf(els["#connStatus"].innerHTML)).toBe("LIVE — Real-time service data");
+        // Polled, not streamed: the line says what LIVE rests on, never
+        // "real-time" (README, "Reading the data correctly").
+        expect(textOf(els["#connStatus"].innerHTML)).toBe("LIVE — a data API responded");
         updateSidebar(bridgeWith(LIVE));
         expect(textOf(els["#connStatus"].innerHTML)).toBe("LIVE — queue: 3");
     });

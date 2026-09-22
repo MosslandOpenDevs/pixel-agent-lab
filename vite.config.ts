@@ -59,10 +59,10 @@ function healthEndpoint(): Plugin {
  * Phaser is ~95% of the shipped JavaScript and changes only when the lockfile
  * does, so it is built as a chunk of its own (`build.rollupOptions` below).
  * /assets/ is served `immutable`, and a separate chunk keeps its content hash
- * across app-only deploys: a returning visitor re-downloads ~18 kB gzip of app
- * code instead of ~350 kB. A Phaser, Rollup or esbuild bump still changes that
- * chunk, as it should. Vite preloads it with <link rel="modulepreload">, so a
- * first visit is no slower for it.
+ * across app-only deploys: a returning visitor re-downloads under 30 kB gzip
+ * of app code instead of ~360 kB. A Phaser, Rollup or esbuild bump still
+ * changes that chunk, as it should. Vite preloads it with
+ * <link rel="modulepreload">, so a first visit is no slower for it.
  *
  * That split trips Vite's chunk-size warning on every build, and Vite's limit
  * is global: raising it far enough for Phaser (~1.2 MB minified) would also
