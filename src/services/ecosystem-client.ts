@@ -24,7 +24,12 @@ export const AGGREGATOR_ID = "city";
 /** The MIP-1 registry: which services exist, and what lifecycle each is in. */
 export async function fetchRegistry(signal?: AbortSignal): Promise<RegistryService[]> {
     const data = await getJSON<EcosystemRegistry>(REGISTRY_URL, "Ecosystem registry", signal);
-    const services: unknown[] = Array.isArray(data?.services) ? data.services : [];
+    // An answer without its list is a failed read, not an empty ecosystem, and
+    // the difference is the whole map: treated as a load, it emptied the map,
+    // marked the registry loaded, and stood down the early-retry ladder for ten
+    // minutes. `{"services": []}` is still a real answer, as everywhere else.
+    if (!Array.isArray(data?.services)) throw new Error("Ecosystem registry: no list in the answer");
+    const services: unknown[] = data.services;
     // A row with no string id cannot be keyed, graded or matched to a health
     // reading, so it is not a registry entry this map can draw.
     return services.filter((s): s is RegistryService =>

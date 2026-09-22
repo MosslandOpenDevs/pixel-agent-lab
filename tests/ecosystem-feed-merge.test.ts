@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { EcosystemFeed } from "../src/services/ecosystem-feed.ts";
+import { EcosystemFeed, REGISTRY_RETRY_MS } from "../src/services/ecosystem-feed.ts";
 import type { RegistryService } from "../src/services/types.ts";
 
 /**
@@ -296,6 +296,25 @@ describe("EcosystemFeed against malformed or duplicate reads", () => {
         calls = [];
         await vi.advanceTimersByTimeAsync(60_000);
         expect(calls).toContain(AGGREGATE_URL);
+    });
+
+    it("reads a registry answer with no list as unreachable, not as an ecosystem of nothing", async () => {
+        // `{"error": "maintenance"}` is valid JSON, so taking its missing list
+        // for an empty one counted as a load: the map emptied, the registry
+        // read as loaded, and the early-retry ladder stood down to the
+        // ten-minute schedule — a wrong answer held for ten minutes, where an
+        // unreachable registry says so and is back within seconds.
+        serve(routes({ [REGISTRY_URL]: () => Response.json({ error: "maintenance" }) }));
+        await feed.init();
+
+        expect(feed.isLoaded()).toBe(false);
+        expect(feed.registryState()).toBe("failed");
+        expect(feed.nodes()).toEqual([]);
+
+        serve(routes());
+        await vi.advanceTimersByTimeAsync(REGISTRY_RETRY_MS[0]);
+        expect(feed.registryState()).toBe("loaded");
+        expect(feed.nodes().map(n => n.service.id)).toContain("npc");
     });
 
     it("drops registry rows that have no id to key them on", async () => {

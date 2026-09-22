@@ -235,7 +235,15 @@ export class EcosystemFeed {
      * `visibilitychange` — this layer is DOM-free.
      */
     pause(): void {
-        this.staleWhenHidden = this.healthFreshness().state === "stale";
+        // The reading's age, not the state on screen. healthFreshness reports a
+        // sweep in flight over an already-stale reading as "refreshing", so
+        // asking it for the state here let a tab hidden mid-sweep come back
+        // claiming a reading hours old was merely being replaced: resume()
+        // granted resumedSweep, the title dropped "health stale", the tally
+        // dropped "as of HH:MM", and every body un-dimmed and breathed again
+        // until that sweep settled.
+        const { checkedAt } = this.healthFreshness();
+        this.staleWhenHidden = checkedAt !== null && Date.now() - checkedAt > STALE_AFTER_MS;
         this.registryChain.pause();
         this.healthChain.pause();
     }

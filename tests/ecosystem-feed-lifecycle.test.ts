@@ -396,6 +396,28 @@ describe("EcosystemFeed health freshness", () => {
         expect(feed.healthFreshness()).toMatchObject({ state: "stale", sweeping: true });
     });
 
+    it("keeps a reading that was already stale stale, even when the hide caught a sweep mid-flight", async () => {
+        // The laptop slept, so the wake-up sweep is replacing a reading that
+        // only aged while nothing could run: "refreshing" is right for it.
+        await feed.init();
+        vi.mocked(fetchEcosystemHealth).mockImplementation(() => later(5_000, null as never).then(offline));
+        vi.mocked(fetchServiceHealth).mockImplementation(offline);
+        vi.setSystemTime(Date.now() + 3 * 60 * 60_000);
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(feed.healthFreshness()).toMatchObject({ state: "refreshing", sweeping: true });
+
+        // Hidden inside that sweep. What matters is the age of the reading,
+        // not the word on screen for it: asking healthFreshness for the state
+        // here recorded "not stale" and let the next show say so too.
+        feed.pause();
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(feed.healthFreshness()).toMatchObject({ state: "stale", sweeping: false });
+
+        await vi.advanceTimersByTimeAsync(20 * 60_000);
+        feed.resume();
+        expect(feed.healthFreshness()).toMatchObject({ state: "stale", sweeping: true });
+    });
+
     it("reads a sweep that wakes after the clock jumped (a sleeping laptop) as refreshing", async () => {
         await feed.init();
         vi.mocked(fetchEcosystemHealth).mockImplementation(() => later(3_000, { aggregate: null, own: null }));

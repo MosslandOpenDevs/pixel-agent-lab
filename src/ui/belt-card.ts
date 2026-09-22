@@ -1,5 +1,5 @@
 import type { ConnState } from "../services/data-bridge.ts";
-import { esc } from "./html.ts";
+import { esc, str } from "./html.ts";
 import { lapsed, liveBadge } from "./live-badge.ts";
 
 /**
@@ -46,7 +46,6 @@ const PROJECT_SCORE = 8;
  *  glyph, which a screen reader reads as "trigram for heaven", is for the eye. */
 const PANEL = `the info panel (<span aria-hidden="true">☰</span>)`;
 
-const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 /** Cut to `n` characters, with an ellipsis when something was cut. */
