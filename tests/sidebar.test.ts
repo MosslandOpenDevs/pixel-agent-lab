@@ -66,6 +66,21 @@ const LIVE = {
 };
 
 describe("updateSidebar", () => {
+    it("shows the archive link instead of live snapshot counts or an outage badge", () => {
+        const bridge = bridgeWith(LIVE);
+        bridge.algoraArchived = true;
+        updateSidebar(bridge);
+        const io = textOf(els["#serviceStatus"].innerHTML);
+        expect(io).toContain("ALGORA · ARCHIVE");
+        expect(io).not.toContain("ALGORA LIVE");
+        expect(io).not.toContain("ALGORA OFFLINE");
+        expect(io).not.toContain("372/today");
+        expect(io).toContain("AO LIVE");
+        expect(io).toContain("BRIDGE LIVE");
+        expect(els["#serviceStatus"].innerHTML).toContain('href="https://algora.moss.land/en"');
+        expect(textOf(els["#stats"].innerHTML)).not.toMatch(/Algora \(Sense\)|Open Issues/);
+    });
+
     it("shows the services' own figures", () => {
         updateSidebar(bridgeWith(LIVE));
 

@@ -189,6 +189,10 @@ export class EcosystemFeed {
         return { state: replacing ? "refreshing" : "stale", checkedAt, sweeping, settled };
     }
 
+    private archivedDataSources = new Set<string>();
+    /** Stop describing a data source as streaming once its archive is observed. */
+    archiveDataSource(id: string): void { this.archivedDataSources.add(id); }
+
     /** Registry entries with their health, in registry order. */
     nodes(): EcosystemNode[] {
         return this.registry.map(service => {
@@ -201,7 +205,7 @@ export class EcosystemFeed {
             // an observation, and grading on it promoted two services (signal,
             // city) above `listed` with `health: null` behind them — which
             // HubMap then drew filled and pulsing.
-            const instrumentation: Instrumentation = STREAMING_IDS.has(service.id)
+            const instrumentation: Instrumentation = STREAMING_IDS.has(service.id) && !this.archivedDataSources.has(service.id)
                 ? "stream"
                 : health
                     ? "health"

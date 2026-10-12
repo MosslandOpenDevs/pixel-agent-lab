@@ -192,6 +192,7 @@ export class SpaceHubScene extends Phaser.Scene {
      * price of a comparison, and once more as soon as init() settles.
      */
     private refreshEcosystem(): void {
+        if (this.dataBridge.algoraArchived) this.ecosystem.archiveDataSource("algora");
         const nodes = this.ecosystem.nodes();
         const freshness = this.ecosystem.healthFreshness();
         updateEcosystem(this.ecosystem);
@@ -361,6 +362,10 @@ export class SpaceHubScene extends Phaser.Scene {
         const d = this.dataBridge;
         const state = (s: "algora" | "ao" | "bridge") => ({ conn: d.connectionState(), up: d.serviceUp[s] });
         if (zone === "algora") {
+            if (d.algoraArchived) {
+                this.beltCard.update('<h2 class="bc-h">Algora · ARCHIVE</h2><p>Read-only records. Live collection and workflow animation have stopped.</p><p><a href="https://algora.moss.land/en" target="_blank" rel="noopener noreferrer">Open the archive</a></p>');
+                return;
+            }
             this.beltCard.updateAlgora(this.algoraZone.beltItems(), state("algora"));
             return;
         }
