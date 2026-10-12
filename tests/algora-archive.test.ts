@@ -25,7 +25,7 @@ describe("Algora archive transition", () => {
             calls.push(url);
             if (url === "/algora-api/stats") return json(stats, marker);
             if (url.startsWith("/algora-api/signals")) return new Response("{}", { status: 404, headers: marker });
-            if (url.includes("/signals?")) return json({ signals: [] });
+            if (url.includes("/signals?")) return json({ signals: [{ id: "signal-1", title: "Current signal", description: "Current signal" }] });
             if (url.endsWith("/status")) return json({ stats: { signals_today: 1 } });
             if (url.endsWith("/stats")) return json({ signals: { total: 1 } });
             return json({ debates: [], ideas: [], outcomes: [], leaderboard: [], total: 0 });
@@ -38,11 +38,14 @@ describe("Algora archive transition", () => {
         expect(bridge.liveStats.algora).toBeNull();
         expect(bridge.statsAt.algora).toBeNull();
         expect(bridge.connectionState()).toBe("live");
+        expect(bridge.ingested).toEqual({ algora: 0, ao: 1, bridge: 1 });
+        expect(bridge.queueSize()).toBe(0);
         const before = calls.filter(u => u.startsWith("/algora-api/"));
         const aoBefore = calls.filter(u => u.startsWith("/ao-api/signals")).length;
         await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2);
         expect(calls.filter(u => u.startsWith("/algora-api/"))).toEqual(before);
         expect(calls.filter(u => u.startsWith("/ao-api/signals")).length).toBeGreaterThan(aoBefore);
+        expect(bridge.queueSize()).toBe(0);
     });
 
     it("does not let a late pre-transition signal response refill the archived queue", async () => {

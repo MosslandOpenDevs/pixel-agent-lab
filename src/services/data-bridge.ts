@@ -219,8 +219,8 @@ export class DataBridge {
      *  from "still loading" in the AO panel). */
     debatesErrored = false;
 
-    /** Monotonic count of signals actually ingested, per origin: exactly what
-     *  reached the belt's queue, the first read's backlog included. */
+    /** Monotonic count of signals observed and converted per origin, including
+     *  the first read's backlog, even after the visual belt is retired. */
     ingested: Record<"algora" | "ao" | "bridge", number> = { algora: 0, ao: 0, bridge: 0 };
     /**
      * Signals that arrived after their origin's first successful read — what
@@ -362,8 +362,8 @@ export class DataBridge {
             if (this.signalsBaselined.has(s.origin)) this.newSignals[s.origin]++;
         };
         // Row by row, so a row that cannot be converted costs only itself.
-        // Counting happens in `ingest`, after conversion succeeded, so
-        // `ingested` stays exactly what reaches the queue.
+        // Counting happens in `ingest` only after conversion succeeded; the
+        // map keeps observing AO/Bridge after the visual belt is retired.
         const take = <T>(r: PromiseSettledResult<T[]>, origin: UnifiedSignal["origin"], convert: (row: T) => UnifiedSignal) => {
             if (r.status !== "fulfilled") return;
             for (const row of r.value) {
@@ -377,7 +377,10 @@ export class DataBridge {
         take(b, "bridge", bridgeSignalToUnified);
         // shuffle
         for (let i = unified.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [unified[i], unified[j]] = [unified[j], unified[i]]; }
-        this.signalQueue.push(...unified);
+        // The Algora belt was the queue's only reader. Once it is archived,
+        // retain AO/Bridge ingest counters for map activity without building
+        // an unread visual backlog.
+        if (!this.algoraArchived) this.signalQueue.push(...unified);
         if (this.signalQueue.length > 200) this.signalQueue = this.signalQueue.slice(-200);
         // Forget from the least recently seen end once past the cap. Anything
         // a window returned this poll was just touched, so it is never here.
@@ -401,7 +404,7 @@ export class DataBridge {
             this.liveStats.algora = null;
             this.statsAt.algora = null;
             this.newSignals.algora = 0;
-            this.signalQueue = this.signalQueue.filter(s => s.origin !== "algora");
+            this.signalQueue = [];
         } else if (a.status === "fulfilled" && !this.algoraArchived) {
             this.liveStats.algora = a.value; this.statsAt.algora = now;
         }
