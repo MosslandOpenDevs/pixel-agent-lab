@@ -205,6 +205,8 @@ export class DataBridge {
     /** Per-service reachability, updated every poll. Lets the UI show AO as
      *  OFFLINE while Algora/Bridge stay LIVE, instead of one blanket status. */
     serviceUp: ServiceFlags = { ...NO_SERVICES };
+    /** Sticky for this page: an archived snapshot never resumes live polling. */
+    algoraArchived = false;
     /** Whether each service's stats read succeeded this poll. Reachability is
      *  signals *or* stats, so a service can be LIVE on its signals alone while
      *  `liveStats` still holds the last stats that ever arrived — kept on
@@ -217,8 +219,8 @@ export class DataBridge {
      *  from "still loading" in the AO panel). */
     debatesErrored = false;
 
-    /** Monotonic count of signals actually ingested, per origin: exactly what
-     *  reached the belt's queue, the first read's backlog included. */
+    /** Monotonic count of signals observed and converted per origin, including
+     *  the first read's backlog, even after the visual belt is retired. */
     ingested: Record<"algora" | "ao" | "bridge", number> = { algora: 0, ao: 0, bridge: 0 };
     /**
      * Signals that arrived after their origin's first successful read — what
@@ -330,7 +332,7 @@ export class DataBridge {
         const sig = settledFlags(status[0]);
         const stat = settledFlags(status[1]);
         this.serviceUp = {
-            algora: sig.algora || stat.algora,
+            algora: !this.algoraArchived && (sig.algora || stat.algora),
             ao: sig.ao || stat.ao,
             bridge: sig.bridge || stat.bridge,
         };
@@ -342,7 +344,7 @@ export class DataBridge {
 
     private async pollSignals(signal: AbortSignal): Promise<ServiceFlags> {
         const [a, ao, b] = await Promise.allSettled([
-            fetchAlgoraSignals(30, signal), fetchAOSignals(20, signal), fetchBridgeSignals(20, signal),
+            this.algoraArchived ? Promise.resolve([]) : fetchAlgoraSignals(30, signal), fetchAOSignals(20, signal), fetchBridgeSignals(20, signal),
         ]);
         const unified: UnifiedSignal[] = [];
         const ingest = (s: UnifiedSignal) => {
@@ -360,8 +362,8 @@ export class DataBridge {
             if (this.signalsBaselined.has(s.origin)) this.newSignals[s.origin]++;
         };
         // Row by row, so a row that cannot be converted costs only itself.
-        // Counting happens in `ingest`, after conversion succeeded, so
-        // `ingested` stays exactly what reaches the queue.
+        // Counting happens in `ingest` only after conversion succeeded; the
+        // map keeps observing AO/Bridge after the visual belt is retired.
         const take = <T>(r: PromiseSettledResult<T[]>, origin: UnifiedSignal["origin"], convert: (row: T) => UnifiedSignal) => {
             if (r.status !== "fulfilled") return;
             for (const row of r.value) {
@@ -370,12 +372,15 @@ export class DataBridge {
             // This read was the baseline if none had succeeded before it.
             this.signalsBaselined.add(origin);
         };
-        take(a, "algora", algoraSignalToUnified);
+        if (!this.algoraArchived) take(a, "algora", algoraSignalToUnified);
         take(ao, "ao", aoSignalToUnified);
         take(b, "bridge", bridgeSignalToUnified);
         // shuffle
         for (let i = unified.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [unified[i], unified[j]] = [unified[j], unified[i]]; }
-        this.signalQueue.push(...unified);
+        // The Algora belt was the queue's only reader. Once it is archived,
+        // retain AO/Bridge ingest counters for map activity without building
+        // an unread visual backlog.
+        if (!this.algoraArchived) this.signalQueue.push(...unified);
         if (this.signalQueue.length > 200) this.signalQueue = this.signalQueue.slice(-200);
         // Forget from the least recently seen end once past the cap. Anything
         // a window returned this poll was just touched, so it is never here.
@@ -385,19 +390,27 @@ export class DataBridge {
                 seen.delete(id);
             }
         }
-        return { algora: a.status === "fulfilled", ao: ao.status === "fulfilled", bridge: b.status === "fulfilled" };
+        return { algora: !this.algoraArchived && a.status === "fulfilled", ao: ao.status === "fulfilled", bridge: b.status === "fulfilled" };
     }
 
     /** A failed read keeps that service's previous stats in `liveStats`; the
      *  flags this returns become `statsUp`, which says whether they are this
      *  poll's. */
     private async pollStats(signal: AbortSignal): Promise<ServiceFlags> {
-        const [a, ao, b] = await Promise.allSettled([fetchAlgoraStats(signal), fetchAOStatus(signal), fetchBridgeStats(signal)]);
+        const [a, ao, b] = await Promise.allSettled([this.algoraArchived ? Promise.resolve(null) : fetchAlgoraStats(signal), fetchAOStatus(signal), fetchBridgeStats(signal)]);
         const now = Date.now();
-        if (a.status === "fulfilled") { this.liveStats.algora = a.value; this.statsAt.algora = now; }
+        if (a.status === "fulfilled" && a.value?.archived === true) {
+            this.algoraArchived = true;
+            this.liveStats.algora = null;
+            this.statsAt.algora = null;
+            this.newSignals.algora = 0;
+            this.signalQueue = [];
+        } else if (a.status === "fulfilled" && !this.algoraArchived) {
+            this.liveStats.algora = a.value; this.statsAt.algora = now;
+        }
         if (ao.status === "fulfilled") { this.liveStats.ao = ao.value; this.statsAt.ao = now; }
         if (b.status === "fulfilled") { this.liveStats.bridge = b.value; this.statsAt.bridge = now; }
-        return { algora: a.status === "fulfilled", ao: ao.status === "fulfilled", bridge: b.status === "fulfilled" };
+        return { algora: !this.algoraArchived && a.status === "fulfilled", ao: ao.status === "fulfilled", bridge: b.status === "fulfilled" };
     }
 
     // Supporting detail for the belt views. None of it gates reachability, and

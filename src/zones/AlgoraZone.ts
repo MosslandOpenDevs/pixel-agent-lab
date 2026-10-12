@@ -72,6 +72,7 @@ export class AlgoraZone {
     private beltOffset = 0;
     private bot!: Phaser.GameObjects.Sprite;
     private botBusy = false;
+    private archiveShown = false;
 
 
     constructor(scene: Phaser.Scene) {
@@ -160,6 +161,29 @@ export class AlgoraZone {
     }
 
     update(dt: number, dataBridge: DataBridge): void {
+        if (dataBridge.algoraArchived) {
+            if (!this.archiveShown) {
+                this.archiveShown = true;
+                this.scene.tweens.killTweensOf(this.bot);
+                for (const item of this.items) { item.sprite.destroy(); item.label.destroy(); }
+                this.items = [];
+                this.scene.add.rectangle(ZONE_X, ZONE_Y, ZONE_W, ZONE_H, 0x0b1624)
+                    .setOrigin(0).setDepth(40);
+                this.scene.add.text(ZONE_X + 28, ZONE_Y + 72, "ALGORA — ARCHIVE", {
+                    fontFamily: "monospace", fontSize: "22px", color: "#86efac",
+                }).setDepth(41);
+                this.scene.add.text(ZONE_X + 28, ZONE_Y + 124,
+                    "Read-only records.\nLive collection and workflow animation have stopped.", {
+                        fontFamily: "monospace", fontSize: "14px", color: "#cbd5e1",
+                        lineSpacing: 12, wordWrap: { width: ZONE_W - 56 },
+                    }).setDepth(41);
+                this.scene.add.text(ZONE_X + 28, ZONE_Y + 238, "Open the archive →", {
+                    fontFamily: "monospace", fontSize: "16px", color: "#86efac",
+                }).setDepth(41).setInteractive({ useHandCursor: true })
+                    .on("pointerdown", () => window.open("https://algora.moss.land/en", "_blank", "noopener,noreferrer"));
+            }
+            return;
+        }
         // With reduced motion (read live) the ambient loops stop: no tread
         // travel, no bot animation or hop, no blinking clusters. The signals
         // still move through the stages — that is the data — but each is shown

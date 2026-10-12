@@ -35,6 +35,8 @@ export type AlgoraIssue = {
 };
 
 export type AlgoraStats = {
+    /** Static archive marker, read from the same-origin response header. */
+    archived?: boolean;
     activeAgents: number;
     totalAgents?: number;
     activeSessions: number;

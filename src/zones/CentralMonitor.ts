@@ -10,6 +10,8 @@ export class CentralMonitor {
     private scene: Phaser.Scene;
     private g!: Phaser.GameObjects.Graphics;
     private statusText?: Phaser.GameObjects.Text;
+    private algoraLabel?: Phaser.GameObjects.Text;
+    private aggregationText?: Phaser.GameObjects.Text;
 
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
@@ -32,15 +34,16 @@ export class CentralMonitor {
         ];
 
         services.forEach(svc => {
-            this.scene.add.text(svc.x, STRIP_Y + 12, `\u25cf ${svc.name}`, {
+            const label = this.scene.add.text(svc.x, STRIP_Y + 12, `\u25cf ${svc.name}`, {
                 fontFamily: "monospace", fontSize: "10px", color: svc.color,
                 backgroundColor: "#0a162866", padding: { x: 6, y: 3 },
             }).setDepth(12);
+            if (svc.name.startsWith("Algora")) this.algoraLabel = label;
         });
 
         // aggregation note — midway between the Bridge label and the status
         // text, which is right-aligned and grows leftwards (see update()).
-        this.scene.add.text(STRIP_X + 900, STRIP_Y + 14, "Aggregating 3 independent services", {
+        this.aggregationText = this.scene.add.text(STRIP_X + 900, STRIP_Y + 14, "Aggregating 3 independent services", {
             fontFamily: "monospace", fontSize: "8px", color: "#2dd4bf44",
         }).setDepth(10);
 
@@ -52,6 +55,10 @@ export class CentralMonitor {
     }
 
     update(_dt: number, dataBridge: DataBridge): void {
+        if (dataBridge.algoraArchived) {
+            this.algoraLabel?.setText("Algora · ARCHIVE");
+            this.aggregationText?.setText("Polling AO and Bridge");
+        }
         const queueSize = dataBridge.queueSize();
         const state = dataBridge.connectionState();
         const label = state === "live" ? "LIVE" : state === "offline" ? "OFFLINE" : "CONNECTING";

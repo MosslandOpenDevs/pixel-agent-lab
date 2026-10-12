@@ -340,6 +340,7 @@ export function updateSidebar(dataBridge: DataBridge): void {
     const ls = dataBridge.liveStats;
     const up = dataBridge.serviceUp;
     const statsUp = dataBridge.statsUp;
+    const archived = dataBridge.algoraArchived;
     const conn = dataBridge.connectionState();
 
     // Placeholder for a figure this poll could not obtain. A service that did not
@@ -367,9 +368,9 @@ export function updateSidebar(dataBridge: DataBridge): void {
     // fetch caches — the issue list's length (no longer fetched) only ever
     // reported its 30-item cap, and the debate list's its own.
     setHTML(statsEl, `
-    <div class="row"><span>Streaming</span><b class="row-list"><span>Algora (Sense)</span><span>AO (Plan)</span><span>Bridge (Execute)</span></b></div>
+    <div class="row"><span>Streaming</span><b class="row-list">${archived ? "" : "<span>Algora (Sense)</span>"}<span>AO (Plan)</span><span>Bridge (Execute)</span></b></div>
     <div class="row"><span>Signal Queue</span><b>${dataBridge.queueSize()}</b></div>
-    <div class="row"><span>Open Issues</span><b>${num(a?.openIssues) ?? NA}</b></div>
+    ${archived ? "" : `<div class="row"><span>Open Issues</span><b>${num(a?.openIssues) ?? NA}</b></div>`}
     <div class="row"><span>Debates Today</span><b>${num(ao?.stats?.debates_today) ?? NA}</b></div>
     `);
 
@@ -420,12 +421,16 @@ export function updateSidebar(dataBridge: DataBridge): void {
 
     setHTML(serviceEl, `
     <h2>Service I/O</h2>
-    <div class="${cls("algora")}">
+    ${archived ? `<div class="svc algora">
+      <div class="svc-title">ALGORA · ARCHIVE</div>
+      <div class="hint">Read-only records. Live collection has stopped.</div>
+      <a href="https://algora.moss.land/en" target="_blank" rel="noopener noreferrer">Open the archive</a>
+    </div>` : `<div class="${cls("algora")}">
       <div class="svc-title">ALGORA${badge("algora")}</div>
       <div class="drow"><span>Input</span><b>Signals ${aIn}</b></div>
       <div class="drow"><span>Output</span><b>Issues ${aOut}</b></div>
       <div class="hint">${aHint}</div>
-    </div>
+    </div>`}
     <div class="${cls("ao")}">
       <div class="svc-title">AO${badge("ao")}</div>
       <div class="drow"><span>Input</span><b>Signals ${aoIn}</b></div>
